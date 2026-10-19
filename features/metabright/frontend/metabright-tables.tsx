@@ -48,6 +48,15 @@ export function Heatmap({ rows, d }: { rows: Row[]; d: Dataset }) {
   );
 }
 
+/* Warna rank 1-5 (hijau -> oranye). Rank 6 ke bawah tetap abu-abu. Pakai inline style supaya tidak bergantung pada CSS. */
+const TOP_RANK_STYLE: Record<number, { background: string; color: string }> = {
+  1: { background: "#01ad23", color: "#ffffff" },
+  2: { background: "#80c02b", color: "#ffffff" },
+  3: { background: "#ffd334", color: "#422006" },
+  4: { background: "#f79c31", color: "#ffffff" },
+  5: { background: "#ec6430", color: "#ffffff" },
+};
+
 /* Tabel data skor per indikator */
 export function DataTable({ rows, d }: { rows: Row[]; d: Dataset }) {
   const sorted = [...rows].sort((a, b) => a.rank - b.rank);
@@ -63,7 +72,7 @@ export function DataTable({ rows, d }: { rows: Row[]; d: Dataset }) {
         <table>
           <thead>
             <tr>
-              <th>Rank</th><th>No</th><th>Witel</th><th>Telda</th>
+              <th>Rank</th><th>Witel</th><th>Telda</th>
               {d.indicators.map((x, k) => (
                 <th key={k} title={x.name}>{x.name} ({x.weight})</th>
               ))}
@@ -73,8 +82,7 @@ export function DataTable({ rows, d }: { rows: Row[]; d: Dataset }) {
           <tbody>
             {sorted.map((r) => (
               <tr key={r.telda + r.no}>
-                <td><span className={"rk r" + (r.rank <= 3 ? r.rank : "x")}>{r.rank}</span></td>
-                <td>{r.no}</td>
+                <td><span className="rk" style={TOP_RANK_STYLE[r.rank] ?? { background: "#e2e8f0", color: "#475569" }}>{r.rank}</span></td>
                 <td>{r.witel}</td>
                 <td><b>{r.telda}</b></td>
                 {r.v.map((v, k) => {
