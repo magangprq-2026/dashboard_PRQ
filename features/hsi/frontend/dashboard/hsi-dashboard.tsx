@@ -54,6 +54,18 @@ import {
   type ReportRow,
   type ReportTable,
 } from "@/features/hsi/domain/reporting/reporting";
+import {
+  applyReportHistory,
+  emptyReportHistory,
+  hasActualValue,
+  normalizeHistoryDays,
+  previousFromGrowth,
+  rankReportRows,
+  safeGrowthValue,
+  safeRatioValue,
+  type ReportHistory,
+  type ReportHistoryTable,
+} from "@/features/hsi/domain/reporting/history";
 
 const STORAGE_KEY = "hsi-master-rows-v1";
 const SAVED_AT_KEY = "hsi-master-saved-at-v1";
@@ -67,14 +79,6 @@ const AUTO_SAVE_DELAY_MS = 3 * 60 * 1000;
 
 type View = "home" | "master" | "report" | "stf";
 
-type ReportHistoryTable = Record<string, (number | null)[]>;
-type ReportHistory = {
-  branch: ReportHistoryTable;
-  stfBranch: ReportHistoryTable;
-  stfWitel: ReportHistoryTable;
-  updatedAt: string | null;
-  witel: ReportHistoryTable;
-};
 type PeriodArchiveEntry = {
   label: string;
   periodKey: string;
@@ -540,22 +544,6 @@ function latestPopulatedDay(tables: ReportTable[]) {
   return Math.max(1, latest);
 }
 
-function emptyReportHistory(): ReportHistory {
-  return { branch: {}, stfBranch: {}, stfWitel: {}, updatedAt: null, witel: {} };
-}
-
-function hasActualValue(value: number | null | undefined) {
-  return typeof value === "number" && Number.isFinite(value) && value > 0;
-}
-
-function normalizeHistoryDays(value: unknown, fallbackLength: number) {
-  const source = Array.isArray(value) ? value : [];
-  return Array.from({ length: fallbackLength }, (_, index) => {
-    const numeric = Number(source[index]);
-    return Number.isFinite(numeric) && numeric > 0 ? numeric : null;
-  });
-}
-
 function parseReportHistory(value: string | null): ReportHistory | null {
   if (!value) return null;
   try {
@@ -799,118 +787,6 @@ function mergeReportHistory(previous: ReportHistory | null, report: ComputedRepo
     stfWitel: mergeHistoryTable(base.stfWitel, report.targetStf.witel, report.excludedDay ?? null),
     updatedAt,
     witel: mergeHistoryTable(base.witel, report.witel, report.excludedDay ?? null),
-  };
-}
-
-function safeRatioValue(numerator: number, denominator: number) {
-  return denominator === 0 ? null : numerator / denominator;
-}
-
-function safeGrowthValue(current: number, previous: number) {
-  return previous === 0 ? null : current / previous - 1;
-}
-
-function previousFromGrowth(current: number, growth: number | null) {
-  if (growth === null || growth <= -1) return 0;
-  return current / (growth + 1);
-}
-
-function recalcRowFromDays(row: ReportRow, days: (number | null)[]): ReportRow {
-  const mtd = days.reduce<number>((sum, value) => sum + (value ?? 0), 0);
-  const currentMonthYtdBase = row.realYtd - row.mtd;
-  const ytdPrevious = previousFromGrowth(row.realYtd, row.growthYtd);
-  const realYtd = currentMonthYtdBase + mtd;
-
-  return {
-    ...row,
-    achYtd: safeRatioValue(realYtd, row.targetYtd),
-    days,
-    growthFm: safeGrowthValue(mtd, row.realFmPrev),
-    growthMtd: safeGrowthValue(mtd, row.realMtdPrev),
-    growthYtd: safeGrowthValue(realYtd, ytdPrevious),
-    mtd,
-    realYtd,
-    shortageFm: mtd - row.targetFm,
-    shortageYtd: realYtd - row.targetYtd,
-    targetAch: safeRatioValue(mtd, row.targetFm),
-  };
-}
-
-function rankReportRows(rows: ReportRow[], metric: "targetAch" | "achYtd"): ReportRow[] {
-  return rows.map((row) => {
-    const value = row[metric];
-    const next = { ...row };
-    if (metric === "targetAch") {
-      next.rankAch = value === null ? null : rows.filter((candidate) => (candidate.targetAch ?? -Infinity) > value).length + 1;
-    } else {
-      next.rankYtd = value === null ? null : rows.filter((candidate) => (candidate.achYtd ?? -Infinity) > value).length + 1;
-    }
-    return next;
-  });
-}
-
-function recalcTotalFromRows(label: string, rows: ReportRow[], originalTotal: ReportRow): ReportRow {
-  const days = Array.from({ length: originalTotal.days.length }, (_, day) =>
-    rows.reduce<number>((sum, row) => sum + (row.days[day] ?? 0), 0),
-  );
-  const mtd = rows.reduce<number>((sum, row) => sum + row.mtd, 0);
-  const realYtd = rows.reduce<number>((sum, row) => sum + row.realYtd, 0);
-  const ytdPrevious = previousFromGrowth(originalTotal.realYtd, originalTotal.growthYtd);
-
-  return {
-    ...originalTotal,
-    achYtd: safeRatioValue(realYtd, originalTotal.targetYtd),
-    days,
-    growthFm: safeGrowthValue(mtd, originalTotal.realFmPrev),
-    growthMtd: safeGrowthValue(mtd, originalTotal.realMtdPrev),
-    growthYtd: safeGrowthValue(realYtd, ytdPrevious),
-    label,
-    mtd,
-    realYtd,
-    shortageFm: mtd - originalTotal.targetFm,
-    shortageYtd: realYtd - originalTotal.targetYtd,
-    targetAch: safeRatioValue(mtd, originalTotal.targetFm),
-  };
-}
-
-function applyHistoryTable(table: ReportTable, history: ReportHistoryTable, excludedDay: number | null = null): ReportTable {
-  let rows = table.rows.map((row) => {
-    const stored = normalizeHistoryDays(history[row.label], row.days.length);
-    const days = row.days.map((value, index) =>
-      index + 1 === excludedDay ? null : hasActualValue(value) ? value : stored[index],
-    );
-    return recalcRowFromDays(row, days);
-  });
-  rows = rankReportRows(rankReportRows(rows, "targetAch"), "achYtd");
-  return {
-    ...table,
-    rows,
-    total: recalcTotalFromRows(table.total.label, rows, table.total),
-  };
-}
-
-function applyReportHistory(report: ComputedReport, history: ReportHistory | null): ComputedReport {
-  if (!history) return report;
-  const excludedDay = report.excludedDay ?? null;
-  const witel = applyHistoryTable(report.witel, history.witel, excludedDay);
-  const branch = applyHistoryTable(report.branch, history.branch, excludedDay);
-  const stfWitel = applyHistoryTable(report.targetStf.witel, history.stfWitel, excludedDay);
-  const stfBranch = applyHistoryTable(report.targetStf.branch, history.stfBranch, excludedDay);
-  const dailyTrend = witel.total.days.map((value, index) => ({
-    cumulative: witel.total.days.slice(0, index + 1).reduce<number>((sum, dayValue) => sum + (dayValue ?? 0), 0),
-    day: index + 1,
-    realisasi: value ?? 0,
-  }));
-
-  return {
-    ...report,
-    branch,
-    dailyTrend,
-    targetStf: {
-      branch: stfBranch,
-      witel: stfWitel,
-    },
-    witel,
   };
 }
 

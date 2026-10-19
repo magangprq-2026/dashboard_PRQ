@@ -19,6 +19,7 @@ import {
 } from "@/features/telegram/master-upload";
 import { downloadTelegramFile, sendTelegramDocument } from "@/features/telegram/telegram-api";
 import { computeReport as computeHsiReport } from "@/features/hsi/domain/reporting/reporting";
+import { applyReportHistory } from "@/features/hsi/domain/reporting/history";
 
 export const dynamic = "force-dynamic";
 // Parse Excel + tulis ke Neon bisa >10 dtk untuk file besar. Hobby Vercel mengizinkan sampai 60 dtk.
@@ -197,6 +198,12 @@ function formatNumber(value: unknown) {
   return new Intl.NumberFormat("id-ID", {
     maximumFractionDigits: 2,
   }).format(numeric);
+}
+
+// Rasio LTS selalu berupa pecahan (1,5801 = 158,01%), sama seperti tampilan di web.
+function formatRatioPercent(value: unknown) {
+  if (typeof value !== "number" || Number.isNaN(value)) return null;
+  return `${new Intl.NumberFormat("id-ID", { maximumFractionDigits: 2, minimumFractionDigits: 2 }).format(value * 100)}%`;
 }
 
 function formatPercent(value: unknown) {
@@ -473,9 +480,11 @@ function reportActionKeyboard(product: ReportProduct, baseUrl: string): Telegram
 async function buildHsiReportFromState(): Promise<ProductReport | null> {
   const latest = await loadLatestRows("HSI");
   if (!latest) return null;
-  const report = computeHsiReport(latest.rows, latest.savedAt, latest.periodKey);
-  const rkap = report.witel.total;
-  const stf = report.targetStf.witel.total;
+  // Sama persis dengan dashboard web (tampilan default "ALL TELDA"): hitung dari baris MASTER, lalu
+  // terapkan riwayat harian periode itu, dan pakai total TELDA (bukan total WITEL).
+  const report = applyReportHistory(computeHsiReport(latest.rows, latest.savedAt, latest.periodKey), latest.reportHistory);
+  const rkap = report.branch.total;
+  const stf = report.targetStf.branch.total;
   const metrics: ReportMetric[] = [];
   addMetric(metrics, "Achievement RKAP", formatPercent(rkap.targetAch));
   addMetric(metrics, "Achievement YTD", formatPercent(rkap.achYtd));
@@ -651,16 +660,16 @@ async function buildLtsReport(): Promise<ProductReport> {
     addMetric(metrics, "Sales", formatNumber(report.summary.sales));
     addMetric(metrics, "CT0", formatNumber(report.summary.ct0));
     addMetric(metrics, "CAPS", formatNumber(report.summary.caps));
-    addMetric(metrics, "CT0/Sales", formatNumber(total.ct0Ratio));
-    addMetric(metrics, "CAPS/Sales", formatNumber(total.capsRatio));
-    addMetric(metrics, "Score", formatNumber(report.summary.score));
+    addMetric(metrics, "CT0/Sales", formatRatioPercent(total.ct0Ratio));
+    addMetric(metrics, "CAPS/Sales", formatRatioPercent(total.capsRatio));
+    addMetric(metrics, "Score", formatRatioPercent(report.summary.score));
     addMetric(metrics, "Churn", formatNumber(total.churn));
     addMetric(metrics, "Gap", formatNumber(total.gap));
     if (report.summary.bestWitel) {
-      addMetric(metrics, "Best Witel", `${report.summary.bestWitel.label} (${formatNumber(report.summary.bestWitel.score)})`);
+      addMetric(metrics, "Best Witel", `${report.summary.bestWitel.label} (${formatRatioPercent(report.summary.bestWitel.score)})`);
     }
     if (report.summary.bestHotda) {
-      addMetric(metrics, "Best HOTDA", `${report.summary.bestHotda.label} (${formatNumber(report.summary.bestHotda.score)})`);
+      addMetric(metrics, "Best HOTDA", `${report.summary.bestHotda.label} (${formatRatioPercent(report.summary.bestHotda.score)})`);
     }
 
     return {

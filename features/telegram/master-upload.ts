@@ -21,6 +21,7 @@ import {
   type ComputedReport as HsiReport,
   type ReportTable as HsiTable,
 } from "@/features/hsi/domain/reporting/reporting";
+import type { ReportHistory } from "@/features/hsi/domain/reporting/history";
 import { seedData as hsiSeed } from "@/features/hsi/domain/reporting/seed-data";
 import {
   computeWmsReport,
@@ -524,5 +525,10 @@ export async function loadLatestRows(product: ReportableProduct) {
   const entry = asRecord(selected ? archive[selected] : null);
   const rows = Array.isArray(entry.rows) ? (entry.rows as Row[]) : [];
   if (!selected || rows.length === 0) return null;
-  return { periodKey: selected, rows, savedAt: typeof entry.savedAt === "string" ? entry.savedAt : null };
+  return {
+    periodKey: selected,
+    reportHistory: (entry.reportHistory && typeof entry.reportHistory === "object" ? entry.reportHistory : null) as ReportHistory | null,
+    rows,
+    savedAt: typeof entry.savedAt === "string" ? entry.savedAt : null,
+  };
 }
