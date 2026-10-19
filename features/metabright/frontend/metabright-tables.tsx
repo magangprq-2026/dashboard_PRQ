@@ -2,7 +2,6 @@
 
 import type { Dataset, Row } from "@/features/metabright/domain/types";
 import { avg, nf, pillStyle } from "@/features/metabright/domain/utils";
-import { rankPillStyle, rankTotal } from "@/features/shared/dashboard/rank-color";
 
 /* Peta capaian witel per indikator */
 export function Heatmap({ rows, d }: { rows: Row[]; d: Dataset }) {
@@ -52,7 +51,6 @@ export function Heatmap({ rows, d }: { rows: Row[]; d: Dataset }) {
 /* Tabel data skor per indikator */
 export function DataTable({ rows, d }: { rows: Row[]; d: Dataset }) {
   const sorted = [...rows].sort((a, b) => a.rank - b.rank);
-  const rankCount = rankTotal(rows.map((r) => r.rank));
   return (
     <>
       <div className="sub" style={{ marginBottom: 12 }}>
@@ -75,7 +73,7 @@ export function DataTable({ rows, d }: { rows: Row[]; d: Dataset }) {
           <tbody>
             {sorted.map((r) => (
               <tr key={r.telda + r.no}>
-                <td><span className="rk" style={rankPillStyle(r.rank, rankCount)}>{r.rank}</span></td>
+                <td><span className={"rk r" + (r.rank <= 3 ? r.rank : "x")}>{r.rank}</span></td>
                 <td>{r.no}</td>
                 <td>{r.witel}</td>
                 <td><b>{r.telda}</b></td>
