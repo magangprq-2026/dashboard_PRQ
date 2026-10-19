@@ -1,6 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSessionUser, hasPermission, SESSION_COOKIE, verifyMasterUnlockToken } from "@/features/hsi/backend/auth/session";
 import { readWmsDashboardState, writeWmsDashboardState } from "@/features/wms/backend/dashboard-state/db-state";
+import {
+  ACCEPT_BODY_ENCODING_HEADER,
+  BODY_ENCODING_HEADER,
+  GZIP_THRESHOLD_BYTES,
+  gunzipToText,
+  gzipText,
+} from "@/features/shared/http/gzip-json";
 
 export const dynamic = "force-dynamic";
 
@@ -22,7 +29,18 @@ export async function GET(request: NextRequest) {
   }
 
   const result = await readWmsDashboardState();
-  return NextResponse.json(result.body, { status: result.status });
+  const status = result.status ?? 200;
+  // Respons besar dikompres (batas respons fungsi Vercel ±4,5 MB) bila browser mendukung.
+  if (request.headers.get(ACCEPT_BODY_ENCODING_HEADER) === "gzip") {
+    const text = JSON.stringify(result.body);
+    if (text.length > GZIP_THRESHOLD_BYTES) {
+      return new Response(await gzipText(text), {
+        headers: { "Cache-Control": "no-store", "Content-Type": "application/octet-stream", [BODY_ENCODING_HEADER]: "gzip" },
+        status,
+      });
+    }
+  }
+  return NextResponse.json(result.body, { status });
 }
 
 export async function PUT(request: NextRequest) {
@@ -30,7 +48,15 @@ export async function PUT(request: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const payload = await request.json().catch(() => null);
+  let payload: unknown = null;
+  try {
+    payload =
+      request.headers.get(BODY_ENCODING_HEADER) === "gzip"
+        ? JSON.parse(await gunzipToText(await request.arrayBuffer()))
+        : await request.json();
+  } catch {
+    payload = null;
+  }
   const result = await writeWmsDashboardState(payload);
   return NextResponse.json(result.body, { status: result.status });
 }

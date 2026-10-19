@@ -9,11 +9,12 @@ import {
 import {
   buildReportFile,
   detectProduct,
+  importLtsDataset,
   importMaster,
   isAllowedUploader,
   loadLatestRows,
   parseMasterRows,
-  type UploadProduct,
+  type ReportableProduct,
 } from "@/features/telegram/master-upload";
 import { downloadTelegramFile, sendTelegramDocument } from "@/features/telegram/telegram-api";
 import { computeReport as computeHsiReport } from "@/features/hsi/domain/reporting/reporting";
@@ -327,7 +328,7 @@ function myIdKeyboard(): TelegramInlineKeyboardMarkup {
 
 // Upload dari web/bot menulis ke dashboard_state, sedangkan dashboard_records hanya terisi lewat halaman /migration.
 // Keduanya dicek supaya status & last update selalu mengikuti data terbaru.
-const STATE_KEY_BY_PRODUCT: Partial<Record<DashboardProduct, string>> = { HSI: "default", LTS: "lts", WMS: "wms" };
+const STATE_KEY_BY_PRODUCT: Partial<Record<DashboardProduct, string>> = { HSI: "default", LTS: "lts", METABRIGHT: "metabright", WMS: "wms" };
 
 async function stateUpdatedAt(product: DashboardProduct) {
   const key = STATE_KEY_BY_PRODUCT[product];
@@ -684,14 +685,39 @@ async function buildLtsReport(): Promise<ProductReport> {
   };
 }
 
+type MetabrightStatePeriod = { rows?: { rank?: number; telda?: string; total?: number; witel?: string }[] };
+
 async function buildMetabrightReport(): Promise<ProductReport> {
-  const [available, lastUpdate] = await Promise.all([hasProductData("METABRIGHT"), latestProductUpdate("METABRIGHT")]);
+  const [available, lastUpdate, statePayload] = await Promise.all([
+    hasProductData("METABRIGHT"),
+    latestProductUpdate("METABRIGHT"),
+    dashboardStatePayload("metabright").catch(() => null),
+  ]);
+
+  const state = payloadRecord(statePayload);
+  const periods = payloadRecord(state.periods) as Record<string, MetabrightStatePeriod>;
+  const currentLabel =
+    typeof state.cur === "string" && periods[state.cur] ? state.cur : Object.keys(periods)[0];
+  const rows = (currentLabel ? periods[currentLabel]?.rows : null) ?? [];
+  const metrics: ReportMetric[] = [];
+
+  if (rows.length > 0) {
+    const ranked = [...rows].sort((a, b) => (a.rank ?? 9999) - (b.rank ?? 9999));
+    const scores = rows.map((row) => Number(row.total ?? 0));
+    const average = scores.reduce((sum, value) => sum + value, 0) / scores.length;
+    addMetric(metrics, "Jumlah Telda", formatNumber(rows.length));
+    addMetric(metrics, "Rata-rata Skor", formatNumber(average));
+    ranked.slice(0, 3).forEach((row, index) => {
+      addMetric(metrics, `Peringkat ${index + 1}`, `${row.telda ?? "-"} (${row.witel ?? "-"}) - ${formatNumber(row.total) ?? "-"}`);
+    });
+  }
 
   return {
     available,
     lastUpdate: lastUpdate ?? undefined,
-    metrics: [],
-    note: available ? "Data METABRIGHT tersedia di database." : "Data METABRIGHT belum tersedia di dashboard_records.",
+    metrics,
+    note: available ? undefined : "Data METABRIGHT belum diupload lewat menu Upload Data di dashboard MetaBright.",
+    periodLabel: currentLabel,
     product: "METABRIGHT",
     title: "METABRIGHT Report",
   };
@@ -896,7 +922,7 @@ function isReportProduct(value: string): value is ReportProduct {
   return REPORT_PRODUCTS.includes(value as ReportProduct);
 }
 
-const UPLOAD_PRODUCTS: UploadProduct[] = ["HSI", "WMS"];
+const UPLOAD_PRODUCTS: ReportableProduct[] = ["HSI", "WMS"];
 
 function uploadHelpText() {
   return [
@@ -904,7 +930,8 @@ function uploadHelpText() {
     "",
     "Kirim file <b>.xlsx / .xls / .csv</b> langsung ke chat ini sebagai <i>dokumen</i> (pakai ikon 📎 → File).",
     "",
-    "Modul dikenali otomatis dari header kolom. Agar pasti, tulis <b>HSI</b> atau <b>WMS</b> di caption (atau di nama file).",
+    "Modul dikenali otomatis dari header kolom. Agar pasti, tulis <b>HSI</b>, <b>WMS</b>, atau <b>LTS</b> di caption (atau di nama file).",
+    "Untuk <b>LTS</b>, kirim 3 file (SALES, CAPS, CT0); masing-masing dikenali dari header kolomnya.",
     "",
     "Setelah selesai, bot menyimpan data ke dashboard dan mengirim report Excel yang sudah diperbarui.",
     "",
@@ -930,7 +957,7 @@ function notAllowedText() {
   ].join("\n");
 }
 
-async function sendReportFile(botToken: string, chatId: number, product: UploadProduct, prefix = "") {
+async function sendReportFile(botToken: string, chatId: number, product: ReportableProduct, prefix = "") {
   const file = await buildReportFile(product);
   const caption = [
     prefix,
@@ -963,7 +990,16 @@ async function handleDocumentUpload(botToken: string, chatId: number, message: T
       await sendTelegramMessage(
         botToken,
         chatId,
-        "⚠️ Modul tidak dikenali. Kirim ulang file dengan caption <b>HSI</b> atau <b>WMS</b>.",
+        "⚠️ Modul tidak dikenali. Kirim ulang file dengan caption <b>HSI</b>, <b>WMS</b>, atau <b>LTS</b>.",
+      );
+      return;
+    }
+    if (product === "LTS") {
+      const lts = await importLtsDataset(buffer, fileName);
+      await sendTelegramMessage(
+        botToken,
+        chatId,
+        `✅ <b>Upload LTS berhasil</b>: ${escapeHtml(lts.label)}, periode ${escapeHtml(lts.periodKey)} (${lts.rowCount.toLocaleString("id-ID")} baris).\nReport LTS di web tampil setelah ketiga master (SALES, CAPS, CT0) periode yang sama terupload.`,
       );
       return;
     }
@@ -984,7 +1020,7 @@ async function handleDocumentUpload(botToken: string, chatId: number, message: T
   }
 }
 
-async function handleDownload(botToken: string, chatId: number, product: UploadProduct) {
+async function handleDownload(botToken: string, chatId: number, product: ReportableProduct) {
   try {
     const sent = await sendReportFile(botToken, chatId, product);
     if (!sent.ok) await sendTelegramMessage(botToken, chatId, "❌ File report gagal dikirim. Coba lagi sebentar.");
@@ -1049,7 +1085,7 @@ async function handleCallbackQuery(botToken: string, callbackQuery: TelegramCall
   }
 
   if (data.startsWith("dl:")) {
-    const product = data.slice(3) as UploadProduct;
+    const product = data.slice(3) as ReportableProduct;
     if (UPLOAD_PRODUCTS.includes(product)) await handleDownload(botToken, chatId, product);
     return;
   }

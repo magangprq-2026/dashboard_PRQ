@@ -215,3 +215,17 @@ export async function dbUpsert<T>(
     return { data: null, error: plainError(error), status: 500 };
   }
 }
+
+// Query mentah berparameter untuk operasi atomik (mis. menggabung satu dataset ke state JSONB tanpa
+// membaca-lalu-menulis ulang seluruh state). Pemanggil wajib memakai $1, $2, ... untuk semua nilai.
+export async function dbQuery<T>(text: string, params: unknown[]): Promise<DbResult<T>> {
+  const url = databaseUrl();
+  if (!url) return { data: null, error: NOT_CONFIGURED, status: 503 };
+  try {
+    const sql = neon(url);
+    const rows = await sql.query(text, params);
+    return { data: normalizeRows<T>(rows), error: null, status: 200 };
+  } catch (error) {
+    return { data: null, error: plainError(error), status: 500 };
+  }
+}

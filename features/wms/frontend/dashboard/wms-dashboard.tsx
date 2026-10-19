@@ -36,6 +36,7 @@ import {
   type DashboardPeriodPart,
 } from "@/features/shared/dashboard/date-label";
 import { DashboardMetricCard, type DashboardMetricTone } from "@/features/shared/dashboard/metric-card";
+import { ACCEPT_BODY_ENCODING_HEADER, BODY_ENCODING_HEADER, GZIP_THRESHOLD_BYTES, canGzip, gunzipToText, gzipText } from "@/features/shared/http/gzip-json";
 import { MasterUnlockModal } from "@/features/shared/dashboard/master-unlock-modal";
 import { DashboardPeriodFilter, defaultPeriodFilter, type DashboardPeriodFilterState } from "@/features/shared/dashboard/period-filter";
 import {
@@ -603,7 +604,10 @@ function ensureCurrentPeriodArchive(periodArchive: PeriodArchive) {
 
 function preferredActivePeriodKey(periodArchive: PeriodArchive, requestedPeriodKey?: string | null) {
   const currentPeriodKey = currentJakartaPeriodKey();
-  if (periodArchive[currentPeriodKey]) return currentPeriodKey;
+  const hasData = (key: string) =>
+    periodArchive[key]?.rows.some((row) => row.some((cell) => cell !== null && String(cell).trim() !== "")) ?? false;
+  // Bulan berjalan yang masih kosong (placeholder) tidak boleh menutupi periode yang baru diupload.
+  if (periodArchive[currentPeriodKey] && (hasData(currentPeriodKey) || !requestedPeriodKey || !hasData(requestedPeriodKey))) return currentPeriodKey;
   if (requestedPeriodKey && periodArchive[requestedPeriodKey]) return requestedPeriodKey;
   return latestArchivePeriodKey(periodArchive) ?? defaultWmsPeriodKey;
 }
@@ -740,9 +744,16 @@ function persistDashboardStateLocally(state: DashboardPersistedState) {
 }
 
 async function loadDashboardStateFromServer(): Promise<{ configured: boolean; state: DashboardPersistedState | null }> {
-  const response = await fetch("/api/wms/dashboard-state", { cache: "no-store" });
+  const response = await fetch("/api/wms/dashboard-state", {
+    cache: "no-store",
+    headers: canGzip() ? { [ACCEPT_BODY_ENCODING_HEADER]: "gzip" } : undefined,
+  });
   if (!response.ok) throw new Error("Gagal memuat data WMS dari server.");
-  const payload = (await response.json()) as { configured?: boolean; state?: unknown };
+  const payload = (
+    response.headers.get(BODY_ENCODING_HEADER) === "gzip"
+      ? JSON.parse(await gunzipToText(await response.arrayBuffer()))
+      : await response.json()
+  ) as { configured?: boolean; state?: unknown };
   return {
     configured: Boolean(payload.configured),
     state: parsePersistedDashboardState(payload.state),
@@ -750,10 +761,14 @@ async function loadDashboardStateFromServer(): Promise<{ configured: boolean; st
 }
 
 async function saveDashboardStateToServer(state: DashboardPersistedState, masterUnlockToken: string | null): Promise<{ configured: boolean }> {
+  // Data besar dikompres agar muat di batas body request Vercel (±4,5 MB).
+  const json = JSON.stringify(state);
+  const compress = json.length > GZIP_THRESHOLD_BYTES && canGzip();
   const response = await fetch("/api/wms/dashboard-state", {
-    body: JSON.stringify(state),
+    body: compress ? await gzipText(json) : json,
     headers: {
-      "Content-Type": "application/json",
+      "Content-Type": compress ? "application/octet-stream" : "application/json",
+      ...(compress ? { [BODY_ENCODING_HEADER]: "gzip" } : {}),
       ...(masterUnlockToken ? { "x-master-unlock-token": masterUnlockToken } : {}),
     },
     method: "PUT",

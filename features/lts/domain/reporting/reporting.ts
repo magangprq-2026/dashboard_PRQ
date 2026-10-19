@@ -106,6 +106,13 @@ export const ltsDatasetDefinitions: Record<LtsDatasetKey, DatasetDefinition> = {
   },
 };
 
+// Kolom yang disimpan per dataset (sama untuk upload web dan upload Telegram).
+export const ltsCompactColumns: Record<LtsDatasetKey, string[]> = {
+  sales: ["WITEL", "TELKOM_DAERAH", "Jml_Sales", "COUNT_SID", "PRODUK", "PRODUCT", "TYPE_LAYANAN", "NPER", "PERIOD", "LAST_UPDATED_DATE"],
+  caps: ["L_WITEL", "WITEL (NEW_TERRITORY)", "TWITEL", "TELKOM_DAERAH", "L_PRODUK", "PRODUK", "PRODUCT", "COUNT_SID", "SSL_CT0", "SSL_DO", "PERIODE", "PERIODE_CT0_BAYAR"],
+  ct0: ["Witel", "Witel Bill", "OLD_WITEL", "Datel", "Sto Desc", "Produk", "Bayar Desc", "STATUS_PAYMENT", "JML LYN", "Number of Records", "JML_BLN_NUNGGAK", "TUNGGAKAN", "Nper", "TAHUN", "LAST_PERIODE"],
+};
+
 export const ltsReportTabs: { key: LtsReportTabKey; label: string; datasetKey: LtsDatasetKey }[] = [
   { key: "all", label: "LTS ALL", datasetKey: "sales" },
   { key: "wms", label: "LTS WMS ONLY", datasetKey: "caps" },

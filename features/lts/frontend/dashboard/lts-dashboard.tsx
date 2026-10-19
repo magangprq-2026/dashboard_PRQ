@@ -28,6 +28,7 @@ import type React from "react";
 import type { DashboardPermissions } from "@/features/hsi/backend/auth/session";
 import { dateRangeLabel, formatDataCutoffDate } from "@/features/shared/dashboard/date-label";
 import { DashboardMetricCard, type DashboardMetricTone } from "@/features/shared/dashboard/metric-card";
+import { ACCEPT_BODY_ENCODING_HEADER, BODY_ENCODING_HEADER, GZIP_THRESHOLD_BYTES, canGzip, gunzipToText, gzipText } from "@/features/shared/http/gzip-json";
 import { MasterUnlockModal } from "@/features/shared/dashboard/master-unlock-modal";
 import { DashboardPeriodFilter, defaultPeriodFilter, type DashboardPeriodFilterState } from "@/features/shared/dashboard/period-filter";
 import { DashboardStatusPill, type DashboardStatusTone } from "@/features/shared/dashboard/status-pill";
@@ -47,6 +48,7 @@ import {
 import {
   computeLtsReport,
   ltsDatasetDefinitions,
+  ltsCompactColumns,
   ltsReportTabs,
   periodKeyFromLtsRows,
   periodLabelFromLtsPeriodKey,
@@ -98,11 +100,7 @@ const navItems: { id: View; label: string; icon: React.ComponentType<{ className
   { id: "report", label: "Report LTS", icon: FileSpreadsheet },
 ];
 
-const compactColumns: Record<LtsDatasetKey, string[]> = {
-  sales: ["WITEL", "TELKOM_DAERAH", "Jml_Sales", "COUNT_SID", "PRODUK", "PRODUCT", "TYPE_LAYANAN", "NPER", "PERIOD", "LAST_UPDATED_DATE"],
-  caps: ["L_WITEL", "WITEL (NEW_TERRITORY)", "TWITEL", "TELKOM_DAERAH", "L_PRODUK", "PRODUK", "PRODUCT", "COUNT_SID", "SSL_CT0", "SSL_DO", "PERIODE", "PERIODE_CT0_BAYAR"],
-  ct0: ["Witel", "Witel Bill", "OLD_WITEL", "Datel", "Sto Desc", "Produk", "Bayar Desc", "STATUS_PAYMENT", "JML LYN", "Number of Records", "JML_BLN_NUNGGAK", "TUNGGAKAN", "Nper", "TAHUN", "LAST_PERIODE"],
-};
+const compactColumns = ltsCompactColumns;
 
 const pageBackground =
   "min-h-screen bg-[#071426] bg-[radial-gradient(circle_at_90%_8%,rgba(124,74,196,0.18),transparent_32%),radial-gradient(circle_at_8%_24%,rgba(109,58,168,0.16),transparent_28%),linear-gradient(135deg,#061426_0%,#0a1f3b_50%,#07182d_100%)] text-slate-950";
@@ -504,9 +502,16 @@ function readLocalState() {
 }
 
 async function loadStateFromServer(): Promise<{ configured: boolean; state: DashboardPersistedState | null }> {
-  const response = await fetch("/api/lts/dashboard-state", { cache: "no-store" });
+  const response = await fetch("/api/lts/dashboard-state", {
+    cache: "no-store",
+    headers: canGzip() ? { [ACCEPT_BODY_ENCODING_HEADER]: "gzip" } : undefined,
+  });
   if (!response.ok) throw new Error("Gagal memuat data LTS dari server.");
-  const payload = (await response.json()) as { configured?: boolean; state?: unknown };
+  const payload = (
+    response.headers.get(BODY_ENCODING_HEADER) === "gzip"
+      ? JSON.parse(await gunzipToText(await response.arrayBuffer()))
+      : await response.json()
+  ) as { configured?: boolean; state?: unknown };
   return {
     configured: Boolean(payload.configured),
     state: parsePersistedState(payload.state),
@@ -516,10 +521,13 @@ async function loadStateFromServer(): Promise<{ configured: boolean; state: Dash
 async function saveStateToServer(state: DashboardPersistedState, masterUnlockToken: string | null): Promise<{ configured: boolean }> {
   // Fungsi serverless Vercel menolak body > ~4,5 MB. `datasets` identik dengan salah satu periode di
   // `datasetArchive` (dibangun ulang saat dibaca), jadi tidak perlu ikut dikirim: payload jadi separuhnya.
+  const json = JSON.stringify({ ...state, datasets: {} });
+  const compress = json.length > GZIP_THRESHOLD_BYTES && canGzip();
   const response = await fetch("/api/lts/dashboard-state", {
-    body: JSON.stringify({ ...state, datasets: {} }),
+    body: compress ? await gzipText(json) : json,
     headers: {
-      "Content-Type": "application/json",
+      "Content-Type": compress ? "application/octet-stream" : "application/json",
+      ...(compress ? { [BODY_ENCODING_HEADER]: "gzip" } : {}),
       ...(masterUnlockToken ? { "x-master-unlock-token": masterUnlockToken } : {}),
     },
     method: "PUT",
