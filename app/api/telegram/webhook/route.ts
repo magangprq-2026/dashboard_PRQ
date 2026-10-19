@@ -6,7 +6,21 @@ import {
   type MasterRow as WmsMasterRow,
 } from "@/features/wms/domain/reporting/reporting";
 
+import {
+  buildReportFile,
+  detectProduct,
+  importMaster,
+  isAllowedUploader,
+  loadLatestRows,
+  parseMasterRows,
+  type UploadProduct,
+} from "@/features/telegram/master-upload";
+import { downloadTelegramFile, sendTelegramDocument } from "@/features/telegram/telegram-api";
+import { computeReport as computeHsiReport } from "@/features/hsi/domain/reporting/reporting";
+
 export const dynamic = "force-dynamic";
+// Parse Excel + tulis ke Neon bisa >10 dtk untuk file besar. Hobby Vercel mengizinkan sampai 60 dtk.
+export const maxDuration = 60;
 
 type TelegramChat = {
   id: number;
@@ -19,8 +33,16 @@ type TelegramUser = {
   username?: string;
 };
 
+type TelegramDocument = {
+  file_id: string;
+  file_name?: string;
+  file_size?: number;
+};
+
 type TelegramMessage = {
+  caption?: string;
   chat?: TelegramChat;
+  document?: TelegramDocument;
   from?: TelegramUser;
   message_id?: number;
   text?: string;
@@ -254,6 +276,8 @@ function mainMenuKeyboard(): TelegramInlineKeyboardMarkup {
       [{ callback_data: "menu:status", text: "📊 Status Dashboard" }],
       [{ callback_data: "menu:report", text: "📈 Lihat Report" }],
       [{ callback_data: "menu:lastupdate", text: "🕒 Last Update" }],
+      [{ callback_data: "menu:upload", text: "📤 Upload Data" }],
+      [{ callback_data: "menu:download", text: "📥 Unduh Report (Excel)" }],
       [{ callback_data: "menu:portal", text: "🌐 Buka PRIME Portal" }],
       [{ callback_data: "menu:myid", text: "🪪 My ID" }],
     ],
@@ -301,30 +325,50 @@ function myIdKeyboard(): TelegramInlineKeyboardMarkup {
   };
 }
 
+// Upload dari web/bot menulis ke dashboard_state, sedangkan dashboard_records hanya terisi lewat halaman /migration.
+// Keduanya dicek supaya status & last update selalu mengikuti data terbaru.
+const STATE_KEY_BY_PRODUCT: Partial<Record<DashboardProduct, string>> = { HSI: "default", LTS: "lts", WMS: "wms" };
+
+async function stateUpdatedAt(product: DashboardProduct) {
+  const key = STATE_KEY_BY_PRODUCT[product];
+  if (!key) return null;
+  const result = await dbGet<{ updated_at?: string | null }[]>(
+    process.env.DASHBOARD_STATE_TABLE || "dashboard_state",
+    `select=updated_at&key=eq.${encodeURIComponent(key)}&limit=1`,
+  );
+  if (result.error) throw new Error("STATE_STATUS_QUERY_FAILED");
+  return result.data?.[0]?.updated_at ?? null;
+}
+
 async function hasProductData(product: DashboardProduct) {
+  if (await stateUpdatedAt(product)) return true;
   const result = await dbGet<DashboardPresenceRow[]>("dashboard_records", `select=product&product=eq.${product}&limit=1`);
   if (result.error) throw new Error("PRODUCT_STATUS_QUERY_FAILED");
   return Boolean(result.data?.length);
 }
 
-async function latestDataUpdate() {
-  const result = await dbGet<ReportingImportRow[]>(
-    "reporting_imports",
-    "select=imported_at,updated_at&row_count=gt.0&order=imported_at.desc&limit=1",
-  );
-  if (result.error) throw new Error("LAST_UPDATE_QUERY_FAILED");
-  const latest = result.data?.[0];
-  return formatJakartaTimestamp(latest?.imported_at ?? latest?.updated_at);
+function latestIso(values: (string | null | undefined)[]) {
+  const times = values.filter((v): v is string => Boolean(v)).map((v) => ({ t: new Date(v).getTime(), v })).filter((x) => !Number.isNaN(x.t));
+  return times.sort((a, b) => b.t - a.t)[0]?.v ?? null;
 }
 
-async function latestProductUpdate(product: DashboardProduct) {
+async function latestProductUpdateIso(product: DashboardProduct) {
   const result = await dbGet<ReportingImportRow[]>(
     "reporting_imports",
     `select=imported_at,updated_at&product=eq.${product}&row_count=gt.0&order=imported_at.desc&limit=1`,
   );
   if (result.error) throw new Error("PRODUCT_LAST_UPDATE_QUERY_FAILED");
   const latest = result.data?.[0];
-  return formatJakartaTimestamp(latest?.imported_at ?? latest?.updated_at);
+  return latestIso([latest?.imported_at ?? latest?.updated_at, await stateUpdatedAt(product)]);
+}
+
+async function latestDataUpdate() {
+  const all = await Promise.all(DASHBOARD_PRODUCTS.map((product) => latestProductUpdateIso(product)));
+  return formatJakartaTimestamp(latestIso(all));
+}
+
+async function latestProductUpdate(product: DashboardProduct) {
+  return formatJakartaTimestamp(await latestProductUpdateIso(product));
 }
 
 async function latestPeriodFor(product: DashboardProduct, datasetKind?: string) {
@@ -424,7 +468,33 @@ function reportActionKeyboard(product: ReportProduct, baseUrl: string): Telegram
   };
 }
 
+async function buildHsiReportFromState(): Promise<ProductReport | null> {
+  const latest = await loadLatestRows("HSI");
+  if (!latest) return null;
+  const report = computeHsiReport(latest.rows, latest.savedAt, latest.periodKey);
+  const rkap = report.witel.total;
+  const stf = report.targetStf.witel.total;
+  const metrics: ReportMetric[] = [];
+  addMetric(metrics, "Achievement RKAP", formatPercent(rkap.targetAch));
+  addMetric(metrics, "Achievement YTD", formatPercent(rkap.achYtd));
+  addMetric(metrics, "Shortage RKAP", formatNumber(rkap.shortageFm));
+  addMetric(metrics, "Achievement STF", formatPercent(stf.targetAch));
+  addMetric(metrics, "Shortage STF", formatNumber(stf.shortageFm));
+  const top = [...report.branch.rows].filter((r) => typeof r.targetAch === "number").sort((a, b) => Number(b.targetAch) - Number(a.targetAch))[0];
+  if (top) addMetric(metrics, "Top TELDA", `${top.label} (${formatPercent(top.targetAch)})`);
+  return {
+    available: true,
+    lastUpdate: formatJakartaTimestamp(latest.savedAt) ?? undefined,
+    metrics,
+    periodLabel: report.periodLabel,
+    product: "HSI",
+    title: "HSI Report",
+  };
+}
+
 async function buildHsiReport(): Promise<ProductReport> {
+  const fromState = await buildHsiReportFromState().catch(() => null);
+  if (fromState) return fromState;
   const periodKey = await latestPeriodFor("HSI", "computed_witel_rows_total");
   const [rkapRows, stfRows, branchRows, lastUpdate] = await Promise.all([
     recordsFor("HSI", "computed_witel_rows_total", periodKey, 1),
@@ -464,7 +534,35 @@ async function buildHsiReport(): Promise<ProductReport> {
   };
 }
 
+async function buildWmsReportFromState(): Promise<ProductReport | null> {
+  const latest = await loadLatestRows("WMS");
+  if (!latest) return null;
+  const report = computeWmsReport(latest.rows as WmsMasterRow[], latest.periodKey);
+  const total = report.witel.total;
+  const top = [...report.telda.rows].filter((r) => typeof r.ach === "number").sort((a, b) => Number(b.ach) - Number(a.ach))[0];
+  const metrics: ReportMetric[] = [];
+  addMetric(metrics, "Target FM", formatNumber(total.targetFm));
+  addMetric(metrics, "Realisasi MTD", formatNumber(total.mtd));
+  addMetric(metrics, "Achievement FM", formatPercent(total.ach));
+  addMetric(metrics, "Shortage FM", formatNumber(total.shortageFm));
+  addMetric(metrics, "Target YTD", formatNumber(total.targetYtd));
+  addMetric(metrics, "Realisasi YTD", formatNumber(total.realYtd));
+  addMetric(metrics, "Achievement YTD", formatPercent(total.achYtd));
+  addMetric(metrics, "Shortage YTD", formatNumber(total.shortageYtd));
+  if (top) addMetric(metrics, "Top TELDA", `${top.label} (${formatPercent(top.ach)})`);
+  return {
+    available: true,
+    lastUpdate: formatJakartaTimestamp(latest.savedAt ?? report.latestUpdatedAt) ?? undefined,
+    metrics,
+    periodLabel: report.periodLabel,
+    product: "WMS",
+    title: "WMS Report",
+  };
+}
+
 async function buildWmsReport(): Promise<ProductReport> {
+  const fromState = await buildWmsReportFromState().catch(() => null);
+  if (fromState) return fromState;
   const periodKey = await latestPeriodFor("WMS", "master_rows");
   const [rows, lastUpdate] = await Promise.all([
     recordsFor("WMS", "master_rows", null, 2000),
@@ -689,6 +787,8 @@ function helpText() {
     "/status",
     "/report",
     "/lastupdate",
+    "/upload — cara upload data MASTER",
+    "/download — unduh report Excel",
     "/portal",
     "/myid",
     "Lihat Telegram User ID Anda",
@@ -796,6 +896,104 @@ function isReportProduct(value: string): value is ReportProduct {
   return REPORT_PRODUCTS.includes(value as ReportProduct);
 }
 
+const UPLOAD_PRODUCTS: UploadProduct[] = ["HSI", "WMS"];
+
+function uploadHelpText() {
+  return [
+    "📤 <b>Upload Data MASTER</b>",
+    "",
+    "Kirim file <b>.xlsx / .xls / .csv</b> langsung ke chat ini sebagai <i>dokumen</i> (pakai ikon 📎 → File).",
+    "",
+    "Modul dikenali otomatis dari header kolom. Agar pasti, tulis <b>HSI</b> atau <b>WMS</b> di caption (atau di nama file).",
+    "",
+    "Setelah selesai, bot menyimpan data ke dashboard dan mengirim report Excel yang sudah diperbarui.",
+    "",
+    "Format kolom harus sama dengan upload MASTER di web. Maks. 20 MB.",
+  ].join("\n");
+}
+
+function downloadMenuKeyboard(): TelegramInlineKeyboardMarkup {
+  return {
+    inline_keyboard: [
+      UPLOAD_PRODUCTS.map((p) => ({ callback_data: `dl:${p}`, text: `${productIcon(p)} ${p}` })),
+      [{ callback_data: "menu:home", text: "🏠 Menu Utama" }],
+    ],
+  };
+}
+
+function notAllowedText() {
+  return [
+    "⛔ <b>Akses upload ditolak</b>",
+    "",
+    "Akun Telegram Anda belum terdaftar sebagai pengunggah data.",
+    "Kirim User ID Anda (lihat /myid) ke admin untuk didaftarkan.",
+  ].join("\n");
+}
+
+async function sendReportFile(botToken: string, chatId: number, product: UploadProduct, prefix = "") {
+  const file = await buildReportFile(product);
+  const caption = [
+    prefix,
+    `📈 <b>Report ${product}</b>`,
+    `Periode: ${escapeHtml(file.periodLabel)}`,
+    file.updatedAt ? `Update: ${escapeHtml(formatJakartaTimestamp(file.updatedAt) ?? "-")}` : "",
+  ].filter(Boolean).join("\n");
+  return sendTelegramDocument(botToken, chatId, file.filename, file.bytes, caption);
+}
+
+async function handleDocumentUpload(botToken: string, chatId: number, message: TelegramMessage) {
+  const document = message.document!;
+  const userId = telegramUserId(message.from);
+  if (!isAllowedUploader(userId)) {
+    await sendTelegramMessage(botToken, chatId, notAllowedText());
+    return;
+  }
+
+  const fileName = document.file_name ?? "upload.xlsx";
+  if (!/\.(xlsx|xlsm|xls|csv)$/i.test(fileName)) {
+    await sendTelegramMessage(botToken, chatId, "⚠️ Format file harus <b>.xlsx, .xls, atau .csv</b>.");
+    return;
+  }
+
+  await sendTelegramMessage(botToken, chatId, `⏳ Memproses <b>${escapeHtml(fileName)}</b>…`);
+  try {
+    const buffer = await downloadTelegramFile(botToken, document.file_id);
+    const product = detectProduct(fileName, message.caption, buffer);
+    if (!product) {
+      await sendTelegramMessage(
+        botToken,
+        chatId,
+        "⚠️ Modul tidak dikenali. Kirim ulang file dengan caption <b>HSI</b> atau <b>WMS</b>.",
+      );
+      return;
+    }
+    const rows = parseMasterRows(product, buffer);
+    const summary = await importMaster(product, rows);
+    const periods = summary.periods.map((p) => `${escapeHtml(p.label)} (${p.rows.toLocaleString("id-ID")} baris)`).join(", ");
+    const sent = await sendReportFile(botToken, chatId, product, `✅ <b>Upload ${product} berhasil</b>: ${periods}\n`);
+    if (!sent.ok) {
+      await sendTelegramMessage(
+        botToken,
+        chatId,
+        `✅ Data ${product} tersimpan (${periods}), tetapi file report gagal dikirim. Coba /download.`,
+      );
+    }
+  } catch (error) {
+    const reason = error instanceof Error ? error.message : "Terjadi kesalahan.";
+    await sendTelegramMessage(botToken, chatId, `❌ <b>Upload gagal</b>\n${escapeHtml(reason)}`);
+  }
+}
+
+async function handleDownload(botToken: string, chatId: number, product: UploadProduct) {
+  try {
+    const sent = await sendReportFile(botToken, chatId, product);
+    if (!sent.ok) await sendTelegramMessage(botToken, chatId, "❌ File report gagal dikirim. Coba lagi sebentar.");
+  } catch (error) {
+    const reason = error instanceof Error ? error.message : "Terjadi kesalahan.";
+    await sendTelegramMessage(botToken, chatId, `❌ <b>Report ${product} belum bisa dibuat</b>\n${escapeHtml(reason)}`);
+  }
+}
+
 async function handleCallbackQuery(botToken: string, callbackQuery: TelegramCallbackQuery, baseUrl: string) {
   await answerCallbackQuery(botToken, callbackQuery.id);
 
@@ -835,6 +1033,24 @@ async function handleCallbackQuery(botToken: string, callbackQuery: TelegramCall
     await sendOrEditTelegramMessage(botToken, chatId, messageId, await lastUpdateText(), {
       replyMarkup: lastUpdateKeyboard(),
     });
+    return;
+  }
+
+  if (data === "menu:upload") {
+    await sendOrEditTelegramMessage(botToken, chatId, messageId, uploadHelpText(), { replyMarkup: helpKeyboard() });
+    return;
+  }
+
+  if (data === "menu:download") {
+    await sendOrEditTelegramMessage(botToken, chatId, messageId, "📥 <b>Unduh Report Excel</b>\n\nPilih modul:", {
+      replyMarkup: downloadMenuKeyboard(),
+    });
+    return;
+  }
+
+  if (data.startsWith("dl:")) {
+    const product = data.slice(3) as UploadProduct;
+    if (UPLOAD_PRODUCTS.includes(product)) await handleDownload(botToken, chatId, product);
     return;
   }
 
@@ -911,6 +1127,11 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ ok: true, ignored: true });
   }
 
+  if (message?.document) {
+    await handleDocumentUpload(botToken, chatId, message);
+    return NextResponse.json({ ok: true });
+  }
+
   if (!text) {
     return NextResponse.json({ ok: true, ignored: true });
   }
@@ -961,6 +1182,18 @@ export async function POST(request: NextRequest) {
     if (!result.ok) {
       return NextResponse.json({ error: result.error }, { status: 502 });
     }
+    return NextResponse.json({ ok: true });
+  }
+
+  if (command === "/upload") {
+    await sendTelegramMessage(botToken, chatId, uploadHelpText(), { replyMarkup: helpKeyboard() });
+    return NextResponse.json({ ok: true });
+  }
+
+  if (command === "/download") {
+    await sendTelegramMessage(botToken, chatId, "📥 <b>Unduh Report Excel</b>\n\nPilih modul:", {
+      replyMarkup: downloadMenuKeyboard(),
+    });
     return NextResponse.json({ ok: true });
   }
 
