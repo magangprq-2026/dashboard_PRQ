@@ -3,6 +3,8 @@
 // sumber data yang sama dengan dashboard web, jadi hasilnya langsung terlihat di web.
 import * as XLSX from "xlsx";
 import { readDashboardStateByKey, writeDashboardStateByKey } from "@/features/shared/backend/database/dashboard-state";
+import { parseSheet as parseMetabrightSheet } from "@/features/metabright/domain/parse";
+import { periodLabel as metabrightPeriodLabel } from "@/features/metabright/domain/utils";
 import { dbQuery } from "@/features/shared/backend/database/db";
 import {
   ltsCompactColumns,
@@ -28,13 +30,13 @@ import {
   type WmsReportRow,
 } from "@/features/wms/domain/reporting/reporting";
 
-export type UploadProduct = "HSI" | "WMS" | "LTS";
+export type UploadProduct = "HSI" | "WMS" | "LTS" | "METABRIGHT";
 // Produk yang punya report Excel untuk diunduh (LTS belum).
 export type ReportableProduct = "HSI" | "WMS";
 type Cell = string | number | boolean | null;
 type Row = Cell[];
 
-const STATE_KEYS: Record<UploadProduct, string> = { HSI: "default", LTS: "lts", WMS: "wms" };
+const STATE_KEYS: Record<UploadProduct, string> = { HSI: "default", LTS: "lts", METABRIGHT: "metabright", WMS: "wms" };
 const MONTHS = ["JANUARI", "FEBRUARI", "MARET", "APRIL", "MEI", "JUNI", "JULI", "AGUSTUS", "SEPTEMBER", "OKTOBER", "NOVEMBER", "DESEMBER"];
 const HEADERS: Record<ReportableProduct, string[]> = { HSI: hsiHeaders, WMS: wmsHeaders };
 
@@ -169,7 +171,7 @@ export function detectLtsDataset(buffer: Buffer): LtsDatasetKey | null {
 /** Tebak modul dari caption/nama file, lalu dari header kolom. */
 export function detectProduct(fileName: string, caption: string | undefined, buffer: Buffer): UploadProduct | null {
   const hint = `${caption ?? ""} ${fileName}`.toLowerCase();
-  const hinted = (["HSI", "WMS", "LTS"] as const).filter((p) => hint.includes(p.toLowerCase()));
+  const hinted = (["HSI", "WMS", "LTS", "METABRIGHT"] as const).filter((p) => hint.includes(p.toLowerCase()));
   if (hinted.length === 1) return hinted[0];
   try {
     const { rows } = sheetRows(buffer);
@@ -181,6 +183,7 @@ export function detectProduct(fileName: string, caption: string | undefined, buf
     /* ditangani pemanggil */
   }
   if (detectLtsDataset(buffer)) return "LTS";
+  if (isMetabrightFile(buffer)) return "METABRIGHT";
   return null;
 }
 
@@ -214,6 +217,44 @@ export function parseMasterRows(product: ReportableProduct, buffer: Buffer): Row
     .filter((row) => row.some((cell) => cell !== null && String(cell).trim() !== ""));
   if (result.length === 0) throw new Error(`Sheet ${name} tidak berisi data MASTER.`);
   return result;
+}
+
+// ---------- MetaBright ----------
+function metabrightGrid(buffer: Buffer): unknown[][] {
+  const wb = XLSX.read(buffer, { type: "buffer" });
+  const ws = wb.Sheets[wb.SheetNames[0]];
+  if (!ws) throw new Error("File tidak memiliki sheet yang bisa dibaca.");
+  return XLSX.utils.sheet_to_json<unknown[]>(ws, { header: 1, raw: false, defval: "" });
+}
+
+export function isMetabrightFile(buffer: Buffer) {
+  try {
+    const grid = metabrightGrid(buffer);
+    const h = grid.findIndex((r) => r && r.some((c) => String(c).trim().toUpperCase() === "TELDA"));
+    return h >= 2 && grid[h].some((c) => String(c).trim().toUpperCase() === "TARGET");
+  } catch {
+    return false;
+  }
+}
+
+// Disimpan di state key "metabright" dengan bentuk yang sama seperti halaman web: { cur, periods, savedAt }.
+// Digabung atomik di SQL supaya beberapa file periode berbeda yang dikirim bersamaan tidak saling menimpa.
+export async function importMetabright(buffer: Buffer, fileName: string, caption?: string) {
+  const dataset = parseMetabrightSheet(metabrightGrid(buffer) as unknown[][]);
+  const fromName = (text: string) => (/(20\d{2})(0[1-9]|1[0-2])/.test(text) ? metabrightPeriodLabel(text) : null);
+  const label = fromName(fileName) ?? fromName(caption ?? "") ?? metabrightPeriodLabel(currentJakartaPeriodKey());
+  const table = process.env.DASHBOARD_STATE_TABLE || "dashboard_state";
+  if (!/^[a-z_][a-z0-9_]*$/.test(table)) throw new Error("Nama tabel state tidak valid.");
+  const savedAt = new Date().toISOString();
+  const text =
+    `insert into public."${table}" (key, payload, updated_at) ` +
+    `values ('metabright', jsonb_build_object('cur', $1::text, 'periods', jsonb_build_object($1::text, $2::jsonb), 'savedAt', $3::text), now()) ` +
+    `on conflict (key) do update set updated_at = now(), payload = ` +
+    `jsonb_set(coalesce(public."${table}".payload, '{}'::jsonb) || jsonb_build_object('cur', $1::text, 'savedAt', $3::text, ` +
+    `'periods', coalesce(public."${table}".payload->'periods', '{}'::jsonb) || jsonb_build_object($1::text, $2::jsonb)), '{cur}', to_jsonb($1::text), true)`;
+  const result = await dbQuery(text, [label, JSON.stringify(dataset), savedAt]);
+  if (result.error) throw new Error("Gagal menyimpan data MetaBright ke database.");
+  return { label, telda: dataset.rows.length, indicators: dataset.indicators.length, warn: dataset.warn };
 }
 
 // ---------- LTS ----------

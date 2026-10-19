@@ -10,6 +10,7 @@ import {
   buildReportFile,
   detectProduct,
   importLtsDataset,
+  importMetabright,
   importMaster,
   isAllowedUploader,
   loadLatestRows,
@@ -930,7 +931,7 @@ function uploadHelpText() {
     "",
     "Kirim file <b>.xlsx / .xls / .csv</b> langsung ke chat ini sebagai <i>dokumen</i> (pakai ikon 📎 → File).",
     "",
-    "Modul dikenali otomatis dari header kolom. Agar pasti, tulis <b>HSI</b>, <b>WMS</b>, atau <b>LTS</b> di caption (atau di nama file).",
+    "Modul dikenali otomatis dari header kolom. Agar pasti, tulis <b>HSI</b>, <b>WMS</b>, <b>LTS</b>, atau <b>MetaBright</b> di caption (atau di nama file).",
     "Untuk <b>LTS</b>, kirim 3 file (SALES, CAPS, CT0); masing-masing dikenali dari header kolomnya.",
     "",
     "Setelah selesai, bot menyimpan data ke dashboard dan mengirim report Excel yang sudah diperbarui.",
@@ -990,7 +991,16 @@ async function handleDocumentUpload(botToken: string, chatId: number, message: T
       await sendTelegramMessage(
         botToken,
         chatId,
-        "⚠️ Modul tidak dikenali. Kirim ulang file dengan caption <b>HSI</b>, <b>WMS</b>, atau <b>LTS</b>.",
+        "⚠️ Modul tidak dikenali. Kirim ulang file dengan caption <b>HSI</b>, <b>WMS</b>, <b>LTS</b>, atau <b>MetaBright</b>.",
+      );
+      return;
+    }
+    if (product === "METABRIGHT") {
+      const mb = await importMetabright(buffer, fileName, message.caption);
+      await sendTelegramMessage(
+        botToken,
+        chatId,
+        `✅ <b>Upload MetaBright berhasil</b>: ${escapeHtml(mb.label)} (${mb.telda.toLocaleString("id-ID")} telda, ${mb.indicators} indikator).${mb.warn ? `\n⚠️ ${escapeHtml(mb.warn)}` : ""}`,
       );
       return;
     }
