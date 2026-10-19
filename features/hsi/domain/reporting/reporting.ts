@@ -15,6 +15,9 @@ type PreviousConfig = {
   fm: Record<string, CellValue>;
   ytd: Record<string, CellValue>;
   ytdPrev: Record<string, CellValue>;
+  // Total Jan..bulan lalu tahun berjalan (sheet REAL kolom AL..AT). Bila ada, REAL YTD = ytdBase + MTD bulan ini,
+  // sama seperti kolom AX di workbook R24.
+  ytdBase?: Record<string, number>;
 };
 type ReportingPeriod = {
   days: number;
@@ -65,6 +68,8 @@ export type ComputedReport = {
     branch: ReportTable;
   };
   dailyTrend: { day: number; realisasi: number; cumulative: number }[];
+  // Tanggal (hari ke-) yang sengaja belum dihitung karena data diambil sebelum jam 12 siang; null bila tidak ada.
+  excludedDay?: number | null;
   validation: { checked: number; mismatches: number; notes: string[] };
 };
 
@@ -178,7 +183,7 @@ function normalizeWorkbookDate(value: CellValue, period: ReportingPeriod): Date 
   return new Date(parsed.getFullYear(), parsed.getDate() - 1, parsed.getMonth() + 1);
 }
 
-function buildCounts(masterRows: MasterRow[], key: "witel" | "datel", period: ReportingPeriod) {
+function buildCounts(masterRows: MasterRow[], key: "witel" | "datel", period: ReportingPeriod, skipDay: number | null = null) {
   const index = key === "witel" ? MASTER_INDEX.witel : MASTER_INDEX.datel;
   const counts = new Map<string, number[]>();
 
@@ -200,6 +205,8 @@ function buildCounts(masterRows: MasterRow[], key: "witel" | "datel", period: Re
     }
     const day = normalizedDate.getDate();
     if (day < 1 || day > period.days) continue;
+    // Rumus workbook: kolom tanggal hari ini dikosongkan bila data diambil sebelum jam 12 siang.
+    if (skipDay !== null && day === skipDay) continue;
     const existing = counts.get(label) ?? Array(period.days).fill(0);
     existing[day - 1] += 1;
     counts.set(label, existing);
@@ -245,7 +252,8 @@ function makeRow(
   const realMtdPrev = toNumber(previous.mtd[label]);
   const realFmPrev = toNumber(previous.fm[label]);
   const excelYtd = toNumber(previous.ytd[label]);
-  const ytdBaseBeforeCurrentMonth = Math.max(0, excelYtd - referenceMtd);
+  const dynamicYtdBase = previous.ytdBase?.[label];
+  const ytdBaseBeforeCurrentMonth = dynamicYtdBase !== undefined ? dynamicYtdBase : Math.max(0, excelYtd - referenceMtd);
   const realYtd = ytdBaseBeforeCurrentMonth + mtd;
   const ytdPrev = toNumber(previous.ytdPrev[label]);
 
@@ -310,6 +318,74 @@ function makeTotal(label: string, rows: ReportRow[], dayCount: number): ReportRo
   return total;
 }
 
+type JakartaClock = { year: number; month: number; day: number; hour: number };
+
+function jakartaClock(savedAt: string | null): JakartaClock | null {
+  if (!savedAt) return null;
+  const time = new Date(savedAt);
+  if (Number.isNaN(time.getTime())) return null;
+  const jakarta = new Date(time.getTime() + 7 * 60 * 60 * 1000);
+  return {
+    year: jakarta.getUTCFullYear(),
+    month: jakarta.getUTCMonth() + 1,
+    day: jakarta.getUTCDate(),
+    hour: jakarta.getUTCHours(),
+  };
+}
+
+// Hari yang dipakai untuk "REAL MTD bulan lalu". Meniru 'REAL '!AH1 di workbook R24:
+// sebelum jam 12 siang memakai kemarin, selain itu hari ini; bila tanggal itu akhir bulan, memakai tanggal akhir bulan sebelumnya.
+// Periode yang sudah lewat memakai satu bulan penuh.
+function previousMonthCutDay(clock: JakartaClock | null, period: ReportingPeriod, lastDataDay: number) {
+  if (!clock) return lastDataDay;
+  if (period.year * 12 + period.month < clock.year * 12 + clock.month) return 31;
+  const baseDate = new Date(Date.UTC(clock.year, clock.month - 1, clock.hour < 12 ? clock.day - 1 : clock.day));
+  const nextDay = new Date(baseDate.getTime() + 24 * 60 * 60 * 1000);
+  const isMonthEnd = nextDay.getUTCDate() === 1;
+  if (!isMonthEnd) return baseDate.getUTCDate();
+  return new Date(Date.UTC(baseDate.getUTCFullYear(), baseDate.getUTCMonth(), 0)).getUTCDate();
+}
+
+function sumNumbers(values: number[]) {
+  return values.reduce((sum, value) => sum + value, 0);
+}
+
+function previousFromReal(
+  source: Record<string, { daily: number[]; months: number[]; ytdPrev: number }>,
+  fallbackYtdPrev: Record<string, CellValue>,
+  cutDay: number,
+  monthIndex: number,
+): PreviousConfig {
+  const config: PreviousConfig = { mtd: {}, fm: {}, ytd: {}, ytdPrev: { ...fallbackYtdPrev }, ytdBase: {} };
+  for (const [label, row] of Object.entries(source)) {
+    config.mtd[label] = sumNumbers(row.daily.slice(0, Math.max(0, cutDay)));
+    config.fm[label] = sumNumbers(row.daily);
+    config.ytdBase![label] = sumNumbers(row.months.slice(0, monthIndex));
+    config.ytd[label] = config.ytdBase![label];
+    config.ytdPrev[label] = row.ytdPrev;
+  }
+  return config;
+}
+
+type PreviousSet = { witel: PreviousConfig; branch: PreviousConfig; dynamic: boolean };
+
+function buildPreviousSet(period: ReportingPeriod, clock: JakartaClock | null, lastDataDay: number): PreviousSet {
+  const reference = seedData.realReference;
+  if (reference && reference.forPeriod === period.year * 100 + period.month) {
+    const cutDay = previousMonthCutDay(clock, period, lastDataDay);
+    return {
+      witel: previousFromReal(reference.witel, seedData.previousByWitel.ytdPrev as Record<string, CellValue>, cutDay, period.monthIndex),
+      branch: previousFromReal(reference.telda, seedData.previousByBranch.ytdPrev as Record<string, CellValue>, cutDay, period.monthIndex),
+      dynamic: true,
+    };
+  }
+  return {
+    witel: seedData.previousByWitel as PreviousConfig,
+    branch: seedData.previousByBranch as PreviousConfig,
+    dynamic: false,
+  };
+}
+
 type ReferenceKind = "witel" | "branch" | "stfWitel" | "stfBranch";
 
 function referenceMtd(label: string, kind: ReferenceKind) {
@@ -341,6 +417,7 @@ function makeGroupedBranchRow(
   memberRows: ReportRow[],
   referenceKind: "branch" | "stfBranch",
   period: ReportingPeriod,
+  previousSet: PreviousSet,
 ) {
   const daysRaw = sumDayArrays(memberRows.map((row) => row.days.map((day) => day ?? 0)), period.days);
   const target: TargetConfig = {
@@ -350,7 +427,24 @@ function makeGroupedBranchRow(
     ),
     targetYtd: memberRows.reduce((sum, row) => sum + row.targetYtd, 0),
   };
-  const previous: PreviousConfig = {
+  const dynamicPrevious: PreviousConfig | null = previousSet.dynamic
+    ? {
+        mtd: { [group.label]: memberRows.reduce((sum, row) => sum + row.realMtdPrev, 0) },
+        fm: { [group.label]: memberRows.reduce((sum, row) => sum + row.realFmPrev, 0) },
+        ytd: {},
+        ytdBase: {
+          [group.label]: group.members.reduce((sum, member) => sum + (previousSet.branch.ytdBase?.[member] ?? 0), 0),
+        },
+        ytdPrev: {
+          [group.label]: previousYtdPrevOrMemberSum(
+            seedData.previousByBranch.ytdPrev as Record<string, CellValue>,
+            group.label,
+            group.members,
+          ),
+        },
+      }
+    : null;
+  const previous: PreviousConfig = dynamicPrevious ?? {
     mtd: {
       [group.label]: previousValueOrMemberSum(
         seedData.previousByBranch.mtd as Record<string, CellValue>,
@@ -413,6 +507,7 @@ function makeBranchRows(
   datelCounts: Map<string, number[]>,
   referenceKind: "branch" | "stfBranch",
   period: ReportingPeriod,
+  previousSet: PreviousSet,
 ) {
   const teldaRows = new Map(
     targets.map((target) => {
@@ -421,7 +516,7 @@ function makeBranchRows(
         target.label,
         target,
         days,
-        seedData.previousByBranch as PreviousConfig,
+        previousSet.branch,
         referenceMtd(target.label, referenceKind),
         period.monthIndex,
       );
@@ -431,7 +526,7 @@ function makeBranchRows(
 
   const rows = seedData.branchGroups.map((group) => {
     const memberRows = group.members.map((member) => teldaRows.get(member)).filter(Boolean) as ReportRow[];
-    return makeGroupedBranchRow(group, memberRows, referenceKind, period);
+    return makeGroupedBranchRow(group, memberRows, referenceKind, period, previousSet);
   });
   rankDescending(rows, "targetAch");
   rankDescending(rows, "achYtd");
@@ -440,15 +535,26 @@ function makeBranchRows(
 
 export function computeReport(masterRows: MasterRow[], savedAt: string | null = null, periodKey?: string): ComputedReport {
   const period = periodFromKey(periodKey);
-  const witelCounts = buildCounts(masterRows, "witel", period);
-  const datelCounts = buildCounts(masterRows, "datel", period);
+  const clock = jakartaClock(savedAt);
+  // Sebelum jam 12 siang, tanggal hari ini belum dihitung (aturan kolom tanggal di workbook R24).
+  const skipDay =
+    clock && clock.year === period.year && clock.month === period.month && clock.hour < 12 ? clock.day : null;
+  const witelCounts = buildCounts(masterRows, "witel", period, skipDay);
+  const datelCounts = buildCounts(masterRows, "datel", period, skipDay);
+  let lastDataDay = 0;
+  for (const counts of witelCounts.values()) {
+    counts.forEach((value, index) => {
+      if (value > 0) lastDataDay = Math.max(lastDataDay, index + 1);
+    });
+  }
+  const previousSet = buildPreviousSet(period, clock, lastDataDay);
 
   const witelRows = seedData.witelTargets.map((target) =>
     makeRow(
       target.label,
       target,
       witelCounts.get(target.label) ?? Array(period.days).fill(0),
-      seedData.previousByWitel as PreviousConfig,
+      previousSet.witel,
       referenceMtd(target.label, "witel"),
       period.monthIndex,
     ),
@@ -463,7 +569,7 @@ export function computeReport(masterRows: MasterRow[], savedAt: string | null = 
         target.label,
         target,
         days,
-        seedData.previousByBranch as PreviousConfig,
+        previousSet.branch,
         referenceMtd(target.label, "branch"),
         period.monthIndex,
       );
@@ -473,7 +579,7 @@ export function computeReport(masterRows: MasterRow[], savedAt: string | null = 
 
   const branchRows = seedData.branchGroups.map((group) => {
     const memberRows = group.members.map((member) => teldaRows.get(member)).filter(Boolean) as ReportRow[];
-    return makeGroupedBranchRow(group, memberRows, "branch", period);
+    return makeGroupedBranchRow(group, memberRows, "branch", period, previousSet);
   });
   rankDescending(branchRows, "targetAch");
   rankDescending(branchRows, "achYtd");
@@ -483,7 +589,7 @@ export function computeReport(masterRows: MasterRow[], savedAt: string | null = 
       target.label,
       target,
       witelCounts.get(target.label) ?? Array(period.days).fill(0),
-      seedData.previousByWitel as PreviousConfig,
+      previousSet.witel,
       referenceMtd(target.label, "stfWitel"),
       period.monthIndex,
     ),
@@ -491,7 +597,7 @@ export function computeReport(masterRows: MasterRow[], savedAt: string | null = 
   rankDescending(stfWitelRows, "targetAch");
   rankDescending(stfWitelRows, "achYtd");
 
-  const stfBranchRows = makeBranchRows(seedData.stfTeldaTargets, datelCounts, "stfBranch", period);
+  const stfBranchRows = makeBranchRows(seedData.stfTeldaTargets, datelCounts, "stfBranch", period, previousSet);
 
   const witelTotal = makeTotal("Total", witelRows, period.days);
   const branchTotal = makeTotal("YK JATENG SELATAN", branchRows, period.days);
@@ -542,6 +648,7 @@ export function computeReport(masterRows: MasterRow[], savedAt: string | null = 
       },
     },
     dailyTrend: trend,
+    excludedDay: skipDay,
     validation: {
       checked: v1.checked + v2.checked + v3.checked + v4.checked,
       mismatches: v1.mismatches + v2.mismatches + v3.mismatches + v4.mismatches,

@@ -754,11 +754,13 @@ function createReportHistory(report: ComputedReport, updatedAt: string | null): 
   };
 }
 
-function mergeHistoryTable(previous: ReportHistoryTable, table: ReportTable) {
+function mergeHistoryTable(previous: ReportHistoryTable, table: ReportTable, excludedDay: number | null = null) {
   const next: ReportHistoryTable = { ...previous };
   for (const row of [...table.rows, table.total]) {
     const stored = normalizeHistoryDays(next[row.label], row.days.length);
-    next[row.label] = row.days.map((value, index) => (hasActualValue(value) ? value : stored[index]));
+    next[row.label] = row.days.map((value, index) =>
+      index + 1 === excludedDay ? null : hasActualValue(value) ? value : stored[index],
+    );
   }
   return next;
 }
@@ -766,11 +768,11 @@ function mergeHistoryTable(previous: ReportHistoryTable, table: ReportTable) {
 function mergeReportHistory(previous: ReportHistory | null, report: ComputedReport, updatedAt: string | null): ReportHistory {
   const base = previous ?? emptyReportHistory();
   return {
-    branch: mergeHistoryTable(base.branch, report.branch),
-    stfBranch: mergeHistoryTable(base.stfBranch, report.targetStf.branch),
-    stfWitel: mergeHistoryTable(base.stfWitel, report.targetStf.witel),
+    branch: mergeHistoryTable(base.branch, report.branch, report.excludedDay ?? null),
+    stfBranch: mergeHistoryTable(base.stfBranch, report.targetStf.branch, report.excludedDay ?? null),
+    stfWitel: mergeHistoryTable(base.stfWitel, report.targetStf.witel, report.excludedDay ?? null),
     updatedAt,
-    witel: mergeHistoryTable(base.witel, report.witel),
+    witel: mergeHistoryTable(base.witel, report.witel, report.excludedDay ?? null),
   };
 }
 
@@ -845,10 +847,12 @@ function recalcTotalFromRows(label: string, rows: ReportRow[], originalTotal: Re
   };
 }
 
-function applyHistoryTable(table: ReportTable, history: ReportHistoryTable): ReportTable {
+function applyHistoryTable(table: ReportTable, history: ReportHistoryTable, excludedDay: number | null = null): ReportTable {
   let rows = table.rows.map((row) => {
     const stored = normalizeHistoryDays(history[row.label], row.days.length);
-    const days = row.days.map((value, index) => (hasActualValue(value) ? value : stored[index]));
+    const days = row.days.map((value, index) =>
+      index + 1 === excludedDay ? null : hasActualValue(value) ? value : stored[index],
+    );
     return recalcRowFromDays(row, days);
   });
   rows = rankReportRows(rankReportRows(rows, "targetAch"), "achYtd");
@@ -861,10 +865,11 @@ function applyHistoryTable(table: ReportTable, history: ReportHistoryTable): Rep
 
 function applyReportHistory(report: ComputedReport, history: ReportHistory | null): ComputedReport {
   if (!history) return report;
-  const witel = applyHistoryTable(report.witel, history.witel);
-  const branch = applyHistoryTable(report.branch, history.branch);
-  const stfWitel = applyHistoryTable(report.targetStf.witel, history.stfWitel);
-  const stfBranch = applyHistoryTable(report.targetStf.branch, history.stfBranch);
+  const excludedDay = report.excludedDay ?? null;
+  const witel = applyHistoryTable(report.witel, history.witel, excludedDay);
+  const branch = applyHistoryTable(report.branch, history.branch, excludedDay);
+  const stfWitel = applyHistoryTable(report.targetStf.witel, history.stfWitel, excludedDay);
+  const stfBranch = applyHistoryTable(report.targetStf.branch, history.stfBranch, excludedDay);
   const dailyTrend = witel.total.days.map((value, index) => ({
     cumulative: witel.total.days.slice(0, index + 1).reduce<number>((sum, dayValue) => sum + (dayValue ?? 0), 0),
     day: index + 1,
