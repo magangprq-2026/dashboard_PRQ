@@ -127,16 +127,21 @@ function escapeHtml(value: string) {
     .replace(/"/g, "&quot;");
 }
 
+// Vercel mengisi VERCEL_PROJECT_PRODUCTION_URL tanpa "https://" (hanya host), sedangkan tombol link
+// Telegram wajib memakai skema URL lengkap. Tambahkan https:// bila belum ada.
+function configuredAppUrl() {
+  const configuredUrl = (process.env.NEXT_PUBLIC_APP_URL || process.env.VERCEL_PROJECT_PRODUCTION_URL || "").trim();
+  if (!configuredUrl) return null;
+  const withScheme = /^https?:\/\//i.test(configuredUrl) ? configuredUrl : `https://${configuredUrl}`;
+  return withScheme.replace(/\/$/, "");
+}
+
 function portalUrl(request: NextRequest) {
-  const configuredUrl = process.env.NEXT_PUBLIC_APP_URL ?? process.env.VERCEL_PROJECT_PRODUCTION_URL;
-  if (configuredUrl) return configuredUrl.replace(/\/$/, "");
-  return request.nextUrl.origin;
+  return configuredAppUrl() ?? request.nextUrl.origin;
 }
 
 function portalUrlFromOrigin(origin: string) {
-  const configuredUrl = process.env.NEXT_PUBLIC_APP_URL ?? process.env.VERCEL_PROJECT_PRODUCTION_URL;
-  if (configuredUrl) return configuredUrl.replace(/\/$/, "");
-  return origin.replace(/\/$/, "");
+  return configuredAppUrl() ?? origin.replace(/\/$/, "");
 }
 
 function normalizeTelegramCommand(text: string) {
@@ -518,7 +523,20 @@ async function buildLtsReport(): Promise<ProductReport> {
     latestProductUpdate("LTS"),
   ]);
   const stateRecord = payloadRecord(state);
-  const datasets = payloadRecord(stateRecord.datasets) as LtsReportSourceDatasets;
+  // State di server hanya menyimpan datasetArchive; dataset aktif diambil dari periode yang dipilih.
+  const storedDatasets = payloadRecord(stateRecord.datasets);
+  const archive = payloadRecord(stateRecord.datasetArchive);
+  const selectedPeriodKey = typeof stateRecord.selectedPeriodKey === "string" ? stateRecord.selectedPeriodKey : null;
+  const datasets = (
+    Object.keys(storedDatasets).length > 0
+      ? storedDatasets
+      : Object.fromEntries(
+          (["sales", "caps", "ct0"] as const).flatMap((datasetKey) => {
+            const entry = selectedPeriodKey ? payloadRecord(archive[datasetKey])[selectedPeriodKey] : null;
+            return entry ? [[datasetKey, entry]] : [];
+          }),
+        )
+  ) as LtsReportSourceDatasets;
   const datasetLabels = [
     datasets.sales || salesRows.length ? "Sales" : null,
     datasets.caps || capsRows.length ? "CAPS" : null,

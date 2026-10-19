@@ -47,3 +47,6 @@ next-env.d.ts
 
 .vercel
 .env*
+
+# pnpm store lokal (jangan ikut ke GitHub/Vercel)
+.pnpm-store

@@ -18,7 +18,7 @@ export async function readDashboardStateByKey(stateKey: string): Promise<Dashboa
   if (result.status === 503) return { body: { configured: false, state: null } };
   if (result.error) {
     return {
-      body: { configured: true, error: "Gagal membaca state dashboard dari Supabase." },
+      body: { configured: true, error: "Gagal membaca state dashboard dari database." },
       status: result.status,
     };
   }
@@ -49,14 +49,14 @@ export async function writeDashboardStateByKey(stateKey: string, payload: unknow
 
   if (result.status === 503) {
     return {
-      body: { configured: false, error: "Supabase belum dikonfigurasi di Vercel." },
+      body: { configured: false, error: "Database Neon belum dikonfigurasi di Vercel (isi DATABASE_URL)." },
       status: 503,
     };
   }
 
   if (result.error) {
     return {
-      body: { configured: true, error: "Gagal menyimpan state dashboard ke Supabase." },
+      body: { configured: true, error: "Gagal menyimpan state dashboard ke database." },
       status: result.status,
     };
   }

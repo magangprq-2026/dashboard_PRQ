@@ -513,8 +513,10 @@ async function loadStateFromServer(): Promise<{ configured: boolean; state: Dash
 }
 
 async function saveStateToServer(state: DashboardPersistedState, masterUnlockToken: string | null): Promise<{ configured: boolean }> {
+  // Fungsi serverless Vercel menolak body > ~4,5 MB. `datasets` identik dengan salah satu periode di
+  // `datasetArchive` (dibangun ulang saat dibaca), jadi tidak perlu ikut dikirim: payload jadi separuhnya.
   const response = await fetch("/api/lts/dashboard-state", {
-    body: JSON.stringify(state),
+    body: JSON.stringify({ ...state, datasets: {} }),
     headers: {
       "Content-Type": "application/json",
       ...(masterUnlockToken ? { "x-master-unlock-token": masterUnlockToken } : {}),
