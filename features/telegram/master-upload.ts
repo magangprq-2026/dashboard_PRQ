@@ -58,7 +58,56 @@ function headerMatches(row: unknown[] | undefined, headers: string[]) {
   return headers.every((h, i) => h.toUpperCase() === first[i]);
 }
 
+// Banyak file "MASTER" HSI berekstensi .xls/.csv sebenarnya teks dengan pemisah "#" (sama seperti upload di web).
+// SheetJS membacanya sebagai satu kolom, jadi dibaca manual di sini.
+function parseDelimitedRows(text: string, delimiter: string) {
+  const rows: string[][] = [];
+  let row: string[] = [];
+  let cell = "";
+  let quoted = false;
+  for (let index = 0; index < text.length; index += 1) {
+    const char = text[index];
+    const next = text[index + 1];
+    if (char === '"' && quoted && next === '"') {
+      cell += '"';
+      index += 1;
+    } else if (char === '"') {
+      quoted = !quoted;
+    } else if (char === delimiter && !quoted) {
+      row.push(cell);
+      cell = "";
+    } else if ((char === "\n" || char === "\r") && !quoted) {
+      if (char === "\r" && next === "\n") index += 1;
+      row.push(cell);
+      if (row.some((item) => item.trim() !== "")) rows.push(row);
+      row = [];
+      cell = "";
+    } else {
+      cell += char;
+    }
+  }
+  row.push(cell);
+  if (row.some((item) => item.trim() !== "")) rows.push(row);
+  return rows;
+}
+
+function isBinaryWorkbook(buffer: Buffer) {
+  const zip = buffer[0] === 0x50 && buffer[1] === 0x4b; // .xlsx
+  const ole = buffer[0] === 0xd0 && buffer[1] === 0xcf && buffer[2] === 0x11 && buffer[3] === 0xe0; // .xls
+  return zip || ole;
+}
+
+function delimitedRows(buffer: Buffer): unknown[][] | null {
+  if (isBinaryWorkbook(buffer)) return null;
+  const text = buffer.toString("utf8").replace(/^\uFEFF/, "");
+  if (!text.slice(0, 2000).includes("#")) return null;
+  const parsed = parseDelimitedRows(text, "#");
+  return parsed.length > 0 && parsed[0].length > 1 ? parsed : null;
+}
+
 function sheetRows(buffer: Buffer) {
+  const delimited = delimitedRows(buffer);
+  if (delimited) return { name: "MASTER", rows: delimited };
   const workbook = XLSX.read(buffer, { cellDates: true, type: "buffer" });
   const name = workbook.SheetNames.find((n) => n.trim().toUpperCase() === "MASTER") ?? workbook.SheetNames[0];
   if (!name) throw new Error("File tidak memiliki sheet yang bisa dibaca.");
