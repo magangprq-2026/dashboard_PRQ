@@ -23,6 +23,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type React from "react";
 import type { DashboardPermissions } from "@/features/hsi/backend/auth/session";
 import { CompactRankingInsight } from "@/features/shared/dashboard/compact-ranking-insight";
+import { rankColor, rankPillStyle, rankTotal } from "@/features/shared/dashboard/rank-color";
 import {
   cutoffDateFromPeriodPart,
   dateRangeLabel,
@@ -520,12 +521,22 @@ async function createWmsReportPng(report: WmsComputedReport, timestamp: Date) {
     }
     y += rowHeight;
 
+    const dataRowsOnly = tableRows.filter((item) => item.label !== "Total" && item.label !== "YK JATENG SELATAN");
+    const rankCountAch = rankTotal(dataRowsOnly.map((item) => item.rank));
+    const rankCountYtd = rankTotal(dataRowsOnly.map((item) => item.rankYtd));
     tableRows.forEach((row, rowIndex) => {
       const isTotal = row.label === "Total" || row.label === "YK JATENG SELATAN";
       x = 40;
       ctx.font = isTotal ? "700 11px Arial" : "600 11px Arial";
       for (const column of columns) {
-        ctx.fillStyle = bodyFill(column.key, rowIndex, isTotal, row);
+        const cellRank = isTotal
+          ? null
+          : column.key === "rank"
+            ? rankColor(row.rank, rankCountAch)
+            : column.key === "rankYtd"
+              ? rankColor(row.rankYtd, rankCountYtd)
+              : null;
+        ctx.fillStyle = cellRank ? cellRank.bg : bodyFill(column.key, rowIndex, isTotal, row);
         ctx.fillRect(x, y, column.width, rowHeight);
         ctx.strokeStyle = "#e7e5e4";
         ctx.strokeRect(x, y, column.width, rowHeight);
@@ -542,7 +553,7 @@ async function createWmsReportPng(report: WmsComputedReport, timestamp: Date) {
         else if (column.key === "rankYtd") value = formatNumber(row.rankYtd);
         else if (column.key === "shortageYtd") value = formatNumber(row.shortageYtd);
         else if (column.key.startsWith("d")) value = formatNumber(row.days[Number(column.key.slice(1))]);
-        ctx.fillStyle = bodyTextFill(column.key, isTotal, row);
+        ctx.fillStyle = cellRank ? cellRank.fg : bodyTextFill(column.key, isTotal, row);
         ctx.textAlign = column.key === "label" ? "left" : "right";
         ctx.fillText(value, column.key === "label" ? x + 6 : x + column.width - 6, y + 18);
         x += column.width;
@@ -2033,6 +2044,9 @@ function ReportTable({
 }) {
   const dayCount = rows[0]?.days.length ?? 31;
   const latestDay = Math.max(1, Math.min(dayCount, cutoffDay));
+  const dataRowsOnly = rows.filter((item) => item.label !== "Total" && item.label !== "YK JATENG SELATAN");
+  const rankCountAch = rankTotal(dataRowsOnly.map((item) => item.rank));
+  const rankCountYtd = rankTotal(dataRowsOnly.map((item) => item.rankYtd));
   const summaryHeaders = [
     "MTD",
     "TARGET ACH",
@@ -2149,7 +2163,16 @@ function ReportTable({
                   ))}
                   {values.map((value, index) => (
                     <td key={summaryHeaders[index]} className={`w-[80px] min-w-[80px] max-w-[80px] border-b border-r border-stone-200 px-1.5 py-1.5 text-right ${total ? "bg-[#140b06] text-white" : wmsSummaryCellClass(summaryMeta[index])}`}>
-                      {summaryMeta[index] === "rank" && value ? <span className="rounded-full bg-[#2a1a10] px-2 py-0.5 text-[11px] font-semibold text-white">{value}</span> : value}
+                      {summaryMeta[index] === "rank" && value && !total ? (
+                        <span
+                          className="inline-block min-w-[26px] rounded-full bg-[#2a1a10] px-2 py-0.5 text-center text-[11px] font-bold text-white"
+                          style={rankPillStyle(index === 2 ? row.rank : row.rankYtd, index === 2 ? rankCountAch : rankCountYtd)}
+                        >
+                          {value}
+                        </span>
+                      ) : (
+                        value
+                      )}
                     </td>
                   ))}
                 </tr>

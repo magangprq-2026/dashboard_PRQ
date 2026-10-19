@@ -45,6 +45,7 @@ import { DashboardMetricCard, type DashboardMetricTone } from "@/features/shared
 import { MasterUnlockModal } from "@/features/shared/dashboard/master-unlock-modal";
 import { DashboardPeriodFilter, defaultPeriodFilter, type DashboardPeriodFilterState } from "@/features/shared/dashboard/period-filter";
 import { DashboardStatusPill } from "@/features/shared/dashboard/status-pill";
+import { rankColor, rankPillStyle, rankTotal } from "@/features/shared/dashboard/rank-color";
 import {
   computeReport,
   initialMasterRows,
@@ -1845,11 +1846,15 @@ function ReportDataRow({
   previousMonthLabel,
   row,
   total = false,
+  rankCountAch = 0,
+  rankCountYtd = 0,
 }: {
   latestDay: number;
   previousMonthLabel: string;
   row: ReportRow;
   total?: boolean;
+  rankCountAch?: number;
+  rankCountYtd?: number;
 }) {
   const summaryHeaders = summaryHeadersFor(previousMonthLabel);
   const baseClass = total
@@ -1909,7 +1914,16 @@ function ReportDataRow({
       ))}
       {summaryValues.map((value, index) => (
         <td key={summaryHeaders[index]} className={`w-[80px] min-w-[80px] max-w-[80px] border-b border-r border-slate-200 px-1.5 py-1.5 text-right ${summaryCellClass(summaryMeta[index])}`}>
-          {summaryMeta[index] === "rank" && value ? <span className="rounded-full bg-slate-900 px-2 py-0.5 text-[11px] font-semibold text-white">{value}</span> : value}
+          {summaryMeta[index] === "rank" && value && !total ? (
+            <span
+              className="inline-block min-w-[26px] rounded-full bg-slate-900 px-2 py-0.5 text-center text-[11px] font-bold text-white"
+              style={rankPillStyle(index === 2 ? row.rankAch : row.rankYtd, index === 2 ? rankCountAch : rankCountYtd)}
+            >
+              {value}
+            </span>
+          ) : (
+            value
+          )}
         </td>
       ))}
     </tr>
@@ -1941,6 +1955,8 @@ function ReportTableView({
 }) {
   const dayCount = table.rows[0]?.days.length ?? 30;
   const summaryHeaders = summaryHeadersFor(previousMonthLabel);
+  const rankCountAch = rankTotal(table.rows.map((row) => row.rankAch));
+  const rankCountYtd = rankTotal(table.rows.map((row) => row.rankYtd));
   return (
     <section className={`${panelClass} overflow-hidden`}>
       <div className="border-b border-slate-800 bg-[linear-gradient(135deg,#020617,#0f172a_58%,#155e75)] px-5 py-4 text-center text-white">
@@ -1990,7 +2006,7 @@ function ReportTableView({
           </thead>
           <tbody>
             {table.rows.map((row) => (
-              <ReportDataRow key={row.label} row={row} latestDay={latestDay} previousMonthLabel={previousMonthLabel} />
+              <ReportDataRow key={row.label} row={row} latestDay={latestDay} previousMonthLabel={previousMonthLabel} rankCountAch={rankCountAch} rankCountYtd={rankCountYtd} />
             ))}
             <ReportDataRow row={table.total} latestDay={latestDay} previousMonthLabel={previousMonthLabel} total />
           </tbody>
@@ -2067,6 +2083,8 @@ function drawReportTableCanvas(
   totalWidth: number,
 ) {
   const summaryHeaders = summaryHeadersFor(previousMonthLabel);
+  const rankCountAch = rankTotal(table.rows.map((row) => row.rankAch));
+  const rankCountYtd = rankTotal(table.rows.map((row) => row.rankYtd));
   const labelWidth = reportCanvasColumns.label;
   const targetWidth = reportCanvasColumns.target;
   const dayWidth = reportCanvasColumns.day;
@@ -2198,7 +2216,7 @@ function drawReportTableCanvas(
     const summaryValues = [
       { value: formatNumber(row.mtd), fill: "#ccfbf1", color: "#134e4a", bold: true },
       { value: formatPercent(row.targetAch), tone: achievementTone(row.targetAch) },
-      { value: formatNumber(row.rankAch), fill: "#f1f5f9", color: "#0f172a", bold: true },
+      { value: formatNumber(row.rankAch), fill: "#f1f5f9", color: "#0f172a", bold: true, rank: total ? null : rankColor(row.rankAch, rankCountAch) },
       { value: formatNumber(row.shortageFm), fill: row.shortageFm < 0 ? "#ffe4e6" : "#dcfce7", color: row.shortageFm < 0 ? "#9f1239" : "#166534", bold: true },
       { value: formatNumber(row.realMtdPrev), fill: "#f8fafc", color: "#334155" },
       { value: formatPercent(row.growthMtd), fill: baseFill, color: "#0f172a" },
@@ -2207,13 +2225,16 @@ function drawReportTableCanvas(
       { value: formatNumber(row.realYtd), fill: "#ccfbf1", color: "#134e4a", bold: true },
       { value: formatPercent(row.achYtd), tone: achievementTone(row.achYtd) },
       { value: formatPercent(row.growthYtd), fill: baseFill, color: "#0f172a" },
-      { value: formatNumber(row.rankYtd), fill: "#f1f5f9", color: "#0f172a", bold: true },
+      { value: formatNumber(row.rankYtd), fill: "#f1f5f9", color: "#0f172a", bold: true, rank: total ? null : rankColor(row.rankYtd, rankCountYtd) },
       { value: formatNumber(row.shortageYtd), fill: row.shortageYtd < 0 ? "#ffe4e6" : "#dcfce7", color: row.shortageYtd < 0 ? "#9f1239" : "#166534", bold: true },
     ];
     for (const item of summaryValues) {
       let fill = item.fill ?? baseFill;
       let color = item.color ?? "#0f172a";
-      if (item.tone === "good") {
+      if (item.rank) {
+        fill = item.rank.bg;
+        color = item.rank.fg;
+      } else if (item.tone === "good") {
         fill = "#dcfce7";
         color = "#166534";
       } else if (item.tone === "near") {

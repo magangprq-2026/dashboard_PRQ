@@ -269,33 +269,47 @@ function productLabel(product: DashboardProduct) {
   return `${productIcon(product)} ${product}`;
 }
 
+const MENU_DIVIDER = "▬▬▬▬▬▬▬▬▬▬▬▬▬▬";
+
 function mainMenuText() {
   return [
-    "👋 <b>Selamat datang di PRIME Bot</b>",
+    "✨ <b>PRIME Bot</b>",
+    "<i>Performance Reporting &amp; Monitoring</i>",
+    MENU_DIVIDER,
     "",
-    "PRIME membantu Anda memantau performa dan update dashboard HSI, WMS, LTS, dan MetaBright langsung dari Telegram.",
+    "👋 Selamat datang! Pantau performa dan update dashboard langsung dari Telegram.",
     "",
-    "Pilih salah satu menu di bawah untuk mulai.",
+    "🏠 <b>HSI</b>   📡 <b>WMS</b>   📶 <b>LTS</b>   ✨ <b>MetaBright</b>",
+    "",
+    MENU_DIVIDER,
+    "👇 <b>Pilih menu di bawah ini</b>",
   ].join("\n");
 }
 
 function mainMenuKeyboard(): TelegramInlineKeyboardMarkup {
   return {
     inline_keyboard: [
-      [{ callback_data: "menu:status", text: "📊 Status Dashboard" }],
-      [{ callback_data: "menu:report", text: "📈 Lihat Report" }],
-      [{ callback_data: "menu:lastupdate", text: "🕒 Last Update" }],
-      [{ callback_data: "menu:upload", text: "📤 Upload Data" }],
-      [{ callback_data: "menu:download", text: "📥 Unduh Report (Excel)" }],
-      [{ callback_data: "menu:portal", text: "🌐 Buka PRIME Portal" }],
-      [{ callback_data: "menu:myid", text: "🪪 My ID" }],
+      // Aksi utama dibuat lebar penuh supaya paling menonjol, sisanya berpasangan 2 kolom.
+      [{ callback_data: "menu:report", text: "📈  LIHAT REPORT  📈" }],
+      [
+        { callback_data: "menu:status", text: "📊 Status" },
+        { callback_data: "menu:lastupdate", text: "🕒 Last Update" },
+      ],
+      [
+        { callback_data: "menu:upload", text: "📤 Upload Data" },
+        { callback_data: "menu:download", text: "📥 Unduh Excel" },
+      ],
+      [
+        { callback_data: "menu:portal", text: "🌐 PRIME Portal" },
+        { callback_data: "menu:myid", text: "🪪 My ID" },
+      ],
     ],
   };
 }
 
 function helpKeyboard(): TelegramInlineKeyboardMarkup {
   return {
-    inline_keyboard: [[{ callback_data: "menu:home", text: "🏠 Menu Utama" }]],
+    inline_keyboard: [[{ callback_data: "menu:home", text: "◀️ Menu Utama" }]],
   };
 }
 
@@ -304,7 +318,7 @@ function statusKeyboard(): TelegramInlineKeyboardMarkup {
     inline_keyboard: [
       [{ callback_data: "status:refresh", text: "🔄 Refresh Status" }],
       [{ callback_data: "menu:report", text: "📈 Lihat Report" }],
-      [{ callback_data: "menu:home", text: "🏠 Menu Utama" }],
+      [{ callback_data: "menu:home", text: "◀️ Menu Utama" }],
     ],
   };
 }
@@ -314,7 +328,7 @@ function lastUpdateKeyboard(): TelegramInlineKeyboardMarkup {
     inline_keyboard: [
       [{ callback_data: "menu:lastupdate", text: "🔄 Refresh" }],
       [{ callback_data: "menu:status", text: "📊 Status Dashboard" }],
-      [{ callback_data: "menu:home", text: "🏠 Menu Utama" }],
+      [{ callback_data: "menu:home", text: "◀️ Menu Utama" }],
     ],
   };
 }
@@ -323,14 +337,14 @@ function portalKeyboard(baseUrl: string): TelegramInlineKeyboardMarkup {
   return {
     inline_keyboard: [
       [{ text: "🚀 Open PRIME Portal", url: `${baseUrl}/portal` }],
-      [{ callback_data: "menu:home", text: "🏠 Menu Utama" }],
+      [{ callback_data: "menu:home", text: "◀️ Menu Utama" }],
     ],
   };
 }
 
 function myIdKeyboard(): TelegramInlineKeyboardMarkup {
   return {
-    inline_keyboard: [[{ callback_data: "menu:home", text: "🏠 Menu Utama" }]],
+    inline_keyboard: [[{ callback_data: "menu:home", text: "◀️ Menu Utama" }]],
   };
 }
 
@@ -420,19 +434,16 @@ async function primeStatusText() {
     const lastUpdate = await latestDataUpdate();
     const lines = [
       "📊 <b>PRIME Dashboard Status</b>",
+      MENU_DIVIDER,
       "",
-      ...statuses.flatMap(({ available, product }) => [
-        `<b>${productLabel(product)}</b>`,
-        available ? "✅ Data tersedia" : "⚠️ Belum ada data",
-        "",
-      ]),
-      "━━━━━━━━━━━━━━",
-      "🗄 <b>Database</b>",
-      "✅ Connected",
+      ...statuses.map(({ available, product }) => `${available ? "🟢" : "🟡"}  <b>${productLabel(product)}</b>  ·  ${available ? "Data tersedia" : "Belum ada data"}`),
+      "",
+      MENU_DIVIDER,
+      "🗄 <b>Database</b>  ·  🟢 Connected",
     ];
 
     if (lastUpdate) {
-      lines.push("", "🕒 <b>Update terakhir</b>", escapeHtml(lastUpdate));
+      lines.push("", `🕒 <b>Update terakhir</b>`, `<code>${escapeHtml(lastUpdate)}</code>`);
     }
 
     return lines.join("\n");
@@ -447,7 +458,7 @@ async function primeStatusText() {
 }
 
 function reportMenuText() {
-  return ["📈 <b>PRIME Performance Report</b>", "", "Pilih modul yang ingin Anda lihat:"].join("\n");
+  return ["📈 <b>PRIME Performance Report</b>", MENU_DIVIDER, "", "Pilih modul yang ingin Anda lihat:"].join("\n");
 }
 
 function reportMenuKeyboard(): TelegramInlineKeyboardMarkup {
@@ -461,7 +472,7 @@ function reportMenuKeyboard(): TelegramInlineKeyboardMarkup {
         { callback_data: "report:LTS", text: "📶 LTS" },
         { callback_data: "report:METABRIGHT", text: "✨ MetaBright" },
       ],
-      [{ callback_data: "menu:home", text: "🏠 Menu Utama" }],
+      [{ callback_data: "menu:home", text: "◀️ Menu Utama" }],
     ],
   };
 }
@@ -471,7 +482,7 @@ function reportActionKeyboard(product: ReportProduct, baseUrl: string): Telegram
     inline_keyboard: [
       [{ callback_data: `report_refresh:${product}`, text: "🔄 Refresh" }],
       [{ callback_data: "menu:report", text: "📊 Pilih Modul Lain" }],
-      [{ callback_data: "menu:home", text: "🏠 Menu Utama" }],
+      [{ callback_data: "menu:home", text: "◀️ Menu Utama" }],
       [{ text: "🌐 Buka PRIME", url: `${baseUrl}/portal` }],
     ],
   };
@@ -797,9 +808,9 @@ async function lastUpdateText() {
       })),
     );
 
-    const lines = ["🕒 <b>PRIME Last Update</b>", ""];
+    const lines = ["🕒 <b>PRIME Last Update</b>", MENU_DIVIDER, ""];
     for (const item of updates) {
-      lines.push(`<b>${productLabel(item.product)}</b>`, item.updatedAt ?? "⚠️ Belum ada data", "");
+      lines.push(`${item.updatedAt ? "🟢" : "🟡"}  <b>${productLabel(item.product)}</b>`, item.updatedAt ? `└ <code>${escapeHtml(item.updatedAt)}</code>` : "└ Belum ada data", "");
     }
 
     return lines.join("\n").trimEnd();
@@ -816,6 +827,7 @@ async function lastUpdateText() {
 function helpText() {
   return [
     "ℹ️ <b>Bantuan PRIME Bot</b>",
+    MENU_DIVIDER,
     "",
     "Anda dapat menggunakan tombol menu untuk mengakses seluruh fitur PRIME.",
     "",
@@ -832,11 +844,11 @@ function helpText() {
 }
 
 function portalText() {
-  return ["🌐 <b>PRIME Portal</b>", "", "Buka dashboard PRIME melalui tombol di bawah."].join("\n");
+  return ["🌐 <b>PRIME Portal</b>", MENU_DIVIDER, "", "Buka dashboard PRIME melalui tombol di bawah."].join("\n");
 }
 
 function myIdText(userId: string | null) {
-  return ["🪪 <b>Telegram User ID</b>", "", userId ? escapeHtml(userId) : "ID tidak tersedia pada pesan ini."].join("\n");
+  return ["🪪 <b>Telegram User ID</b>", MENU_DIVIDER, "", userId ? `<code>${escapeHtml(userId)}</code>` : "ID tidak tersedia pada pesan ini.", "", "<i>Ketuk ID untuk menyalin.</i>"].join("\n");
 }
 
 function unknownCommandText() {
@@ -937,6 +949,7 @@ const UPLOAD_PRODUCTS: ReportableProduct[] = ["HSI", "WMS"];
 function uploadHelpText() {
   return [
     "📤 <b>Upload Data MASTER</b>",
+    MENU_DIVIDER,
     "",
     "Kirim file <b>.xlsx / .xls / .csv</b> langsung ke chat ini sebagai <i>dokumen</i> (pakai ikon 📎 → File).",
     "",
@@ -953,7 +966,7 @@ function downloadMenuKeyboard(): TelegramInlineKeyboardMarkup {
   return {
     inline_keyboard: [
       UPLOAD_PRODUCTS.map((p) => ({ callback_data: `dl:${p}`, text: `${productIcon(p)} ${p}` })),
-      [{ callback_data: "menu:home", text: "🏠 Menu Utama" }],
+      [{ callback_data: "menu:home", text: "◀️ Menu Utama" }],
     ],
   };
 }
@@ -1097,7 +1110,7 @@ async function handleCallbackQuery(botToken: string, callbackQuery: TelegramCall
   }
 
   if (data === "menu:download") {
-    await sendOrEditTelegramMessage(botToken, chatId, messageId, "📥 <b>Unduh Report Excel</b>\n\nPilih modul:", {
+    await sendOrEditTelegramMessage(botToken, chatId, messageId, `📥 <b>Unduh Report Excel</b>\n${MENU_DIVIDER}\n\nPilih modul:`, {
       replyMarkup: downloadMenuKeyboard(),
     });
     return;
