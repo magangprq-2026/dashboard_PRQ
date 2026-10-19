@@ -1,4 +1,4 @@
-// Helper Telegram Bot API untuk unduh file kiriman pengguna dan mengirim dokumen (Excel) balik.
+// Helper Telegram Bot API untuk unduh file kiriman pengguna dan mengirim dokumen (Excel/PNG) balik.
 const TELEGRAM_FILE_LIMIT_BYTES = 20 * 1024 * 1024; // batas getFile pada Bot API
 
 export async function downloadTelegramFile(botToken: string, fileId: string): Promise<Buffer> {
@@ -22,6 +22,7 @@ export async function sendTelegramDocument(
   filename: string,
   bytes: Uint8Array,
   caption?: string,
+  mimeType = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
 ) {
   const form = new FormData();
   form.append("chat_id", String(chatId));
@@ -31,7 +32,7 @@ export async function sendTelegramDocument(
   }
   form.append(
     "document",
-    new Blob([new Uint8Array(bytes)], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }),
+    new Blob([new Uint8Array(bytes)], { type: mimeType }),
     filename,
   );
   const response = await fetch(`https://api.telegram.org/bot${botToken}/sendDocument`, { body: form, method: "POST" });

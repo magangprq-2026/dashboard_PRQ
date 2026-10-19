@@ -7,19 +7,21 @@ import {
 } from "@/features/wms/domain/reporting/reporting";
 
 import {
-  buildReportFile,
   detectProduct,
-  importLtsDataset,
-  importMetabright,
   importMaster,
   isAllowedUploader,
   loadLatestRows,
   parseMasterRows,
-  type ReportableProduct,
+  type UploadProduct,
 } from "@/features/telegram/master-upload";
 import { downloadTelegramFile, sendTelegramDocument } from "@/features/telegram/telegram-api";
+import {
+  buildReportExcel,
+  buildReportImages,
+  REPORT_DOWNLOAD_PRODUCTS,
+  type ReportProductKey,
+} from "@/features/telegram/report-files";
 import { computeReport as computeHsiReport } from "@/features/hsi/domain/reporting/reporting";
-import { applyReportHistory } from "@/features/hsi/domain/reporting/history";
 
 export const dynamic = "force-dynamic";
 // Parse Excel + tulis ke Neon bisa >10 dtk untuk file besar. Hobby Vercel mengizinkan sampai 60 dtk.
@@ -169,26 +171,9 @@ function portalUrlFromOrigin(origin: string) {
   return configuredAppUrl() ?? origin.replace(/\/$/, "");
 }
 
-// Kata tanpa garis miring (mis. "start", "menu", "halo") juga dianggap perintah supaya tidak membingungkan pengguna.
-const COMMAND_ALIASES: Record<string, string> = {
-  download: "/download",
-  halo: "/start",
-  help: "/help",
-  hi: "/start",
-  lastupdate: "/lastupdate",
-  menu: "/start",
-  myid: "/myid",
-  portal: "/portal",
-  report: "/report",
-  start: "/start",
-  status: "/status",
-  upload: "/upload",
-};
-
 function normalizeTelegramCommand(text: string) {
   const command = text.split(/\s+/)[0]?.toLowerCase() ?? "";
-  const bare = command.split("@")[0] ?? command;
-  return bare.startsWith("/") ? bare : (COMMAND_ALIASES[bare] ?? bare);
+  return command.split("@")[0] ?? command;
 }
 
 function formatJakartaTimestamp(value: string | null | undefined) {
@@ -215,12 +200,6 @@ function formatNumber(value: unknown) {
   return new Intl.NumberFormat("id-ID", {
     maximumFractionDigits: 2,
   }).format(numeric);
-}
-
-// Rasio LTS selalu berupa pecahan (1,5801 = 158,01%), sama seperti tampilan di web.
-function formatRatioPercent(value: unknown) {
-  if (typeof value !== "number" || Number.isNaN(value)) return null;
-  return `${new Intl.NumberFormat("id-ID", { maximumFractionDigits: 2, minimumFractionDigits: 2 }).format(value * 100)}%`;
 }
 
 function formatPercent(value: unknown) {
@@ -286,47 +265,33 @@ function productLabel(product: DashboardProduct) {
   return `${productIcon(product)} ${product}`;
 }
 
-const MENU_DIVIDER = "▬▬▬▬▬▬▬▬▬▬▬▬▬▬";
-
 function mainMenuText() {
   return [
-    "✨ <b>PRIME Bot</b>",
-    "<i>Performance Reporting &amp; Monitoring</i>",
-    MENU_DIVIDER,
+    "👋 <b>Selamat datang di PRIME Bot</b>",
     "",
-    "👋 Selamat datang! Pantau performa dan update dashboard langsung dari Telegram.",
+    "PRIME membantu Anda memantau performa dan update dashboard HSI, WMS, LTS, dan MetaBright langsung dari Telegram.",
     "",
-    "🏠 <b>HSI</b>   📡 <b>WMS</b>   📶 <b>LTS</b>   ✨ <b>MetaBright</b>",
-    "",
-    MENU_DIVIDER,
-    "👇 <b>Pilih menu di bawah ini</b>",
+    "Pilih salah satu menu di bawah untuk mulai.",
   ].join("\n");
 }
 
 function mainMenuKeyboard(): TelegramInlineKeyboardMarkup {
   return {
     inline_keyboard: [
-      // Aksi utama dibuat lebar penuh supaya paling menonjol, sisanya berpasangan 2 kolom.
-      [{ callback_data: "menu:report", text: "📈  LIHAT REPORT  📈" }],
-      [
-        { callback_data: "menu:status", text: "📊 Status" },
-        { callback_data: "menu:lastupdate", text: "🕒 Last Update" },
-      ],
-      [
-        { callback_data: "menu:upload", text: "📤 Upload Data" },
-        { callback_data: "menu:download", text: "📥 Unduh Excel" },
-      ],
-      [
-        { callback_data: "menu:portal", text: "🌐 PRIME Portal" },
-        { callback_data: "menu:myid", text: "🪪 My ID" },
-      ],
+      [{ callback_data: "menu:status", text: "📊 Status Dashboard" }],
+      [{ callback_data: "menu:report", text: "📈 Lihat Report" }],
+      [{ callback_data: "menu:lastupdate", text: "🕒 Last Update" }],
+      [{ callback_data: "menu:upload", text: "📤 Upload Data" }],
+      [{ callback_data: "menu:download", text: "📥 Unduh Report" }],
+      [{ callback_data: "menu:portal", text: "🌐 Buka PRIME Portal" }],
+      [{ callback_data: "menu:myid", text: "🪪 My ID" }],
     ],
   };
 }
 
 function helpKeyboard(): TelegramInlineKeyboardMarkup {
   return {
-    inline_keyboard: [[{ callback_data: "menu:home", text: "◀️ Menu Utama" }]],
+    inline_keyboard: [[{ callback_data: "menu:home", text: "🏠 Menu Utama" }]],
   };
 }
 
@@ -335,7 +300,7 @@ function statusKeyboard(): TelegramInlineKeyboardMarkup {
     inline_keyboard: [
       [{ callback_data: "status:refresh", text: "🔄 Refresh Status" }],
       [{ callback_data: "menu:report", text: "📈 Lihat Report" }],
-      [{ callback_data: "menu:home", text: "◀️ Menu Utama" }],
+      [{ callback_data: "menu:home", text: "🏠 Menu Utama" }],
     ],
   };
 }
@@ -345,7 +310,7 @@ function lastUpdateKeyboard(): TelegramInlineKeyboardMarkup {
     inline_keyboard: [
       [{ callback_data: "menu:lastupdate", text: "🔄 Refresh" }],
       [{ callback_data: "menu:status", text: "📊 Status Dashboard" }],
-      [{ callback_data: "menu:home", text: "◀️ Menu Utama" }],
+      [{ callback_data: "menu:home", text: "🏠 Menu Utama" }],
     ],
   };
 }
@@ -354,20 +319,20 @@ function portalKeyboard(baseUrl: string): TelegramInlineKeyboardMarkup {
   return {
     inline_keyboard: [
       [{ text: "🚀 Open PRIME Portal", url: `${baseUrl}/portal` }],
-      [{ callback_data: "menu:home", text: "◀️ Menu Utama" }],
+      [{ callback_data: "menu:home", text: "🏠 Menu Utama" }],
     ],
   };
 }
 
 function myIdKeyboard(): TelegramInlineKeyboardMarkup {
   return {
-    inline_keyboard: [[{ callback_data: "menu:home", text: "◀️ Menu Utama" }]],
+    inline_keyboard: [[{ callback_data: "menu:home", text: "🏠 Menu Utama" }]],
   };
 }
 
 // Upload dari web/bot menulis ke dashboard_state, sedangkan dashboard_records hanya terisi lewat halaman /migration.
 // Keduanya dicek supaya status & last update selalu mengikuti data terbaru.
-const STATE_KEY_BY_PRODUCT: Partial<Record<DashboardProduct, string>> = { HSI: "default", LTS: "lts", METABRIGHT: "metabright", WMS: "wms" };
+const STATE_KEY_BY_PRODUCT: Partial<Record<DashboardProduct, string>> = { HSI: "default", LTS: "lts", WMS: "wms" };
 
 async function stateUpdatedAt(product: DashboardProduct) {
   const key = STATE_KEY_BY_PRODUCT[product];
@@ -446,35 +411,24 @@ async function primeStatusText() {
       DASHBOARD_PRODUCTS.map(async (product) => ({
         product,
         available: await hasProductData(product),
-        updatedIso: await latestProductUpdateIso(product),
       })),
     );
-    const lastUpdate = formatJakartaTimestamp(latestIso(statuses.map((item) => item.updatedIso)));
-    const readyCount = statuses.filter((item) => item.available).length;
-
-    // Tiap modul dibuat satu blok (judul + 2 baris detail) dengan jarak kosong antar blok agar tidak berdempetan.
-    const blocks = statuses.map(({ available, product, updatedIso }) => {
-      const updated = formatJakartaTimestamp(updatedIso);
-      return [
-        `${available ? "🟢" : "🟡"} <b>${productLabel(product)}</b>`,
-        `     Status:  ${available ? "Data tersedia" : "Belum ada data"}`,
-        `     Update:  ${updated ? `<code>${escapeHtml(updated)}</code>` : "-"}`,
-      ].join("\n");
-    });
-
+    const lastUpdate = await latestDataUpdate();
     const lines = [
       "📊 <b>PRIME Dashboard Status</b>",
-      `<i>${readyCount} dari ${statuses.length} modul sudah memiliki data</i>`,
-      MENU_DIVIDER,
       "",
-      blocks.join("\n\n"),
-      "",
-      MENU_DIVIDER,
-      "🗄 <b>Database</b>:  🟢 Connected",
+      ...statuses.flatMap(({ available, product }) => [
+        `<b>${productLabel(product)}</b>`,
+        available ? "✅ Data tersedia" : "⚠️ Belum ada data",
+        "",
+      ]),
+      "━━━━━━━━━━━━━━",
+      "🗄 <b>Database</b>",
+      "✅ Connected",
     ];
 
     if (lastUpdate) {
-      lines.push("🕒 <b>Update terakhir</b>:", `<code>${escapeHtml(lastUpdate)}</code>`);
+      lines.push("", "🕒 <b>Update terakhir</b>", escapeHtml(lastUpdate));
     }
 
     return lines.join("\n");
@@ -489,7 +443,7 @@ async function primeStatusText() {
 }
 
 function reportMenuText() {
-  return ["📈 <b>PRIME Performance Report</b>", MENU_DIVIDER, "", "Pilih modul yang ingin Anda lihat:"].join("\n");
+  return ["📈 <b>PRIME Performance Report</b>", "", "Pilih modul yang ingin Anda lihat:"].join("\n");
 }
 
 function reportMenuKeyboard(): TelegramInlineKeyboardMarkup {
@@ -503,7 +457,7 @@ function reportMenuKeyboard(): TelegramInlineKeyboardMarkup {
         { callback_data: "report:LTS", text: "📶 LTS" },
         { callback_data: "report:METABRIGHT", text: "✨ MetaBright" },
       ],
-      [{ callback_data: "menu:home", text: "◀️ Menu Utama" }],
+      [{ callback_data: "menu:home", text: "🏠 Menu Utama" }],
     ],
   };
 }
@@ -513,7 +467,7 @@ function reportActionKeyboard(product: ReportProduct, baseUrl: string): Telegram
     inline_keyboard: [
       [{ callback_data: `report_refresh:${product}`, text: "🔄 Refresh" }],
       [{ callback_data: "menu:report", text: "📊 Pilih Modul Lain" }],
-      [{ callback_data: "menu:home", text: "◀️ Menu Utama" }],
+      [{ callback_data: "menu:home", text: "🏠 Menu Utama" }],
       [{ text: "🌐 Buka PRIME", url: `${baseUrl}/portal` }],
     ],
   };
@@ -522,19 +476,17 @@ function reportActionKeyboard(product: ReportProduct, baseUrl: string): Telegram
 async function buildHsiReportFromState(): Promise<ProductReport | null> {
   const latest = await loadLatestRows("HSI");
   if (!latest) return null;
-  // Sama persis dengan dashboard web (tampilan default "ALL TELDA"): hitung dari baris MASTER, lalu
-  // terapkan riwayat harian periode itu, dan pakai total TELDA (bukan total WITEL).
-  const report = applyReportHistory(computeHsiReport(latest.rows, latest.savedAt, latest.periodKey), latest.reportHistory);
-  const rkap = report.branch.total;
-  const stf = report.targetStf.branch.total;
+  const report = computeHsiReport(latest.rows, latest.savedAt, latest.periodKey);
+  const rkap = report.witel.total;
+  const stf = report.targetStf.witel.total;
   const metrics: ReportMetric[] = [];
-  addMetric(metrics, "Achievement RKAP", formatRatioPercent(rkap.targetAch));
-  addMetric(metrics, "Achievement YTD", formatRatioPercent(rkap.achYtd));
+  addMetric(metrics, "Achievement RKAP", formatPercent(rkap.targetAch));
+  addMetric(metrics, "Achievement YTD", formatPercent(rkap.achYtd));
   addMetric(metrics, "Shortage RKAP", formatNumber(rkap.shortageFm));
-  addMetric(metrics, "Achievement STF", formatRatioPercent(stf.targetAch));
+  addMetric(metrics, "Achievement STF", formatPercent(stf.targetAch));
   addMetric(metrics, "Shortage STF", formatNumber(stf.shortageFm));
   const top = [...report.branch.rows].filter((r) => typeof r.targetAch === "number").sort((a, b) => Number(b.targetAch) - Number(a.targetAch))[0];
-  if (top) addMetric(metrics, "Top TELDA", `${top.label} (${formatRatioPercent(top.targetAch)})`);
+  if (top) addMetric(metrics, "Top TELDA", `${top.label} (${formatPercent(top.targetAch)})`);
   return {
     available: true,
     lastUpdate: formatJakartaTimestamp(latest.savedAt) ?? undefined,
@@ -596,13 +548,13 @@ async function buildWmsReportFromState(): Promise<ProductReport | null> {
   const metrics: ReportMetric[] = [];
   addMetric(metrics, "Target FM", formatNumber(total.targetFm));
   addMetric(metrics, "Realisasi MTD", formatNumber(total.mtd));
-  addMetric(metrics, "Achievement FM", formatRatioPercent(total.ach));
+  addMetric(metrics, "Achievement FM", formatPercent(total.ach));
   addMetric(metrics, "Shortage FM", formatNumber(total.shortageFm));
   addMetric(metrics, "Target YTD", formatNumber(total.targetYtd));
   addMetric(metrics, "Realisasi YTD", formatNumber(total.realYtd));
-  addMetric(metrics, "Achievement YTD", formatRatioPercent(total.achYtd));
+  addMetric(metrics, "Achievement YTD", formatPercent(total.achYtd));
   addMetric(metrics, "Shortage YTD", formatNumber(total.shortageYtd));
-  if (top) addMetric(metrics, "Top TELDA", `${top.label} (${formatRatioPercent(top.ach)})`);
+  if (top) addMetric(metrics, "Top TELDA", `${top.label} (${formatPercent(top.ach)})`);
   return {
     available: true,
     lastUpdate: formatJakartaTimestamp(latest.savedAt ?? report.latestUpdatedAt) ?? undefined,
@@ -664,21 +616,14 @@ async function buildWmsReport(): Promise<ProductReport> {
   };
 }
 
-async function buildLtsReport(): Promise<ProductReport> {
-  const periodKey = await latestPeriodFor("LTS");
-  const [state, salesRows, capsRows, ct0Rows, lastUpdate] = await Promise.all([
-    dashboardStatePayload("lts"),
-    recordsFor("LTS", "sales", periodKey, 1),
-    recordsFor("LTS", "caps", null, 1),
-    recordsFor("LTS", "ct0", null, 1),
-    latestProductUpdate("LTS"),
-  ]);
+// Dataset LTS aktif dari state dashboard (dipakai ringkasan report dan unduhan gambar/Excel).
+function ltsDatasetsFromState(state: unknown): LtsReportSourceDatasets {
   const stateRecord = payloadRecord(state);
   // State di server hanya menyimpan datasetArchive; dataset aktif diambil dari periode yang dipilih.
   const storedDatasets = payloadRecord(stateRecord.datasets);
   const archive = payloadRecord(stateRecord.datasetArchive);
   const selectedPeriodKey = typeof stateRecord.selectedPeriodKey === "string" ? stateRecord.selectedPeriodKey : null;
-  const datasets = (
+  return (
     Object.keys(storedDatasets).length > 0
       ? storedDatasets
       : Object.fromEntries(
@@ -688,6 +633,22 @@ async function buildLtsReport(): Promise<ProductReport> {
           }),
         )
   ) as LtsReportSourceDatasets;
+}
+
+async function loadLtsDatasetsForReport(): Promise<LtsReportSourceDatasets> {
+  return ltsDatasetsFromState(await dashboardStatePayload("lts"));
+}
+
+async function buildLtsReport(): Promise<ProductReport> {
+  const periodKey = await latestPeriodFor("LTS");
+  const [state, salesRows, capsRows, ct0Rows, lastUpdate] = await Promise.all([
+    dashboardStatePayload("lts"),
+    recordsFor("LTS", "sales", periodKey, 1),
+    recordsFor("LTS", "caps", null, 1),
+    recordsFor("LTS", "ct0", null, 1),
+    latestProductUpdate("LTS"),
+  ]);
+  const datasets = ltsDatasetsFromState(state);
   const datasetLabels = [
     datasets.sales || salesRows.length ? "Sales" : null,
     datasets.caps || capsRows.length ? "CAPS" : null,
@@ -702,16 +663,16 @@ async function buildLtsReport(): Promise<ProductReport> {
     addMetric(metrics, "Sales", formatNumber(report.summary.sales));
     addMetric(metrics, "CT0", formatNumber(report.summary.ct0));
     addMetric(metrics, "CAPS", formatNumber(report.summary.caps));
-    addMetric(metrics, "CT0/Sales", formatRatioPercent(total.ct0Ratio));
-    addMetric(metrics, "CAPS/Sales", formatRatioPercent(total.capsRatio));
-    addMetric(metrics, "Score", formatRatioPercent(report.summary.score));
+    addMetric(metrics, "CT0/Sales", formatNumber(total.ct0Ratio));
+    addMetric(metrics, "CAPS/Sales", formatNumber(total.capsRatio));
+    addMetric(metrics, "Score", formatNumber(report.summary.score));
     addMetric(metrics, "Churn", formatNumber(total.churn));
     addMetric(metrics, "Gap", formatNumber(total.gap));
     if (report.summary.bestWitel) {
-      addMetric(metrics, "Best Witel", `${report.summary.bestWitel.label} (${formatRatioPercent(report.summary.bestWitel.score)})`);
+      addMetric(metrics, "Best Witel", `${report.summary.bestWitel.label} (${formatNumber(report.summary.bestWitel.score)})`);
     }
     if (report.summary.bestHotda) {
-      addMetric(metrics, "Best HOTDA", `${report.summary.bestHotda.label} (${formatRatioPercent(report.summary.bestHotda.score)})`);
+      addMetric(metrics, "Best HOTDA", `${report.summary.bestHotda.label} (${formatNumber(report.summary.bestHotda.score)})`);
     }
 
     return {
@@ -737,39 +698,14 @@ async function buildLtsReport(): Promise<ProductReport> {
   };
 }
 
-type MetabrightStatePeriod = { rows?: { rank?: number; telda?: string; total?: number; witel?: string }[] };
-
 async function buildMetabrightReport(): Promise<ProductReport> {
-  const [available, lastUpdate, statePayload] = await Promise.all([
-    hasProductData("METABRIGHT"),
-    latestProductUpdate("METABRIGHT"),
-    dashboardStatePayload("metabright").catch(() => null),
-  ]);
-
-  const state = payloadRecord(statePayload);
-  const periods = payloadRecord(state.periods) as Record<string, MetabrightStatePeriod>;
-  const currentLabel =
-    typeof state.cur === "string" && periods[state.cur] ? state.cur : Object.keys(periods)[0];
-  const rows = (currentLabel ? periods[currentLabel]?.rows : null) ?? [];
-  const metrics: ReportMetric[] = [];
-
-  if (rows.length > 0) {
-    const ranked = [...rows].sort((a, b) => (a.rank ?? 9999) - (b.rank ?? 9999));
-    const scores = rows.map((row) => Number(row.total ?? 0));
-    const average = scores.reduce((sum, value) => sum + value, 0) / scores.length;
-    addMetric(metrics, "Jumlah Telda", formatNumber(rows.length));
-    addMetric(metrics, "Rata-rata Skor", formatNumber(average));
-    ranked.slice(0, 3).forEach((row, index) => {
-      addMetric(metrics, `Peringkat ${index + 1}`, `${row.telda ?? "-"} (${row.witel ?? "-"}) - ${formatNumber(row.total) ?? "-"}`);
-    });
-  }
+  const [available, lastUpdate] = await Promise.all([hasProductData("METABRIGHT"), latestProductUpdate("METABRIGHT")]);
 
   return {
     available,
     lastUpdate: lastUpdate ?? undefined,
-    metrics,
-    note: available ? undefined : "Data METABRIGHT belum diupload lewat menu Upload Data di dashboard MetaBright.",
-    periodLabel: currentLabel,
+    metrics: [],
+    note: available ? "Data METABRIGHT tersedia di database." : "Data METABRIGHT belum tersedia di dashboard_records.",
     product: "METABRIGHT",
     title: "METABRIGHT Report",
   };
@@ -839,9 +775,9 @@ async function lastUpdateText() {
       })),
     );
 
-    const lines = ["🕒 <b>PRIME Last Update</b>", MENU_DIVIDER, ""];
+    const lines = ["🕒 <b>PRIME Last Update</b>", ""];
     for (const item of updates) {
-      lines.push(`${item.updatedAt ? "🟢" : "🟡"}  <b>${productLabel(item.product)}</b>`, item.updatedAt ? `└ <code>${escapeHtml(item.updatedAt)}</code>` : "└ Belum ada data", "");
+      lines.push(`<b>${productLabel(item.product)}</b>`, item.updatedAt ?? "⚠️ Belum ada data", "");
     }
 
     return lines.join("\n").trimEnd();
@@ -858,7 +794,6 @@ async function lastUpdateText() {
 function helpText() {
   return [
     "ℹ️ <b>Bantuan PRIME Bot</b>",
-    MENU_DIVIDER,
     "",
     "Anda dapat menggunakan tombol menu untuk mengakses seluruh fitur PRIME.",
     "",
@@ -867,7 +802,7 @@ function helpText() {
     "/report",
     "/lastupdate",
     "/upload — cara upload data MASTER",
-    "/download — unduh report Excel",
+    "/download — unduh report (Excel atau gambar PNG)",
     "/portal",
     "/myid",
     "Lihat Telegram User ID Anda",
@@ -875,18 +810,18 @@ function helpText() {
 }
 
 function portalText() {
-  return ["🌐 <b>PRIME Portal</b>", MENU_DIVIDER, "", "Buka dashboard PRIME melalui tombol di bawah."].join("\n");
+  return ["🌐 <b>PRIME Portal</b>", "", "Buka dashboard PRIME melalui tombol di bawah."].join("\n");
 }
 
 function myIdText(userId: string | null) {
-  return ["🪪 <b>Telegram User ID</b>", MENU_DIVIDER, "", userId ? `<code>${escapeHtml(userId)}</code>` : "ID tidak tersedia pada pesan ini.", "", "<i>Ketuk ID untuk menyalin.</i>"].join("\n");
+  return ["🪪 <b>Telegram User ID</b>", "", userId ? escapeHtml(userId) : "ID tidak tersedia pada pesan ini."].join("\n");
 }
 
 function unknownCommandText() {
   return [
-    "🤔 <b>Perintah belum dikenali</b>",
+    "Menu belum dikenali.",
     "",
-    "Pilih menu di bawah, atau ketik /start untuk membuka menu utama.",
+    "Pilih menu yang ingin dibuka.",
   ].join("\n");
 }
 
@@ -975,31 +910,59 @@ function isReportProduct(value: string): value is ReportProduct {
   return REPORT_PRODUCTS.includes(value as ReportProduct);
 }
 
-const UPLOAD_PRODUCTS: ReportableProduct[] = ["HSI", "WMS"];
 
 function uploadHelpText() {
   return [
     "📤 <b>Upload Data MASTER</b>",
-    MENU_DIVIDER,
     "",
     "Kirim file <b>.xlsx / .xls / .csv</b> langsung ke chat ini sebagai <i>dokumen</i> (pakai ikon 📎 → File).",
     "",
-    "Modul dikenali otomatis dari header kolom. Agar pasti, tulis <b>HSI</b>, <b>WMS</b>, <b>LTS</b>, atau <b>MetaBright</b> di caption (atau di nama file).",
-    "Untuk <b>LTS</b>, kirim 3 file (SALES, CAPS, CT0); masing-masing dikenali dari header kolomnya.",
+    "Modul dikenali otomatis dari header kolom. Agar pasti, tulis <b>HSI</b> atau <b>WMS</b> di caption (atau di nama file).",
     "",
-    "Setelah selesai, bot menyimpan data ke dashboard dan mengirim report Excel yang sudah diperbarui.",
+    "Setelah selesai, bot menyimpan data ke dashboard dan mengirim report (gambar PNG) yang sudah diperbarui.",
     "",
     "Format kolom harus sama dengan upload MASTER di web. Maks. 20 MB.",
   ].join("\n");
 }
 
+function downloadModuleName(product: ReportProductKey) {
+  return product === "METABRIGHT" ? "MetaBright" : product;
+}
+
+function downloadMenuText() {
+  return "📥 <b>Unduh Report</b>\n\nPilih modul:";
+}
+
 function downloadMenuKeyboard(): TelegramInlineKeyboardMarkup {
+  const button = (p: ReportProductKey) => ({ callback_data: `dl:${p}`, text: `${productIcon(p)} ${downloadModuleName(p)}` });
   return {
     inline_keyboard: [
-      UPLOAD_PRODUCTS.map((p) => ({ callback_data: `dl:${p}`, text: `${productIcon(p)} ${p}` })),
-      [{ callback_data: "menu:home", text: "◀️ Menu Utama" }],
+      [button("HSI"), button("WMS")],
+      [button("LTS"), button("METABRIGHT")],
+      [{ callback_data: "menu:home", text: "🏠 Menu Utama" }],
     ],
   };
+}
+
+function downloadFormatText(product: ReportProductKey) {
+  return [`📥 <b>Unduh Report ${downloadModuleName(product)}</b>`, "", "Pilih format file:"].join("\n");
+}
+
+function downloadFormatKeyboard(product: ReportProductKey): TelegramInlineKeyboardMarkup {
+  return {
+    inline_keyboard: [
+      [
+        { callback_data: `dlx:${product}`, text: "📊 Excel" },
+        { callback_data: `dli:${product}`, text: "🖼️ Gambar (PNG)" },
+      ],
+      [{ callback_data: "menu:download", text: "⬅️ Pilih Modul Lain" }],
+      [{ callback_data: "menu:home", text: "🏠 Menu Utama" }],
+    ],
+  };
+}
+
+function isDownloadProduct(value: string): value is ReportProductKey {
+  return REPORT_DOWNLOAD_PRODUCTS.includes(value as ReportProductKey);
 }
 
 function notAllowedText() {
@@ -1011,14 +974,26 @@ function notAllowedText() {
   ].join("\n");
 }
 
-async function sendReportFile(botToken: string, chatId: number, product: ReportableProduct, prefix = "") {
-  const file = await buildReportFile(product);
-  const caption = [
-    prefix,
-    `📈 <b>Report ${product}</b>`,
-    `Periode: ${escapeHtml(file.periodLabel)}`,
-    file.updatedAt ? `Update: ${escapeHtml(formatJakartaTimestamp(file.updatedAt) ?? "-")}` : "",
-  ].filter(Boolean).join("\n");
+const reportDeps = { loadLtsDatasets: loadLtsDatasetsForReport };
+
+// Kirim report sebagai gambar PNG (sebagai dokumen agar resolusi penuh dan tabel tetap terbaca).
+async function sendReportImages(botToken: string, chatId: number, product: ReportProductKey, prefix = "") {
+  const images = await buildReportImages(product, reportDeps);
+  let failed = 0;
+  for (const [index, image] of images.entries()) {
+    const caption = [index === 0 ? prefix : "", `🖼️ <b>${escapeHtml(image.caption.split("\n")[0])}</b>`, ...image.caption.split("\n").slice(1).map(escapeHtml)]
+      .filter(Boolean)
+      .join("\n");
+    const sent = await sendTelegramDocument(botToken, chatId, image.filename, image.bytes, caption, "image/png");
+    if (!sent.ok) failed += 1;
+  }
+  return { failed, total: images.length };
+}
+
+async function sendReportExcel(botToken: string, chatId: number, product: ReportProductKey) {
+  const file = await buildReportExcel(product, reportDeps);
+  const [title, ...rest] = file.caption.split("\n");
+  const caption = [`📊 <b>${escapeHtml(title)}</b>`, ...rest.map(escapeHtml)].join("\n");
   return sendTelegramDocument(botToken, chatId, file.filename, file.bytes, caption);
 }
 
@@ -1044,37 +1019,19 @@ async function handleDocumentUpload(botToken: string, chatId: number, message: T
       await sendTelegramMessage(
         botToken,
         chatId,
-        "⚠️ Modul tidak dikenali. Kirim ulang file dengan caption <b>HSI</b>, <b>WMS</b>, <b>LTS</b>, atau <b>MetaBright</b>.",
-      );
-      return;
-    }
-    if (product === "METABRIGHT") {
-      const mb = await importMetabright(buffer, fileName, message.caption);
-      await sendTelegramMessage(
-        botToken,
-        chatId,
-        `✅ <b>Upload MetaBright berhasil</b>: ${escapeHtml(mb.label)} (${mb.telda.toLocaleString("id-ID")} telda, ${mb.indicators} indikator).${mb.warn ? `\n⚠️ ${escapeHtml(mb.warn)}` : ""}`,
-      );
-      return;
-    }
-    if (product === "LTS") {
-      const lts = await importLtsDataset(buffer, fileName);
-      await sendTelegramMessage(
-        botToken,
-        chatId,
-        `✅ <b>Upload LTS berhasil</b>: ${escapeHtml(lts.label)}, periode ${escapeHtml(lts.periodKey)} (${lts.rowCount.toLocaleString("id-ID")} baris).\nReport LTS di web tampil setelah ketiga master (SALES, CAPS, CT0) periode yang sama terupload.`,
+        "⚠️ Modul tidak dikenali. Kirim ulang file dengan caption <b>HSI</b> atau <b>WMS</b>.",
       );
       return;
     }
     const rows = parseMasterRows(product, buffer);
     const summary = await importMaster(product, rows);
     const periods = summary.periods.map((p) => `${escapeHtml(p.label)} (${p.rows.toLocaleString("id-ID")} baris)`).join(", ");
-    const sent = await sendReportFile(botToken, chatId, product, `✅ <b>Upload ${product} berhasil</b>: ${periods}\n`);
-    if (!sent.ok) {
+    const sent = await sendReportImages(botToken, chatId, product, `✅ <b>Upload ${product} berhasil</b>: ${periods}\n`);
+    if (sent.failed > 0) {
       await sendTelegramMessage(
         botToken,
         chatId,
-        `✅ Data ${product} tersimpan (${periods}), tetapi file report gagal dikirim. Coba /download.`,
+        `✅ Data ${product} tersimpan (${periods}), tetapi gambar report gagal dikirim. Coba /download.`,
       );
     }
   } catch (error) {
@@ -1083,13 +1040,19 @@ async function handleDocumentUpload(botToken: string, chatId: number, message: T
   }
 }
 
-async function handleDownload(botToken: string, chatId: number, product: ReportableProduct) {
+async function handleDownload(botToken: string, chatId: number, product: ReportProductKey, format: "excel" | "image") {
+  await sendTelegramMessage(botToken, chatId, `⏳ Menyiapkan report <b>${downloadModuleName(product)}</b>…`);
   try {
-    const sent = await sendReportFile(botToken, chatId, product);
-    if (!sent.ok) await sendTelegramMessage(botToken, chatId, "❌ File report gagal dikirim. Coba lagi sebentar.");
+    if (format === "image") {
+      const sent = await sendReportImages(botToken, chatId, product);
+      if (sent.failed > 0) await sendTelegramMessage(botToken, chatId, "❌ Gambar report gagal dikirim. Coba lagi sebentar.");
+    } else {
+      const sent = await sendReportExcel(botToken, chatId, product);
+      if (!sent.ok) await sendTelegramMessage(botToken, chatId, "❌ File report gagal dikirim. Coba lagi sebentar.");
+    }
   } catch (error) {
     const reason = error instanceof Error ? error.message : "Terjadi kesalahan.";
-    await sendTelegramMessage(botToken, chatId, `❌ <b>Report ${product} belum bisa dibuat</b>\n${escapeHtml(reason)}`);
+    await sendTelegramMessage(botToken, chatId, `❌ <b>Report ${downloadModuleName(product)} belum bisa dibuat</b>\n${escapeHtml(reason)}`);
   }
 }
 
@@ -1141,15 +1104,25 @@ async function handleCallbackQuery(botToken: string, callbackQuery: TelegramCall
   }
 
   if (data === "menu:download") {
-    await sendOrEditTelegramMessage(botToken, chatId, messageId, `📥 <b>Unduh Report Excel</b>\n${MENU_DIVIDER}\n\nPilih modul:`, {
+    await sendOrEditTelegramMessage(botToken, chatId, messageId, downloadMenuText(), {
       replyMarkup: downloadMenuKeyboard(),
     });
     return;
   }
 
   if (data.startsWith("dl:")) {
-    const product = data.slice(3) as ReportableProduct;
-    if (UPLOAD_PRODUCTS.includes(product)) await handleDownload(botToken, chatId, product);
+    const product = data.slice(3);
+    if (isDownloadProduct(product)) {
+      await sendOrEditTelegramMessage(botToken, chatId, messageId, downloadFormatText(product), {
+        replyMarkup: downloadFormatKeyboard(product),
+      });
+    }
+    return;
+  }
+
+  if (data.startsWith("dlx:") || data.startsWith("dli:")) {
+    const product = data.slice(4);
+    if (isDownloadProduct(product)) await handleDownload(botToken, chatId, product, data.startsWith("dli:") ? "image" : "excel");
     return;
   }
 
@@ -1290,7 +1263,7 @@ export async function POST(request: NextRequest) {
   }
 
   if (command === "/download") {
-    await sendTelegramMessage(botToken, chatId, "📥 <b>Unduh Report Excel</b>\n\nPilih modul:", {
+    await sendTelegramMessage(botToken, chatId, downloadMenuText(), {
       replyMarkup: downloadMenuKeyboard(),
     });
     return NextResponse.json({ ok: true });

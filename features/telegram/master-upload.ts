@@ -3,17 +3,6 @@
 // sumber data yang sama dengan dashboard web, jadi hasilnya langsung terlihat di web.
 import * as XLSX from "xlsx";
 import { readDashboardStateByKey, writeDashboardStateByKey } from "@/features/shared/backend/database/dashboard-state";
-import { parseSheet as parseMetabrightSheet } from "@/features/metabright/domain/parse";
-import { periodLabel as metabrightPeriodLabel } from "@/features/metabright/domain/utils";
-import { dbQuery } from "@/features/shared/backend/database/db";
-import {
-  ltsCompactColumns,
-  ltsDatasetDefinitions,
-  periodKeyFromLtsRows,
-  validateLtsDataset,
-  type LtsDatasetKey,
-  type LtsMasterRow,
-} from "@/features/lts/domain/reporting/reporting";
 import { MAX_SNAPSHOTS_PER_PERIOD } from "@/features/shared/storage/safe-storage";
 import {
   computeReport as computeHsiReport,
@@ -21,7 +10,6 @@ import {
   type ComputedReport as HsiReport,
   type ReportTable as HsiTable,
 } from "@/features/hsi/domain/reporting/reporting";
-import type { ReportHistory } from "@/features/hsi/domain/reporting/history";
 import { seedData as hsiSeed } from "@/features/hsi/domain/reporting/seed-data";
 import {
   computeWmsReport,
@@ -31,15 +19,13 @@ import {
   type WmsReportRow,
 } from "@/features/wms/domain/reporting/reporting";
 
-export type UploadProduct = "HSI" | "WMS" | "LTS" | "METABRIGHT";
-// Produk yang punya report Excel untuk diunduh (LTS belum).
-export type ReportableProduct = "HSI" | "WMS";
+export type UploadProduct = "HSI" | "WMS";
 type Cell = string | number | boolean | null;
 type Row = Cell[];
 
-const STATE_KEYS: Record<UploadProduct, string> = { HSI: "default", LTS: "lts", METABRIGHT: "metabright", WMS: "wms" };
+const STATE_KEYS: Record<UploadProduct, string> = { HSI: "default", WMS: "wms" };
 const MONTHS = ["JANUARI", "FEBRUARI", "MARET", "APRIL", "MEI", "JUNI", "JULI", "AGUSTUS", "SEPTEMBER", "OKTOBER", "NOVEMBER", "DESEMBER"];
-const HEADERS: Record<ReportableProduct, string[]> = { HSI: hsiHeaders, WMS: wmsHeaders };
+const HEADERS: Record<UploadProduct, string[]> = { HSI: hsiHeaders, WMS: wmsHeaders };
 
 // ---------- Otorisasi ----------
 // Upload mengubah data produksi, jadi hanya Telegram user ID di TELEGRAM_ALLOWED_USER_IDS yang boleh.
@@ -63,33 +49,13 @@ function cleanCell(value: unknown): Cell {
   return String(value);
 }
 
-// Sama dengan normalisasi header di web: huruf besar, spasi ganda dirapikan.
-function normHeader(value: unknown) {
-  return String(value ?? "").trim().replace(/\s+/g, " ").toUpperCase();
+function normalizedHeader(row: unknown[] | undefined, headers: string[]) {
+  return (row ?? []).slice(0, headers.length).map((c) => String(c ?? "").trim().toUpperCase());
 }
 
 function headerMatches(row: unknown[] | undefined, headers: string[]) {
-  const first = (row ?? []).slice(0, headers.length).map(normHeader);
-  return headers.every((h, i) => normHeader(h) === first[i]);
-}
-
-// Peta nama header -> indeks kolom. Dipakai bila urutan kolom file berbeda dari format MASTER.
-function headerIndexMap(row: unknown[] | undefined) {
-  const map = new Map<string, number>();
-  (row ?? []).forEach((cell, index) => {
-    const key = normHeader(cell);
-    if (key && !map.has(key)) map.set(key, index);
-  });
-  return map;
-}
-
-function missingHeaders(row: unknown[] | undefined, headers: string[]) {
-  const map = headerIndexMap(row);
-  return headers.filter((h) => !map.has(normHeader(h)));
-}
-
-function hasMostHeaders(row: unknown[] | undefined, headers: string[]) {
-  return missingHeaders(row, headers).length <= Math.max(2, Math.floor(headers.length * 0.1));
+  const first = normalizedHeader(row, headers);
+  return headers.every((h, i) => h.toUpperCase() === first[i]);
 }
 
 // Banyak file "MASTER" HSI berekstensi .xls/.csv sebenarnya teks dengan pemisah "#" (sama seperti upload di web).
@@ -131,187 +97,52 @@ function isBinaryWorkbook(buffer: Buffer) {
   return zip || ole;
 }
 
-// Deteksi pemisah dari baris header: "#" (export lama), tab, titik koma, atau koma.
 function delimitedRows(buffer: Buffer): unknown[][] | null {
   if (isBinaryWorkbook(buffer)) return null;
   const text = buffer.toString("utf8").replace(/^\uFEFF/, "");
-  const firstLine = text.slice(0, text.search(/[\r\n]|$/));
-  const counts = ["#", "\t", ";", ","].map((d) => ({ d, n: firstLine.split(d).length - 1 }));
-  const best = counts.sort((a, b) => b.n - a.n)[0];
-  if (!best || best.n < 1) return null;
-  const parsed = parseDelimitedRows(text, best.d);
+  if (!text.slice(0, 2000).includes("#")) return null;
+  const parsed = parseDelimitedRows(text, "#");
   return parsed.length > 0 && parsed[0].length > 1 ? parsed : null;
 }
 
-function sheetRows(buffer: Buffer, preferredSheet = "MASTER") {
+function sheetRows(buffer: Buffer) {
   const delimited = delimitedRows(buffer);
-  if (delimited) return { name: preferredSheet, rows: delimited };
+  if (delimited) return { name: "MASTER", rows: delimited };
   const workbook = XLSX.read(buffer, { cellDates: true, type: "buffer" });
-  const wanted = normHeader(preferredSheet);
-  const name = workbook.SheetNames.find((n) => normHeader(n) === wanted) ?? workbook.SheetNames[0];
+  const name = workbook.SheetNames.find((n) => n.trim().toUpperCase() === "MASTER") ?? workbook.SheetNames[0];
   if (!name) throw new Error("File tidak memiliki sheet yang bisa dibaca.");
   const rows = XLSX.utils.sheet_to_json<unknown[]>(workbook.Sheets[name], { blankrows: false, defval: null, header: 1, raw: true });
   return { name, rows };
 }
 
-const LTS_KEYS = Object.keys(ltsDatasetDefinitions) as LtsDatasetKey[];
-
-/** Dataset LTS (sales/caps/ct0) yang headernya cocok dengan file. */
-export function detectLtsDataset(buffer: Buffer): LtsDatasetKey | null {
-  for (const key of LTS_KEYS) {
-    try {
-      const { rows } = sheetRows(buffer, ltsDatasetDefinitions[key].sheetName);
-      if (missingHeaders(rows[0], ltsDatasetDefinitions[key].requiredColumns).length === 0) return key;
-    } catch {
-      /* coba dataset berikutnya */
-    }
-  }
-  return null;
-}
-
 /** Tebak modul dari caption/nama file, lalu dari header kolom. */
 export function detectProduct(fileName: string, caption: string | undefined, buffer: Buffer): UploadProduct | null {
   const hint = `${caption ?? ""} ${fileName}`.toLowerCase();
-  const hinted = (["HSI", "WMS", "LTS", "METABRIGHT"] as const).filter((p) => hint.includes(p.toLowerCase()));
-  if (hinted.length === 1) return hinted[0];
+  const hintsHsi = /\bhsi\b|hsi[_\-.]/.test(hint) || hint.includes("hsi");
+  const hintsWms = /\bwms\b|wms[_\-.]/.test(hint) || hint.includes("wms");
+  if (hintsHsi !== hintsWms) return hintsHsi ? "HSI" : "WMS";
   try {
     const { rows } = sheetRows(buffer);
     if (headerMatches(rows[0], hsiHeaders)) return "HSI";
     if (headerMatches(rows[0], wmsHeaders)) return "WMS";
-    if (hasMostHeaders(rows[0], hsiHeaders)) return "HSI";
-    if (hasMostHeaders(rows[0], wmsHeaders)) return "WMS";
   } catch {
     /* ditangani pemanggil */
   }
-  if (detectLtsDataset(buffer)) return "LTS";
-  if (isMetabrightFile(buffer)) return "METABRIGHT";
   return null;
 }
 
-export function parseMasterRows(product: ReportableProduct, buffer: Buffer): Row[] {
+export function parseMasterRows(product: UploadProduct, buffer: Buffer): Row[] {
   const headers = HEADERS[product];
   const { name, rows } = sheetRows(buffer);
-  const first = rows[0];
-  let dataRows: unknown[][];
-  if (headerMatches(first, headers)) {
-    dataRows = rows.slice(1);
-  } else if (hasMostHeaders(first, headers)) {
-    // Urutan/ jumlah kolom berbeda: petakan berdasarkan nama header (sama seperti upload di web).
-    const missing = missingHeaders(first, headers);
-    if (missing.length > 0) {
-      throw new Error(`File kurang kolom wajib MASTER ${product}: ${missing.slice(0, 6).join(", ")}${missing.length > 6 ? ", ..." : ""}`);
-    }
-    const map = headerIndexMap(first);
-    dataRows = rows.slice(1).map((row) => headers.map((h) => row[map.get(normHeader(h)) ?? -1]));
-  } else {
-    dataRows = rows;
-    if ((first?.length ?? 0) < headers.length - 5) {
-      const found = headerIndexMap(first).size;
-      throw new Error(
-        `Kolom file tidak cocok dengan format MASTER ${product} (butuh ${headers.length} kolom, file punya ${first?.length ?? 0}` +
-          `${found ? `; kolom pertama: ${(first ?? []).slice(0, 5).map(normHeader).join(", ")}` : ""}).`,
-      );
-    }
-  }
+  const dataRows = headerMatches(rows[0], headers) ? rows.slice(1) : rows;
   const result = dataRows
     .map((row) => Array.from({ length: headers.length }, (_, i) => cleanCell(row[i])))
     .filter((row) => row.some((cell) => cell !== null && String(cell).trim() !== ""));
   if (result.length === 0) throw new Error(`Sheet ${name} tidak berisi data MASTER.`);
+  if (!headerMatches(rows[0], headers) && (rows[0]?.length ?? 0) < headers.length - 5) {
+    throw new Error(`Kolom file tidak cocok dengan format MASTER ${product} (butuh ${headers.length} kolom).`);
+  }
   return result;
-}
-
-// ---------- MetaBright ----------
-function metabrightGrid(buffer: Buffer): unknown[][] {
-  const wb = XLSX.read(buffer, { type: "buffer" });
-  const ws = wb.Sheets[wb.SheetNames[0]];
-  if (!ws) throw new Error("File tidak memiliki sheet yang bisa dibaca.");
-  return XLSX.utils.sheet_to_json<unknown[]>(ws, { header: 1, raw: false, defval: "" });
-}
-
-export function isMetabrightFile(buffer: Buffer) {
-  try {
-    const grid = metabrightGrid(buffer);
-    const h = grid.findIndex((r) => r && r.some((c) => String(c).trim().toUpperCase() === "TELDA"));
-    return h >= 2 && grid[h].some((c) => String(c).trim().toUpperCase() === "TARGET");
-  } catch {
-    return false;
-  }
-}
-
-// Disimpan di state key "metabright" dengan bentuk yang sama seperti halaman web: { cur, periods, savedAt }.
-// Digabung atomik di SQL supaya beberapa file periode berbeda yang dikirim bersamaan tidak saling menimpa.
-export async function importMetabright(buffer: Buffer, fileName: string, caption?: string) {
-  const dataset = parseMetabrightSheet(metabrightGrid(buffer) as unknown[][]);
-  const fromName = (text: string) => (/(20\d{2})(0[1-9]|1[0-2])/.test(text) ? metabrightPeriodLabel(text) : null);
-  const label = fromName(fileName) ?? fromName(caption ?? "") ?? metabrightPeriodLabel(currentJakartaPeriodKey());
-  const table = process.env.DASHBOARD_STATE_TABLE || "dashboard_state";
-  if (!/^[a-z_][a-z0-9_]*$/.test(table)) throw new Error("Nama tabel state tidak valid.");
-  const savedAt = new Date().toISOString();
-  const text =
-    `insert into public."${table}" (key, payload, updated_at) ` +
-    `values ('metabright', jsonb_build_object('cur', $1::text, 'periods', jsonb_build_object($1::text, $2::jsonb), 'savedAt', $3::text), now()) ` +
-    `on conflict (key) do update set updated_at = now(), payload = ` +
-    `jsonb_set(coalesce(public."${table}".payload, '{}'::jsonb) || jsonb_build_object('cur', $1::text, 'savedAt', $3::text, ` +
-    `'periods', coalesce(public."${table}".payload->'periods', '{}'::jsonb) || jsonb_build_object($1::text, $2::jsonb)), '{cur}', to_jsonb($1::text), true)`;
-  const result = await dbQuery(text, [label, JSON.stringify(dataset), savedAt]);
-  if (result.error) throw new Error("Gagal menyimpan data MetaBright ke database.");
-  return { label, telda: dataset.rows.length, indicators: dataset.indicators.length, warn: dataset.warn };
-}
-
-// ---------- LTS ----------
-export type LtsImportSummary = { datasetKey: LtsDatasetKey; label: string; periodKey: string; rowCount: number };
-
-export function parseLtsDataset(buffer: Buffer, fileName: string) {
-  const datasetKey = detectLtsDataset(buffer);
-  if (!datasetKey) {
-    throw new Error(
-      "Kolom file tidak cocok dengan MASTER LTS. Butuh salah satu: SALES (WITEL, TELKOM_DAERAH, Jml_Sales), CAPS (L_WITEL, TELKOM_DAERAH, COUNT_SID, SSL_CT0, SSL_DO), atau CT0 (Produk, Bayar Desc, Datel, Witel).",
-    );
-  }
-  const definition = ltsDatasetDefinitions[datasetKey];
-  const { rows } = sheetRows(buffer, definition.sheetName);
-  const map = headerIndexMap(rows[0]);
-  const compactHeaders = ltsCompactColumns[datasetKey];
-  const indexes = compactHeaders.map((h) => map.get(normHeader(h)) ?? -1);
-  const compactRows = rows
-    .slice(1)
-    .map((row) => indexes.map((index) => (index >= 0 ? cleanCell(row[index]) : null)))
-    .filter((row) => row.some((cell) => cell !== null && String(cell).trim() !== "")) as LtsMasterRow[];
-  validateLtsDataset(datasetKey, compactHeaders, compactRows);
-  return {
-    datasetKey,
-    fileName,
-    headers: compactHeaders,
-    periodKey: periodKeyFromLtsRows(datasetKey, compactHeaders, compactRows),
-    rows: compactRows,
-    rowCount: compactRows.length,
-    uploadedAt: new Date().toISOString(),
-  };
-}
-
-// Tiga file LTS bisa dikirim sekaligus dan diproses paralel. Karena itu satu dataset digabung ke state
-// langsung di SQL (atomik per baris), bukan baca-lalu-tulis seluruh state, supaya tidak saling menimpa.
-export async function importLtsDataset(buffer: Buffer, fileName: string): Promise<LtsImportSummary> {
-  const dataset = parseLtsDataset(buffer, fileName);
-  const table = process.env.DASHBOARD_STATE_TABLE || "dashboard_state";
-  if (!/^[a-z_][a-z0-9_]*$/.test(table)) throw new Error("Nama tabel state tidak valid.");
-  const text =
-    `insert into public."${table}" (key, payload, updated_at) ` +
-    `values ('lts', jsonb_build_object('datasets', '{}'::jsonb, 'datasetArchive', jsonb_build_object($1::text, jsonb_build_object($2::text, $3::jsonb)), 'selectedPeriodKey', $2::text, 'updatedAt', $4::text), now()) ` +
-    `on conflict (key) do update set updated_at = now(), payload = ` +
-    `jsonb_set(jsonb_set(jsonb_set(` +
-    `coalesce(public."${table}".payload, '{}'::jsonb) || jsonb_build_object('selectedPeriodKey', $2::text, 'updatedAt', $4::text), ` +
-    `'{datasetArchive}', coalesce(public."${table}".payload->'datasetArchive', '{}'::jsonb), true), ` +
-    `array['datasetArchive', $1::text], coalesce(public."${table}".payload->'datasetArchive'->$1::text, '{}'::jsonb), true), ` +
-    `array['datasetArchive', $1::text, $2::text], $3::jsonb, true)`;
-  const result = await dbQuery(text, [dataset.datasetKey, dataset.periodKey, JSON.stringify(dataset), dataset.uploadedAt]);
-  if (result.error) throw new Error("Gagal menyimpan data LTS ke database.");
-  return {
-    datasetKey: dataset.datasetKey,
-    label: ltsDatasetDefinitions[dataset.datasetKey].label,
-    periodKey: dataset.periodKey,
-    rowCount: dataset.rowCount,
-  };
 }
 
 // ---------- Periode ----------
@@ -374,7 +205,7 @@ function mergeHistoryTable(previous: Record<string, (number | null)[]>, table: H
 
 export type ImportSummary = { periods: { key: string; label: string; rows: number }[]; savedAt: string };
 
-export async function importMaster(product: ReportableProduct, rows: Row[]): Promise<ImportSummary> {
+export async function importMaster(product: UploadProduct, rows: Row[]): Promise<ImportSummary> {
   const state = await loadState(product);
   const archive = asRecord(state.periodArchive);
   const snapshots = asRecord(state.saveSnapshots);
@@ -482,7 +313,7 @@ function wmsSheet(rows: WmsReportRow[], total: WmsReportRow, dayCount: number) {
 
 export type ReportFile = { bytes: Uint8Array; filename: string; periodLabel: string; updatedAt: string | null };
 
-export async function buildReportFile(product: ReportableProduct): Promise<ReportFile> {
+export async function buildReportFile(product: UploadProduct): Promise<ReportFile> {
   const state = await loadState(product);
   const archive = asRecord(state.periodArchive);
   const selected = typeof state.selectedPeriodKey === "string" ? state.selectedPeriodKey : Object.keys(archive).sort().at(-1);
@@ -518,7 +349,18 @@ export async function buildReportFile(product: ReportableProduct): Promise<Repor
 }
 
 /** Baris MASTER periode aktif dari dashboard_state (sumber yang sama dengan web). null bila belum ada data. */
-export async function loadLatestRows(product: ReportableProduct) {
+export async function loadLatestRows(product: UploadProduct) {
+  const state = await loadState(product);
+  const archive = asRecord(state.periodArchive);
+  const selected = typeof state.selectedPeriodKey === "string" ? state.selectedPeriodKey : Object.keys(archive).sort().at(-1);
+  const entry = asRecord(selected ? archive[selected] : null);
+  const rows = Array.isArray(entry.rows) ? (entry.rows as Row[]) : [];
+  if (!selected || rows.length === 0) return null;
+  return { periodKey: selected, rows, savedAt: typeof entry.savedAt === "string" ? entry.savedAt : null };
+}
+
+/** Entri periode aktif lengkap (termasuk riwayat harian HSI) untuk membuat gambar report yang sama dengan web. */
+export async function loadLatestEntry(product: UploadProduct) {
   const state = await loadState(product);
   const archive = asRecord(state.periodArchive);
   const selected = typeof state.selectedPeriodKey === "string" ? state.selectedPeriodKey : Object.keys(archive).sort().at(-1);
@@ -527,7 +369,8 @@ export async function loadLatestRows(product: ReportableProduct) {
   if (!selected || rows.length === 0) return null;
   return {
     periodKey: selected,
-    reportHistory: (entry.reportHistory && typeof entry.reportHistory === "object" ? entry.reportHistory : null) as ReportHistory | null,
+    reportHistory: entry.reportHistory && typeof entry.reportHistory === "object" ? entry.reportHistory : null,
+    reportSnapshot: entry.reportSnapshot && typeof entry.reportSnapshot === "object" ? entry.reportSnapshot : null,
     rows,
     savedAt: typeof entry.savedAt === "string" ? entry.savedAt : null,
   };
