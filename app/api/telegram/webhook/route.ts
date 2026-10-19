@@ -486,13 +486,13 @@ async function buildHsiReportFromState(): Promise<ProductReport | null> {
   const rkap = report.branch.total;
   const stf = report.targetStf.branch.total;
   const metrics: ReportMetric[] = [];
-  addMetric(metrics, "Achievement RKAP", formatPercent(rkap.targetAch));
-  addMetric(metrics, "Achievement YTD", formatPercent(rkap.achYtd));
+  addMetric(metrics, "Achievement RKAP", formatRatioPercent(rkap.targetAch));
+  addMetric(metrics, "Achievement YTD", formatRatioPercent(rkap.achYtd));
   addMetric(metrics, "Shortage RKAP", formatNumber(rkap.shortageFm));
-  addMetric(metrics, "Achievement STF", formatPercent(stf.targetAch));
+  addMetric(metrics, "Achievement STF", formatRatioPercent(stf.targetAch));
   addMetric(metrics, "Shortage STF", formatNumber(stf.shortageFm));
   const top = [...report.branch.rows].filter((r) => typeof r.targetAch === "number").sort((a, b) => Number(b.targetAch) - Number(a.targetAch))[0];
-  if (top) addMetric(metrics, "Top TELDA", `${top.label} (${formatPercent(top.targetAch)})`);
+  if (top) addMetric(metrics, "Top TELDA", `${top.label} (${formatRatioPercent(top.targetAch)})`);
   return {
     available: true,
     lastUpdate: formatJakartaTimestamp(latest.savedAt) ?? undefined,
@@ -554,13 +554,13 @@ async function buildWmsReportFromState(): Promise<ProductReport | null> {
   const metrics: ReportMetric[] = [];
   addMetric(metrics, "Target FM", formatNumber(total.targetFm));
   addMetric(metrics, "Realisasi MTD", formatNumber(total.mtd));
-  addMetric(metrics, "Achievement FM", formatPercent(total.ach));
+  addMetric(metrics, "Achievement FM", formatRatioPercent(total.ach));
   addMetric(metrics, "Shortage FM", formatNumber(total.shortageFm));
   addMetric(metrics, "Target YTD", formatNumber(total.targetYtd));
   addMetric(metrics, "Realisasi YTD", formatNumber(total.realYtd));
-  addMetric(metrics, "Achievement YTD", formatPercent(total.achYtd));
+  addMetric(metrics, "Achievement YTD", formatRatioPercent(total.achYtd));
   addMetric(metrics, "Shortage YTD", formatNumber(total.shortageYtd));
-  if (top) addMetric(metrics, "Top TELDA", `${top.label} (${formatPercent(top.ach)})`);
+  if (top) addMetric(metrics, "Top TELDA", `${top.label} (${formatRatioPercent(top.ach)})`);
   return {
     available: true,
     lastUpdate: formatJakartaTimestamp(latest.savedAt ?? report.latestUpdatedAt) ?? undefined,
