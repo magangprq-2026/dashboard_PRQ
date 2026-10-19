@@ -1899,8 +1899,8 @@ function MasterPage({
 
   return (
     <div className="space-y-5">
-      <div className={`${panelClass} flex flex-wrap items-end justify-between gap-4 bg-[linear-gradient(135deg,#ffffff,#fffaf2)] p-5`}>
-        <div>
+      <div className={`${panelClass} flex flex-col gap-4 bg-[linear-gradient(135deg,#ffffff,#fffaf2)] p-5 lg:flex-row lg:items-end lg:justify-between`}>
+        <div className="min-w-0 flex-1">
           <p className="text-sm font-semibold uppercase text-amber-700">MASTER</p>
           <h1 className="mt-1 text-3xl font-semibold tracking-normal text-stone-950">Input Data Utama WMS</h1>
           <div className="mt-3 flex flex-wrap gap-2">
@@ -1910,7 +1910,7 @@ function MasterPage({
           </div>
           {importError && <p className="mt-3 text-sm font-medium text-rose-700">{importError}</p>}
         </div>
-        <div className="flex flex-wrap gap-2">
+        <div className="flex shrink-0 flex-wrap gap-2">
           <button className={secondaryButtonClass} onClick={() => fileInputRef.current?.click()}><Upload className="h-4 w-4" /> Upload Excel/CSV</button>
           <button className={secondaryButtonClass} disabled={!canGoBack} onClick={onBack}><Undo2 className="h-4 w-4" /> Back</button>
           <button className={dangerButtonClass} onClick={onClear}><Trash2 className="h-4 w-4" /> Clear Data</button>
