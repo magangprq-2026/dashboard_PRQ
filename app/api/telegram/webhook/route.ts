@@ -429,21 +429,35 @@ async function primeStatusText() {
       DASHBOARD_PRODUCTS.map(async (product) => ({
         product,
         available: await hasProductData(product),
+        updatedIso: await latestProductUpdateIso(product),
       })),
     );
-    const lastUpdate = await latestDataUpdate();
+    const lastUpdate = formatJakartaTimestamp(latestIso(statuses.map((item) => item.updatedIso)));
+    const readyCount = statuses.filter((item) => item.available).length;
+
+    // Tiap modul dibuat satu blok (judul + 2 baris detail) dengan jarak kosong antar blok agar tidak berdempetan.
+    const blocks = statuses.map(({ available, product, updatedIso }) => {
+      const updated = formatJakartaTimestamp(updatedIso);
+      return [
+        `${available ? "🟢" : "🟡"} <b>${productLabel(product)}</b>`,
+        `     Status:  ${available ? "Data tersedia" : "Belum ada data"}`,
+        `     Update:  ${updated ? `<code>${escapeHtml(updated)}</code>` : "-"}`,
+      ].join("\n");
+    });
+
     const lines = [
       "📊 <b>PRIME Dashboard Status</b>",
+      `<i>${readyCount} dari ${statuses.length} modul sudah memiliki data</i>`,
       MENU_DIVIDER,
       "",
-      ...statuses.map(({ available, product }) => `${available ? "🟢" : "🟡"}  <b>${productLabel(product)}</b>  ·  ${available ? "Data tersedia" : "Belum ada data"}`),
+      blocks.join("\n\n"),
       "",
       MENU_DIVIDER,
-      "🗄 <b>Database</b>  ·  🟢 Connected",
+      "🗄 <b>Database</b>:  🟢 Connected",
     ];
 
     if (lastUpdate) {
-      lines.push("", `🕒 <b>Update terakhir</b>`, `<code>${escapeHtml(lastUpdate)}</code>`);
+      lines.push("🕒 <b>Update terakhir</b>:", `<code>${escapeHtml(lastUpdate)}</code>`);
     }
 
     return lines.join("\n");
