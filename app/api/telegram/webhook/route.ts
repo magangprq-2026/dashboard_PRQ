@@ -169,9 +169,26 @@ function portalUrlFromOrigin(origin: string) {
   return configuredAppUrl() ?? origin.replace(/\/$/, "");
 }
 
+// Kata tanpa garis miring (mis. "start", "menu", "halo") juga dianggap perintah supaya tidak membingungkan pengguna.
+const COMMAND_ALIASES: Record<string, string> = {
+  download: "/download",
+  halo: "/start",
+  help: "/help",
+  hi: "/start",
+  lastupdate: "/lastupdate",
+  menu: "/start",
+  myid: "/myid",
+  portal: "/portal",
+  report: "/report",
+  start: "/start",
+  status: "/status",
+  upload: "/upload",
+};
+
 function normalizeTelegramCommand(text: string) {
   const command = text.split(/\s+/)[0]?.toLowerCase() ?? "";
-  return command.split("@")[0] ?? command;
+  const bare = command.split("@")[0] ?? command;
+  return bare.startsWith("/") ? bare : (COMMAND_ALIASES[bare] ?? bare);
 }
 
 function formatJakartaTimestamp(value: string | null | undefined) {
@@ -867,9 +884,9 @@ function myIdText(userId: string | null) {
 
 function unknownCommandText() {
   return [
-    "Menu belum dikenali.",
+    "🤔 <b>Perintah belum dikenali</b>",
     "",
-    "Pilih menu yang ingin dibuka.",
+    "Pilih menu di bawah, atau ketik /start untuk membuka menu utama.",
   ].join("\n");
 }
 
