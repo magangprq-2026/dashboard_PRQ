@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { supabaseGet } from "@/features/shared/backend/supabase/rest";
+import { dbGet } from "@/features/shared/backend/database/db";
 import { computeLtsReport, type LtsReportSourceDatasets } from "@/features/lts/domain/reporting/reporting";
 import {
   computeWmsReport,
@@ -302,13 +302,13 @@ function myIdKeyboard(): TelegramInlineKeyboardMarkup {
 }
 
 async function hasProductData(product: DashboardProduct) {
-  const result = await supabaseGet<DashboardPresenceRow[]>("dashboard_records", `select=product&product=eq.${product}&limit=1`);
+  const result = await dbGet<DashboardPresenceRow[]>("dashboard_records", `select=product&product=eq.${product}&limit=1`);
   if (result.error) throw new Error("PRODUCT_STATUS_QUERY_FAILED");
   return Boolean(result.data?.length);
 }
 
 async function latestDataUpdate() {
-  const result = await supabaseGet<ReportingImportRow[]>(
+  const result = await dbGet<ReportingImportRow[]>(
     "reporting_imports",
     "select=imported_at,updated_at&row_count=gt.0&order=imported_at.desc&limit=1",
   );
@@ -318,7 +318,7 @@ async function latestDataUpdate() {
 }
 
 async function latestProductUpdate(product: DashboardProduct) {
-  const result = await supabaseGet<ReportingImportRow[]>(
+  const result = await dbGet<ReportingImportRow[]>(
     "reporting_imports",
     `select=imported_at,updated_at&product=eq.${product}&row_count=gt.0&order=imported_at.desc&limit=1`,
   );
@@ -329,7 +329,7 @@ async function latestProductUpdate(product: DashboardProduct) {
 
 async function latestPeriodFor(product: DashboardProduct, datasetKind?: string) {
   const datasetFilter = datasetKind ? `&dataset_kind=eq.${datasetKind}` : "";
-  const result = await supabaseGet<DashboardRecordRow[]>(
+  const result = await dbGet<DashboardRecordRow[]>(
     "dashboard_records",
     `select=period_key&product=eq.${product}${datasetFilter}&period_key=not.is.null&order=period_key.desc&limit=1`,
   );
@@ -339,7 +339,7 @@ async function latestPeriodFor(product: DashboardProduct, datasetKind?: string) 
 
 async function recordsFor(product: DashboardProduct, datasetKind: string, periodKey?: string | null, limit = 32) {
   const periodFilter = periodKey ? `&period_key=eq.${periodKey}` : "";
-  const result = await supabaseGet<DashboardRecordRow[]>(
+  const result = await dbGet<DashboardRecordRow[]>(
     "dashboard_records",
     `select=dataset_kind,period_key,payload,updated_at&product=eq.${product}&dataset_kind=eq.${datasetKind}${periodFilter}&limit=${limit}`,
   );
@@ -348,8 +348,8 @@ async function recordsFor(product: DashboardProduct, datasetKind: string, period
 }
 
 async function dashboardStatePayload(key: string) {
-  const result = await supabaseGet<DashboardStateRow[]>(
-    process.env.SUPABASE_DASHBOARD_TABLE || "dashboard_state",
+  const result = await dbGet<DashboardStateRow[]>(
+    process.env.DASHBOARD_STATE_TABLE || "dashboard_state",
     `select=payload,updated_at&key=eq.${encodeURIComponent(key)}&limit=1`,
   );
   if (result.error) throw new Error("DASHBOARD_STATE_QUERY_FAILED");

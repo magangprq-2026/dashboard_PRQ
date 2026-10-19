@@ -12,7 +12,7 @@ Nama menu di Vercel/Neon bisa sedikit berbeda dari tulisan di sini karena tampil
 | `package-lock.json` tidak sinkron (xlsx, jszip, html2canvas hilang) | Sudah diperbarui, `npm ci` lolos |
 | Link tombol Telegram tanpa `https://` bila memakai URL otomatis Vercel | Sudah diperbaiki |
 
-Nama file `rest.ts` dan fungsi `supabaseGet` / `supabaseUpsert` sengaja dipertahankan supaya pemanggil lain tidak perlu diubah. Isinya sudah Neon.
+Folder lama `supabase/` sudah dihapus. Lapisan database sekarang ada di `features/shared/backend/database/db.ts` (fungsi `dbGet` / `dbUpsert`).
 
 Pengujian yang sudah dilakukan: `next build` lolos tanpa error, ESLint bersih, dan 17 uji SQL di Postgres sungguhan (PGlite) lulus. Uji itu mencakup skema yang bisa dijalankan dua kali, simpan lalu baca data, timpa data, semua query bot Telegram, penolakan injeksi SQL, dan payload ±1 MB. Yang belum bisa saya uji dari sini adalah koneksi ke akun Neon dan Vercel Anda. Karena itu langkah verifikasi di bagian E wajib dijalankan.
 
@@ -150,7 +150,7 @@ Jika langkah 5 atau 6 gagal, lihat bagian G.
 
 ## Catatan modul
 
-- **HSI** memakai `/api/dashboard-state` (key `default`), **WMS** memakai `/api/wms/dashboard-state` (key `wms`), **LTS** memakai `/api/lts/dashboard-state` (key `lts`). Ketiganya sudah lewat Neon karena memakai `features/shared/backend/supabase/rest.ts`.
+- **HSI** memakai `/api/dashboard-state` (key `default`), **WMS** memakai `/api/wms/dashboard-state` (key `wms`), **LTS** memakai `/api/lts/dashboard-state` (key `lts`). Ketiganya sudah lewat Neon karena memakai `features/shared/backend/database/db.ts`.
 - **Metabright** tidak punya penyimpanan server; datanya dari `features/metabright/data/default.json` dan diproses di browser, jadi tidak butuh tabel Neon.
 - Batas 4,5 MB di bagian H berlaku juga untuk HSI dan WMS, bukan hanya LTS.
 

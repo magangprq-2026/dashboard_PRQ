@@ -4,8 +4,8 @@ import { useMemo, useState } from "react";
 import {
   createLocalStorageBackup,
   exportLocalStorageBackup,
-  migrateLegacyDataToSupabase,
-  normalizeExistingLegacyEntriesToSupabase,
+  migrateLegacyDataToDatabase,
+  normalizeExistingLegacyEntriesToDatabase,
   scanLegacyLocalStorage,
   type LocalStorageBackupEntry,
   type LocalStorageMigrationReport,
@@ -40,7 +40,7 @@ export function LegacyStorageMigrationPanel() {
     setReport(null);
     try {
       const backup = createLocalStorageBackup();
-      setReport(await migrateLegacyDataToSupabase(backup));
+      setReport(await migrateLegacyDataToDatabase(backup));
       setEntries(scanLegacyLocalStorage());
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Migrasi gagal.");
@@ -54,7 +54,7 @@ export function LegacyStorageMigrationPanel() {
     setError(null);
     setReport(null);
     try {
-      setReport(await normalizeExistingLegacyEntriesToSupabase());
+      setReport(await normalizeExistingLegacyEntriesToDatabase());
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Normalisasi HSI/WMS gagal.");
     } finally {
@@ -67,9 +67,9 @@ export function LegacyStorageMigrationPanel() {
       <section className="mx-auto max-w-6xl">
         <div className="rounded-[24px] border border-slate-200/80 bg-white/90 p-8 shadow-[0_18px_50px_rgba(15,23,42,0.08)]">
           <p className="text-xs font-bold uppercase tracking-[0.22em] text-blue-500">PRIME Data Migration</p>
-          <h1 className="mt-3 text-4xl font-bold tracking-normal text-slate-950">Legacy localStorage to Supabase</h1>
+          <h1 className="mt-3 text-4xl font-bold tracking-normal text-slate-950">Legacy localStorage to Neon</h1>
           <p className="mt-3 max-w-3xl text-sm leading-6 text-slate-600">
-            Tool ini membuat backup lengkap localStorage/sessionStorage browser, lalu mengirim data persistent ke Supabase. Data lokal lama tetap
+            Tool ini membuat backup lengkap localStorage/sessionStorage browser, lalu mengirim data persistent ke database Neon. Data lokal lama tetap
             dipertahankan sebagai fallback dan tidak dihapus otomatis.
           </p>
 
@@ -87,7 +87,7 @@ export function LegacyStorageMigrationPanel() {
               onClick={handleMigration}
               type="button"
             >
-              {isMigrating ? "Migrating..." : "Backup & Migrate to Supabase"}
+              {isMigrating ? "Migrating..." : "Backup & Migrate to Neon"}
             </button>
             <button
               className="h-11 rounded-xl border border-blue-200 bg-blue-50 px-5 text-sm font-bold text-blue-700 shadow-sm transition hover:bg-blue-100 disabled:cursor-wait disabled:opacity-60"

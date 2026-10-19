@@ -1,12 +1,10 @@
-// Lapisan database server-side. Dulu memanggil Supabase REST (PostgREST); sekarang memakai Neon Postgres
-// lewat driver HTTP @neondatabase/serverless. Nama fungsi (supabaseGet / supabaseUpsert) sengaja
-// dipertahankan supaya semua pemanggil lama tidak perlu diubah.
+// Lapisan database server-side (Neon Postgres) lewat driver HTTP @neondatabase/serverless.
 //
 // Query dibangun sebagai SQL berparameter. Nama tabel/kolom divalidasi (hanya huruf kecil, angka, underscore),
 // sedangkan semua nilai dikirim sebagai parameter ($1, $2, ...), jadi aman dari SQL injection.
 import { neon } from "@neondatabase/serverless";
 
-export type SupabaseResult<T> =
+export type DbResult<T> =
   | { data: T; error: null; status: number }
   | { data: null; error: string; status: number };
 
@@ -23,7 +21,7 @@ export function databaseUrl() {
   return (process.env.DATABASE_URL || process.env.POSTGRES_URL || process.env.NEON_DATABASE_URL || "").trim() || null;
 }
 
-export function supabaseConfig(table = process.env.SUPABASE_DASHBOARD_TABLE || "dashboard_state"): DatabaseConfig | null {
+export function dbConfig(table = process.env.DASHBOARD_STATE_TABLE || "dashboard_state"): DatabaseConfig | null {
   const url = databaseUrl();
   if (!url) return null;
   return { table, url };
@@ -164,8 +162,8 @@ export function buildUpsert(table: string, rows: Record<string, unknown>[], onCo
   return { params: [], text };
 }
 
-export async function supabaseGet<T>(table: string, query: string): Promise<SupabaseResult<T>> {
-  const config = supabaseConfig(table);
+export async function dbGet<T>(table: string, query: string): Promise<DbResult<T>> {
+  const config = dbConfig(table);
   if (!config) return { data: null, error: NOT_CONFIGURED, status: 503 };
 
   let built: BuiltQuery | { error: string };
@@ -185,13 +183,13 @@ export async function supabaseGet<T>(table: string, query: string): Promise<Supa
   }
 }
 
-export async function supabaseUpsert<T>(
+export async function dbUpsert<T>(
   table: string,
   payload: unknown,
   onConflict: string,
   options: { returning?: "minimal" | "representation" } = {},
-): Promise<SupabaseResult<T>> {
-  const config = supabaseConfig(table);
+): Promise<DbResult<T>> {
+  const config = dbConfig(table);
   if (!config) return { data: null, error: NOT_CONFIGURED, status: 503 };
 
   const rows = (Array.isArray(payload) ? payload : [payload]).filter(

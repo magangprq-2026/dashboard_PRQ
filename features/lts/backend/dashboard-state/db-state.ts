@@ -1,4 +1,4 @@
-import { readDashboardStateByKey, writeDashboardStateByKey } from "@/features/shared/backend/supabase/dashboard-state";
+import { readDashboardStateByKey, writeDashboardStateByKey } from "@/features/shared/backend/database/dashboard-state";
 
 const STATE_KEY = "lts";
 

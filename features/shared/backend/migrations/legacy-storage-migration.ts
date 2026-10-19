@@ -1,5 +1,5 @@
-import { readDashboardStateByKey, writeDashboardStateByKey } from "@/features/shared/backend/supabase/dashboard-state";
-import { supabaseGet, supabaseUpsert } from "@/features/shared/backend/supabase/rest";
+import { readDashboardStateByKey, writeDashboardStateByKey } from "@/features/shared/backend/database/dashboard-state";
+import { dbGet, dbUpsert } from "@/features/shared/backend/database/db";
 import {
   legacyStorageDefinitionForKey,
   LOCAL_STORAGE_MIGRATION_VERSION,
@@ -612,7 +612,7 @@ async function maybeWriteDashboardState(
 
 async function upsertRows(table: string, rows: unknown[], onConflict = "id") {
   if (rows.length === 0) return { ok: true, status: 204 };
-  const result = await supabaseUpsert(table, rows, onConflict);
+  const result = await dbUpsert(table, rows, onConflict);
   return { ok: !result.error, status: result.status, error: result.error };
 }
 
@@ -827,7 +827,7 @@ export async function normalizeExistingHsiWmsLegacyEntries(): Promise<LegacyStor
   };
 
   const keys = [...hsiBusinessKeys, ...wmsBusinessKeys, "hsi-selected-period-v1", "wms-selected-period-v1", "hsi-master-saved-at-v1", "wms-master-saved-at-v1"];
-  const result = await supabaseGet<LegacyStorageEntryRow[]>(
+  const result = await dbGet<LegacyStorageEntryRow[]>(
     "legacy_storage_entries",
     `select=backup_id,migrated_at,parsed_value,product,raw_value,source_hash,source_key,storage_area&source_key=in.(${keys.join(",")})`,
   );

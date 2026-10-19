@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSessionUser, hasPermission, SESSION_COOKIE, verifyMasterUnlockToken } from "@/features/hsi/backend/auth/session";
-import { readWmsDashboardState, writeWmsDashboardState } from "@/features/wms/backend/dashboard-state/supabase-state";
+import { readWmsDashboardState, writeWmsDashboardState } from "@/features/wms/backend/dashboard-state/db-state";
 
 export const dynamic = "force-dynamic";
 

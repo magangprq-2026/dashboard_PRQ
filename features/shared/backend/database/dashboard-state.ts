@@ -1,4 +1,4 @@
-import { supabaseGet, supabaseUpsert } from "@/features/shared/backend/supabase/rest";
+import { dbGet, dbUpsert } from "@/features/shared/backend/database/db";
 
 export type DashboardStateResult =
   | { body: Record<string, unknown>; status?: number }
@@ -10,8 +10,8 @@ type DashboardStateRow = {
 };
 
 export async function readDashboardStateByKey(stateKey: string): Promise<DashboardStateResult> {
-  const result = await supabaseGet<DashboardStateRow[]>(
-    process.env.SUPABASE_DASHBOARD_TABLE || "dashboard_state",
+  const result = await dbGet<DashboardStateRow[]>(
+    process.env.DASHBOARD_STATE_TABLE || "dashboard_state",
     `select=payload,updated_at&key=eq.${encodeURIComponent(stateKey)}&limit=1`,
   );
 
@@ -37,8 +37,8 @@ export async function writeDashboardStateByKey(stateKey: string, payload: unknow
     return { body: { error: "Payload dashboard tidak valid." }, status: 400 };
   }
 
-  const result = await supabaseUpsert(
-    process.env.SUPABASE_DASHBOARD_TABLE || "dashboard_state",
+  const result = await dbUpsert(
+    process.env.DASHBOARD_STATE_TABLE || "dashboard_state",
     {
       key: stateKey,
       payload,

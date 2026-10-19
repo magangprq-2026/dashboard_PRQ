@@ -97,7 +97,7 @@ export function exportLocalStorageBackup() {
   return backup;
 }
 
-export async function migrateLegacyDataToSupabase(backup = createLocalStorageBackup()): Promise<LocalStorageMigrationReport> {
+export async function migrateLegacyDataToDatabase(backup = createLocalStorageBackup()): Promise<LocalStorageMigrationReport> {
   const response = await fetch("/api/migrations/legacy-storage", {
     body: JSON.stringify({
       createdAt: backup.createdAt,
@@ -111,12 +111,12 @@ export async function migrateLegacyDataToSupabase(backup = createLocalStorageBac
 
   const payload = (await response.json().catch(() => null)) as LocalStorageMigrationReport | { error?: string } | null;
   if (!response.ok && response.status !== 207) {
-    throw new Error(payload && "error" in payload && payload.error ? payload.error : "Migrasi Supabase gagal.");
+    throw new Error(payload && "error" in payload && payload.error ? payload.error : "Migrasi ke database gagal.");
   }
   return payload as LocalStorageMigrationReport;
 }
 
-export async function normalizeExistingLegacyEntriesToSupabase(): Promise<LocalStorageMigrationReport> {
+export async function normalizeExistingLegacyEntriesToDatabase(): Promise<LocalStorageMigrationReport> {
   const response = await fetch("/api/migrations/legacy-storage", { method: "PUT" });
   const payload = (await response.json().catch(() => null)) as LocalStorageMigrationReport | { error?: string } | null;
   if (!response.ok && response.status !== 207) {
