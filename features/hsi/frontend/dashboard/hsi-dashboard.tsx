@@ -1790,7 +1790,6 @@ function MasterPage({
   autoSaveStatus,
   canGoBack,
   headersCleared,
-  periodLabel,
   rows,
   savedAt,
   setHeadersCleared,
@@ -1802,7 +1801,6 @@ function MasterPage({
   autoSaveStatus: string;
   canGoBack: boolean;
   headersCleared: boolean;
-  periodLabel: string;
   rows: MasterRow[];
   savedAt: string | null;
   setHeadersCleared: React.Dispatch<React.SetStateAction<boolean>>;
@@ -1871,10 +1869,10 @@ function MasterPage({
       <div className={`${panelClass} flex flex-col gap-4 bg-[linear-gradient(135deg,#ffffff,#f8fafc)] p-5 lg:flex-row lg:items-end lg:justify-between`}>
         <div className="min-w-0 flex-1">
           <p className="text-sm font-semibold uppercase text-rose-700">MASTER</p>
-          <h1 className="mt-1 text-3xl font-semibold tracking-normal text-slate-950">Input Data Utama</h1>
+          <h1 className="mt-1 text-3xl font-semibold tracking-normal text-slate-950">Input Data Utama HSI</h1>
           <div className="mt-3 flex flex-wrap gap-2">
-            <StatusPill>Bulan aktif: {periodLabel}</StatusPill>
-            <StatusPill>Terakhir disimpan: {formatSavedAt(savedAt)}</StatusPill>
+            <StatusPill>{formatNumber(rows.length)} baris MASTER</StatusPill>
+            <StatusPill>Last saved: {formatSavedAt(savedAt)}</StatusPill>
             <StatusPill tone={autoSaveStatus.includes("tersimpan") ? "good" : "neutral"}>{autoSaveStatus}</StatusPill>
           </div>
           {importError && <p className="mt-3 text-sm font-medium text-rose-700">{importError}</p>}
@@ -1905,13 +1903,6 @@ function MasterPage({
       </div>
 
       <section className={`${panelClass} overflow-hidden`}>
-        <div className="flex items-center justify-between border-b border-slate-200/70 bg-white/75 px-4 py-3">
-          <div>
-            <p className="text-sm font-semibold text-slate-700">{formatNumber(rows.length)} baris MASTER</p>
-            <p className="mt-0.5 text-xs text-slate-500">Last saved: {formatSavedAt(savedAt)}</p>
-          </div>
-          <StatusPill>55 kolom MASTER</StatusPill>
-        </div>
         <div className="max-h-[68vh] overflow-auto">
           <table className="min-w-[4200px] border-separate border-spacing-0 text-left text-sm">
             <thead>
@@ -2909,7 +2900,6 @@ export function HsiDashboard({ permissions = fullAccessPermissions }: { permissi
               autoSaveStatus={autoSaveStatus}
               canGoBack={(saveSnapshots[selectedPeriodKey] ?? []).length > 0}
               headersCleared={masterHeadersCleared}
-              periodLabel={displayReport.periodLabel}
               rows={rows}
               savedAt={savedAt}
               setHeadersCleared={setMasterHeadersCleared}

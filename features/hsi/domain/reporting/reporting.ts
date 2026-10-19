@@ -485,11 +485,17 @@ function validation(rows: ReportRow[], kind: ReferenceKind) {
   const notes: string[] = [];
   let checked = 0;
   let mismatches = 0;
+  // Referensi Excel adalah foto data pada hari tertentu. Realisasi (mtd) & shortage hanya dibandingkan bila data
+  // yang diupload sama dengan foto itu (total mtd sama); kalau sudah ada data baru, hanya target yang divalidasi,
+  // supaya status "SELISIH" tidak muncul palsu setiap kali master diperbarui.
+  const totalRow = rows[rows.length - 1];
+  const totalReference = totalRow ? reference.find((item) => item.label === totalRow.label) : undefined;
+  const sameSnapshot = Boolean(totalRow && totalReference) && Math.abs(toNumber(totalRow.mtd as CellValue) - toNumber(totalReference!.mtd as CellValue)) <= 0.0001;
   for (const row of rows) {
     const expected = reference.find((item) => item.label === row.label);
     if (!expected) continue;
     checked += 1;
-    const fields: Array<keyof ReportRow> = ["targetFm", "targetYtd", "mtd", "shortageFm"];
+    const fields: Array<keyof ReportRow> = sameSnapshot ? ["targetFm", "targetYtd", "mtd", "shortageFm"] : ["targetFm", "targetYtd"];
     for (const field of fields) {
       const actualValue = toNumber(row[field] as CellValue);
       const expectedValue = toNumber(expected[field] as CellValue);
