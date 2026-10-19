@@ -1,5 +1,6 @@
 "use client";
 
+import { ACCEPT_BODY_ENCODING_HEADER, BODY_ENCODING_HEADER, GZIP_THRESHOLD_BYTES, canGzip, gunzipToText, gzipText } from "@/features/shared/http/gzip-json";
 import { safeStorageRemove, safeStorageSet, MAX_SNAPSHOTS_PER_PERIOD } from "@/features/shared/storage/safe-storage";
 import {
   Bar,
@@ -678,26 +679,51 @@ function persistDashboardStateLocally(state: DashboardPersistedState) {
 }
 
 async function loadDashboardStateFromServer(): Promise<{ configured: boolean; state: DashboardPersistedState | null }> {
-  const response = await fetch("/api/dashboard-state", { cache: "no-store" });
+  const response = await fetch("/api/dashboard-state", {
+    cache: "no-store",
+    headers: canGzip() ? { [ACCEPT_BODY_ENCODING_HEADER]: "gzip" } : undefined,
+  });
   if (!response.ok) throw new Error("Gagal memuat data dari server.");
-  const payload = (await response.json()) as { configured?: boolean; state?: unknown };
+  const payload = (
+    response.headers.get(BODY_ENCODING_HEADER) === "gzip"
+      ? JSON.parse(await gunzipToText(await response.arrayBuffer()))
+      : await response.json()
+  ) as { configured?: boolean; state?: unknown };
   return {
     configured: Boolean(payload.configured),
     state: parsePersistedDashboardState(payload.state),
   };
 }
 
+// Alasan gagal sync dibuat jelas agar mudah dilacak (sebelumnya selalu "sync server gagal" tanpa sebab).
+function describeSyncFailure(error: unknown) {
+  const message = error instanceof Error ? error.message : "";
+  if (message.startsWith("HTTP 401")) return "sesi atau token Master habis, buka menu Master lagi";
+  if (message.startsWith("HTTP 413")) return "data terlalu besar untuk server";
+  if (message.startsWith("HTTP ")) return message.replace(/^HTTP /, "kode ");
+  return "koneksi ke server terputus";
+}
+
 async function saveDashboardStateToServer(state: DashboardPersistedState, masterUnlockToken: string | null): Promise<{ configured: boolean }> {
+  // Riwayat "Back" (saveSnapshots) berisi salinan penuh data dan hanya dipakai di browser ini,
+  // jadi tidak ikut dikirim ke server agar ukuran request tidak melewati batas Vercel (±4,5 MB).
+  const json = JSON.stringify({ ...state, saveSnapshots: {} });
+  const compress = json.length > GZIP_THRESHOLD_BYTES && canGzip();
   const response = await fetch("/api/dashboard-state", {
-    body: JSON.stringify(state),
+    body: compress ? await gzipText(json) : json,
     headers: {
-      "Content-Type": "application/json",
+      "Content-Type": compress ? "application/octet-stream" : "application/json",
+      ...(compress ? { [BODY_ENCODING_HEADER]: "gzip" } : {}),
       ...(masterUnlockToken ? { "x-master-unlock-token": masterUnlockToken } : {}),
     },
     method: "PUT",
   });
   if (response.status === 503) return { configured: false };
-  if (!response.ok) throw new Error("Gagal menyimpan data ke server.");
+  if (!response.ok) {
+    const detail = (await response.json().catch(() => null)) as { error?: unknown } | null;
+    const serverMessage = typeof detail?.error === "string" ? `: ${detail.error}` : "";
+    throw new Error(`HTTP ${response.status}${response.status === 401 || response.status === 413 ? "" : serverMessage}`);
+  }
   const payload = (await response.json()) as { configured?: boolean };
   return { configured: Boolean(payload.configured) };
 }
@@ -2523,8 +2549,8 @@ export function HsiDashboard({ permissions = fullAccessPermissions }: { permissi
       .then((result) => {
         setAutoSaveStatus(result.configured ? successStatus : "Data tersimpan di browser; database server belum dikonfigurasi");
       })
-      .catch(() => {
-        setAutoSaveStatus("Data tersimpan di browser; sync server gagal");
+      .catch((error: unknown) => {
+        setAutoSaveStatus(`Data tersimpan di browser; sync server gagal (${describeSyncFailure(error)})`);
       });
   }, [masterUnlockToken]);
 
@@ -2613,7 +2639,11 @@ export function HsiDashboard({ permissions = fullAccessPermissions }: { permissi
       void loadDashboardStateFromServer()
         .then(({ configured, state }) => {
           if (state) {
-            applyPersistedState(state, "Data server dimuat");
+            const localSnapshots = parseSaveSnapshots(window.localStorage.getItem(SAVE_SNAPSHOTS_KEY));
+            applyPersistedState(
+              { ...state, saveSnapshots: Object.keys(state.saveSnapshots).length > 0 ? state.saveSnapshots : localSnapshots },
+              "Data server dimuat",
+            );
           } else if (!configured) {
             setAutoSaveStatus("Database server belum dikonfigurasi; data tersimpan di browser ini");
           }
