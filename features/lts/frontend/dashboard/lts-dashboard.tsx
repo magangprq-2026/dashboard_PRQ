@@ -63,7 +63,7 @@ import {
   type LtsUploadedDataset,
 } from "@/features/lts/domain/reporting/reporting";
 import { ltsSeedData } from "@/features/lts/domain/reporting/seed-data";
-import { rankColor, rankPillStyle, rankTotal } from "@/features/shared/dashboard/rank-color";
+import { rankStepColor, rankStepPillStyle, rankTotal } from "@/features/shared/dashboard/rank-color";
 
 type View = "home" | "master" | "report";
 
@@ -772,7 +772,7 @@ async function createLtsReportPng(report: LtsComputedReport, timestamp: Date, co
         const value = textValue(row, column.key);
         if (["ct0Rank", "capsRank", "scoreRank", "capsRankOnly"].includes(column.key) && value && !total) {
           const rankValue = row[column.key as "ct0Rank" | "capsRank" | "scoreRank" | "capsRankOnly"];
-          const pillColor = rankColor(rankValue, rankCounts[column.key])?.bg ?? "#334155";
+          const pillColor = rankStepColor(rankValue, rankCounts[column.key])?.bg ?? "#334155";
           drawPill(value, position.x + column.width / 2, y + rowHeight / 2, pillColor);
           continue;
         }
@@ -1411,13 +1411,13 @@ function ReportDataTable({ table, showChurnGap, showRankCaps }: { table: LtsRepo
                   <td className={`border-b border-r border-violet-100/80 px-2 py-2 text-right ${total ? "bg-[#160d24] text-white" : "bg-[#f3edff] font-semibold text-[#321653]"}`}>{formatNumber(row.sales)}</td>
                   <td className="border-b border-r border-indigo-100 bg-indigo-50/45 px-2 py-2 text-right">{formatNumber(row.ct0)}</td>
                   <td className="border-b border-r border-indigo-100 bg-indigo-50/80 px-2 py-2 text-right font-semibold text-indigo-800">{formatPercent(row.ct0Ratio)}</td>
-                  <td className="border-b border-r border-indigo-100 bg-indigo-50/45 px-2 py-2 text-center">{row.ct0Rank && !total ? <span className="inline-flex min-w-8 justify-center rounded-full bg-indigo-900 px-2 py-0.5 font-bold text-white shadow-sm" style={rankPillStyle(row.ct0Rank, ct0RankCount)}>{row.ct0Rank}</span> : row.ct0Rank ? <span className="font-bold">{row.ct0Rank}</span> : ""}</td>
+                  <td className="border-b border-r border-indigo-100 bg-indigo-50/45 px-2 py-2 text-center">{row.ct0Rank && !total ? <span className="inline-flex min-w-8 justify-center rounded-full bg-indigo-900 px-2 py-0.5 font-bold text-white shadow-sm" style={rankStepPillStyle(row.ct0Rank, ct0RankCount)}>{row.ct0Rank}</span> : row.ct0Rank ? <span className="font-bold">{row.ct0Rank}</span> : ""}</td>
                   <td className="border-b border-r border-cyan-100 bg-cyan-50/45 px-2 py-2 text-right">{formatNumber(row.caps)}</td>
                   <td className="border-b border-r border-cyan-100 bg-cyan-50/80 px-2 py-2 text-right font-semibold text-cyan-800">{formatPercent(row.capsRatio)}</td>
-                  <td className="border-b border-r border-cyan-100 bg-cyan-50/45 px-2 py-2 text-center">{row.capsRank && !total ? <span className="inline-flex min-w-8 justify-center rounded-full bg-cyan-900 px-2 py-0.5 font-bold text-white shadow-sm" style={rankPillStyle(row.capsRank, capsRankCount)}>{row.capsRank}</span> : row.capsRank ? <span className="font-bold">{row.capsRank}</span> : ""}</td>
+                  <td className="border-b border-r border-cyan-100 bg-cyan-50/45 px-2 py-2 text-center">{row.capsRank && !total ? <span className="inline-flex min-w-8 justify-center rounded-full bg-cyan-900 px-2 py-0.5 font-bold text-white shadow-sm" style={rankStepPillStyle(row.capsRank, capsRankCount)}>{row.capsRank}</span> : row.capsRank ? <span className="font-bold">{row.capsRank}</span> : ""}</td>
                   <td className="border-b border-r border-violet-100 bg-violet-50/90 px-2 py-2 text-right font-bold text-violet-900">{formatPercent(row.score)}</td>
-                  <td className="border-b border-r border-violet-100 bg-violet-50/50 px-2 py-2 text-center">{row.scoreRank && !total ? <span className="inline-flex min-w-8 justify-center rounded-full bg-violet-950 px-2 py-0.5 font-bold text-white shadow-sm" style={rankPillStyle(row.scoreRank, scoreRankCount)}>{row.scoreRank}</span> : row.scoreRank ? <span className="font-bold">{row.scoreRank}</span> : ""}</td>
-                  {!showCoordinator && showRankCaps && <td className="border-b border-r border-amber-100 bg-amber-50/70 px-2 py-2 text-center">{row.capsRankOnly && !total ? <span className="inline-flex min-w-8 justify-center rounded-full bg-amber-800 px-2 py-0.5 font-bold text-white shadow-sm" style={rankPillStyle(row.capsRankOnly, capsRankOnlyCount)}>{row.capsRankOnly}</span> : row.capsRankOnly ? <span className="font-bold">{row.capsRankOnly}</span> : ""}</td>}
+                  <td className="border-b border-r border-violet-100 bg-violet-50/50 px-2 py-2 text-center">{row.scoreRank && !total ? <span className="inline-flex min-w-8 justify-center rounded-full bg-violet-950 px-2 py-0.5 font-bold text-white shadow-sm" style={rankStepPillStyle(row.scoreRank, scoreRankCount)}>{row.scoreRank}</span> : row.scoreRank ? <span className="font-bold">{row.scoreRank}</span> : ""}</td>
+                  {!showCoordinator && showRankCaps && <td className="border-b border-r border-amber-100 bg-amber-50/70 px-2 py-2 text-center">{row.capsRankOnly && !total ? <span className="inline-flex min-w-8 justify-center rounded-full bg-amber-800 px-2 py-0.5 font-bold text-white shadow-sm" style={rankStepPillStyle(row.capsRankOnly, capsRankOnlyCount)}>{row.capsRankOnly}</span> : row.capsRankOnly ? <span className="font-bold">{row.capsRankOnly}</span> : ""}</td>}
                   {showChurnGap && (
                     <>
                       <td className="border-b border-r border-amber-100 bg-amber-50/60 px-2 py-2 text-right text-amber-900">{formatNumber(row.churn)}</td>

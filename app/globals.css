@@ -1009,7 +1009,9 @@ body {
   font-weight: 900;
 }
 
-/* Warna rank (hijau -> merah) diatur lewat inline style dari rank-color.ts */
+.metabright-page .rk.r1 { background: #01ad23; color: #ffffff; }
+.metabright-page .rk.r2 { background: #80c02b; color: #ffffff; }
+.metabright-page .rk.r3 { background: #ffd334; color: #422006; }
 
 .metabright-page .ts {
   display: flex;
