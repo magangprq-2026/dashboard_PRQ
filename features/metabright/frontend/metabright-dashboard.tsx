@@ -188,8 +188,7 @@ export function MetabrightDashboard() {
           <div className="logo">MB</div>
           <div>
             <p className="eyebrow">PRIME • METABRIGHT</p>
-            <h2>Impactful Award Telda</h2>
-            <p>Monitoring performa dan pencapaian Telda berdasarkan indikator MetaBright.</p>
+            <h2>MetaBright</h2>
             <p>{d ? `${d.rows.length} telda · ${d.indicators.length} indikator` : "Belum ada data"}</p>
           </div>
         </div>
@@ -216,6 +215,7 @@ export function MetabrightDashboard() {
           <div className="head">
             <div className="ttl">
               <h1>Impactful Award Telda<span className="pp">{cur ?? ""}</span></h1>
+              <p className="hsub">Monitoring performa dan pencapaian Telda berdasarkan indikator MetaBright.</p>
               {d && ind && (
                 <div className="sums">
                   <span className="st"><Icon name="pin" /><span>{scopeLabel}</span></span>
@@ -331,7 +331,7 @@ export function MetabrightDashboard() {
                         <div className="pdn" title={r.telda}>{r.telda}</div>
                         <div className="pdw">{r.witel}</div>
                         <div className="pds">{nf(r.total)}</div>
-                        <div className={"pdb p" + (k + 1)} style={{ height: [132, 100, 78][k] }}>{k + 1}</div>
+                        <div className={"pdb p" + (k + 1)} style={{ height: [150, 116, 92][k] }}>{k + 1}</div>
                       </div>
                     );
                   }) : <div className="empty">Tidak ada telda pada filter ini.</div>}
@@ -353,8 +353,8 @@ export function MetabrightDashboard() {
                 <div className="g2">
                   <section className="card fill">
                     <div className="ch">
-                      <div><h3>Peringkat total score</h3><div className="sub">Warna menunjukkan witel</div></div>
-                      <select value={topN} onChange={(e) => setTopN(+e.target.value)}>
+                      <div><h3>Peringkat total score</h3><div className="sub">Warna menunjukkan witel · garis putus-putus = rata-rata</div></div>
+                      <select className="mini" value={topN} onChange={(e) => setTopN(+e.target.value)}>
                         <option value={10}>10 teratas</option>
                         <option value={20}>20 teratas</option>
                         <option value={0}>Semua telda</option>
@@ -365,34 +365,39 @@ export function MetabrightDashboard() {
                       {ws.map((w) => <span key={w}><i style={{ background: witelColor(ws, w) }} />{w}</span>)}
                     </div>
                   </section>
-                  <div>
+                  <div className="stack">
                     <section className="card">
                       <h3>Rata-rata total score per witel</h3>
-                      <div className="sub">Skor maksimum 110</div>
+                      <div className="sub">Skor maksimum 110 · jumlah telda di dalam kurung</div>
                       <div className="box" style={{ marginTop: 10 }}><WitelChart rows={rows} ws={ws} /></div>
                     </section>
-                    <section className="card">
-                      <h3>Capaian rata-rata per indikator</h3>
-                      <div className="sub">Skor diperoleh terhadap bobot indikator (%)</div>
-                      <div className="box" style={{ marginTop: 10 }}><IndicatorChart rows={rows} d={d} /></div>
+                    <section className="card fill grow">
+                      <h3>Distribusi pencapaian indikator</h3>
+                      <div className="sub">Jumlah telda per rentang ACH — {ind.name}</div>
+                      <div className="box grow" style={{ minHeight: 260, marginTop: 10 }}><div style={{ position: "absolute", top: 0, right: 0, bottom: 0, left: 0 }}><DistChart rows={rows} i={iIdx} /></div></div>
                     </section>
                   </div>
                 </div>
 
                 <div className="g2">
-                  <section className="card">
+                  <section className="card fill">
+                    <h3>Capaian rata-rata per indikator</h3>
+                    <div className="sub">Skor diperoleh terhadap bobot indikator (%)</div>
+                    <div className="box" style={{ marginTop: 10 }}><IndicatorChart rows={rows} d={d} /></div>
+                    <div className="leg">
+                      <span><i style={{ background: "#059669" }} />≥ 80%</span>
+                      <span><i style={{ background: "#f59e0b" }} />50–79%</span>
+                      <span><i style={{ background: "#e11d48" }} />&lt; 50%</span>
+                    </div>
+                  </section>
+                  <section className="card fill">
                     <div className="ch">
                       <div><h3>Profil capaian telda</h3><div className="sub">Dibandingkan dengan rata-rata hasil filter</div></div>
-                      <select value={radarT?.telda ?? ""} onChange={(e) => setRadarTelda(e.target.value)}>
+                      <select className="mini" value={radarT?.telda ?? ""} onChange={(e) => setRadarTelda(e.target.value)}>
                         {byRank.map((r) => <option key={r.telda}>{r.telda}</option>)}
                       </select>
                     </div>
-                    <div className="box" style={{ height: 430 }}><RadarProfile t={radarT} rows={rows} d={d} /></div>
-                  </section>
-                  <section className="card">
-                    <h3>Distribusi pencapaian indikator</h3>
-                    <div className="sub">Jumlah telda per rentang ACH — {ind.name}</div>
-                    <div className="box" style={{ height: 430, marginTop: 10 }}><DistChart rows={rows} i={iIdx} /></div>
+                    <div className="box grow" style={{ minHeight: 440 }}><div style={{ position: "absolute", top: 0, right: 0, bottom: 0, left: 0 }}><RadarProfile t={radarT} rows={rows} d={d} /></div></div>
                   </section>
                 </div>
 
@@ -409,7 +414,7 @@ export function MetabrightDashboard() {
                 <section className="card">
                   <div className="ch"><div><h3>Target, realisasi, dan achievement per telda</h3><div className="sub">Indikator: {ind.name}</div></div></div>
                   <div className="scroll">
-                    <div style={{ height: 400, width: Math.max(rows.length * 60, 300), minWidth: "100%" }}>
+                    <div style={{ height: 420, width: Math.max(rows.length * 64, 300), minWidth: "100%" }}>
                       <TargetChart rows={rows} i={iIdx} />
                     </div>
                   </div>

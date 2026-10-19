@@ -1432,3 +1432,161 @@ body {
     grid-template-columns: 1fr;
   }
 }
+
+/* ===== MetaBright · polesan tampilan (tata letak & visualisasi) ===== */
+.metabright-page .top {
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  margin-bottom: 18px;
+}
+
+.metabright-page .brand h2 { font-size: 19px; }
+.metabright-page .brand p:last-child { margin-top: 2px; }
+
+.metabright-page .hsub {
+  margin: 8px 0 0;
+  max-width: 640px;
+  color: var(--mb-muted);
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.metabright-page .card {
+  transition: box-shadow 0.25s ease, transform 0.25s ease;
+}
+
+.metabright-page .card:not(.hero):hover {
+  box-shadow: 0 22px 54px rgba(15, 23, 42, 0.1);
+}
+
+.metabright-page .card h3 {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.metabright-page .card h3::before {
+  content: "";
+  flex: none;
+  width: 5px;
+  height: 18px;
+  border-radius: 99px;
+  background: linear-gradient(180deg, var(--mb-cyan), var(--mb-blue), var(--mb-purple));
+}
+
+.metabright-page .card .sub { margin-left: 15px; }
+.metabright-page .card .ch .sub { margin-left: 15px; }
+
+.metabright-page select.mini {
+  width: auto;
+  min-width: 150px;
+  height: 38px;
+  font-size: 12.5px;
+}
+
+/* KPI: 5 kolom sejajar, angka rapi */
+.metabright-page .kpis {
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 14px;
+  margin-bottom: 18px;
+}
+
+.metabright-page .k {
+  display: flex;
+  flex-direction: column;
+  min-height: 140px;
+  background: linear-gradient(160deg, #ffffff 55%, color-mix(in srgb, var(--ac) 8%, #ffffff));
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.metabright-page .k:hover { transform: translateY(-2px); box-shadow: 0 18px 38px rgba(15, 23, 42, 0.1); }
+.metabright-page .k small { text-transform: uppercase; letter-spacing: 0.06em; font-size: 11px; }
+.metabright-page .k strong { font-size: 32px; font-variant-numeric: tabular-nums; color: #0f172a; }
+.metabright-page .k em { margin-top: auto; overflow-wrap: anywhere; }
+.metabright-page .kb { height: 8px; }
+
+/* Baris grafik: kolom kiri/kanan sama tinggi */
+.metabright-page .g2 {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-items: stretch;
+  margin-bottom: 18px;
+}
+
+.metabright-page .stack {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.metabright-page .stack .card { margin-bottom: 0; }
+.metabright-page .g2 > .card, .metabright-page .stack > .card { min-width: 0; }
+.metabright-page .card.fill { display: flex; flex-direction: column; }
+.metabright-page .card.grow { flex: 1; }
+.metabright-page .box.grow { flex: 1; min-height: 0; }
+.metabright-page .card.fill .leg { margin-top: auto; }
+.metabright-page .card.fill > .box:not(.grow) { margin-bottom: 14px; }
+
+.metabright-page .leg { padding-top: 12px; }
+
+/* Podium + sorotan */
+.metabright-page .g3 { align-items: stretch; }
+.metabright-page .g3 .card { display: flex; flex-direction: column; }
+.metabright-page .pod { flex: 1; margin-top: 18px; gap: 14px; }
+.metabright-page .pd { display: flex; flex-direction: column; justify-content: flex-end; }
+.metabright-page .pds { font-size: 28px; font-variant-numeric: tabular-nums; }
+.metabright-page .pdb { box-shadow: inset 0 2px 0 rgba(255, 255, 255, 0.35); }
+
+.metabright-page .sor {
+  flex: 1;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-content: stretch;
+}
+
+.metabright-page .si {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  background: color-mix(in srgb, var(--c) 7%, #ffffff);
+}
+
+/* Heatmap & tabel */
+.metabright-page .scroll { padding-bottom: 4px; }
+
+.metabright-page table.hm th:first-child,
+.metabright-page table.hm td:first-child {
+  position: sticky;
+  left: 0;
+  z-index: 2;
+  min-width: 150px;
+  background: #ffffff;
+  box-shadow: 1px 0 0 #eef2f7;
+}
+
+.metabright-page table.hm th:first-child { background: #1d4ed8; }
+.metabright-page table.hm tr.all td:first-child { background: #f8fbff; }
+.metabright-page table.hm th { min-width: 78px; font-size: 11px; }
+.metabright-page table.hm .pill { min-width: 52px; border-radius: 999px; }
+
+.metabright-page .tw { border-radius: 16px; }
+.metabright-page tbody tr { transition: background 0.15s ease; }
+
+@media (max-width: 1280px) {
+  .metabright-page .kpis { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
+
+@media (max-width: 1040px) {
+  .metabright-page .g2,
+  .metabright-page .g3 { grid-template-columns: minmax(0, 1fr); }
+}
+
+@media (max-width: 640px) {
+  .metabright-page .kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .metabright-page .k strong { font-size: 26px; }
+  .metabright-page .sor { grid-template-columns: minmax(0, 1fr); }
+  .metabright-page .card .sub,
+  .metabright-page .card .ch .sub { margin-left: 0; }
+}
+
+.metabright-page .box.grow { position: relative; }
+.metabright-page .box .abs { position: absolute; inset: 0; }
+.metabright-page .ch select.mini { flex: none; width: auto; min-width: 150px; }
