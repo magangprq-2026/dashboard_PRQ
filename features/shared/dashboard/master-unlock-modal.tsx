@@ -7,12 +7,13 @@ type MasterUnlockModalProps = {
   onClose: () => void;
   onUnlocked: (token: string) => void;
   open: boolean;
-  theme?: "hsi" | "wms" | "lts";
+  theme?: "hsi" | "wms" | "lts" | "metabright";
 };
 
 const themeClass = {
   hsi: "from-[#071426] via-[#0a1f3b] to-[#123f68] focus:border-cyan-300 focus:ring-cyan-300/20",
   lts: "from-[#080712] via-[#24103f] to-[#43206a] focus:border-violet-300 focus:ring-violet-300/20",
+  metabright: "from-[#083344] via-[#1e3a8a] to-[#5b21b6] focus:border-cyan-300 focus:ring-cyan-300/20",
   wms: "from-[#21130b] via-[#3b2414] to-[#5a3519] focus:border-amber-300 focus:ring-amber-300/20",
 } as const;
 

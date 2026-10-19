@@ -6,8 +6,6 @@ import type { Dataset, Tab } from "@/features/metabright/domain/types";
 import defaultData from "@/features/metabright/data/default.json";
 import { parseFile } from "@/features/metabright/domain/parse";
 import { avg, fmt, isRatio, nf, periodLabel, wait } from "@/features/metabright/domain/utils";
-import type { DashboardPermissions } from "@/features/hsi/backend/auth/session";
-import { MasterUnlockModal } from "@/features/shared/dashboard/master-unlock-modal";
 import { Icon } from "./metabright-icons";
 import {
   DistChart, IndicatorChart, RadarProfile, RankChart, TargetChart, WitelChart,
@@ -15,39 +13,33 @@ import {
 } from "./metabright-charts";
 import { DataTable, Heatmap } from "./metabright-tables";
 import DownloadModal from "./metabright-download-modal";
+import { MasterUnlockModal } from "@/features/shared/dashboard/master-unlock-modal";
+import type { DashboardPermissions } from "@/features/hsi/backend/auth/session";
 
 const DEFAULT = defaultData as unknown as Dataset;
 const DEFAULT_LABEL = periodLabel("202610");
 
 type Msg = { t: string; c?: "okk" | "err" } | null;
 
-type PersistedState = { cur: string | null; periods: Record<string, Dataset>; savedAt: string };
+/** Bentuk data yang disimpan di database (key "metabright") dan dibaca juga oleh bot Telegram. */
+type PersistedState = { periods: Record<string, Dataset>; selected: string | null; updatedAt: string };
 
-const fullAccess: DashboardPermissions = { canAccessMaster: true, canEditMaster: true, canViewDashboard: true };
+const NO_ACCESS: DashboardPermissions = { canAccessMaster: false, canEditMaster: false, canViewDashboard: true };
 
-async function loadStateFromServer(): Promise<{ configured: boolean; state: PersistedState | null }> {
-  const response = await fetch("/api/metabright/dashboard-state", { cache: "no-store" });
-  if (!response.ok) throw new Error("Gagal memuat data MetaBright dari server.");
-  const payload = (await response.json()) as { configured?: boolean; state?: Partial<PersistedState> | null };
-  const periods = payload.state?.periods;
-  const valid = periods && typeof periods === "object" && Object.keys(periods).length > 0;
-  return {
-    configured: Boolean(payload.configured),
-    state: valid ? { cur: payload.state?.cur ?? null, periods, savedAt: payload.state?.savedAt ?? "" } : null,
-  };
+function parsePersisted(value: unknown): PersistedState | null {
+  if (!value || typeof value !== "object") return null;
+  const raw = (value as { periods?: unknown }).periods;
+  if (!raw || typeof raw !== "object") return null;
+  const periods: Record<string, Dataset> = {};
+  for (const [label, d] of Object.entries(raw as Record<string, unknown>)) {
+    const ds = d as Partial<Dataset> | null;
+    if (ds && Array.isArray(ds.indicators) && Array.isArray(ds.rows)) periods[label] = ds as Dataset;
+  }
+  const selected = (value as { selected?: unknown }).selected;
+  return { periods, selected: typeof selected === "string" ? selected : null, updatedAt: String((value as { updatedAt?: unknown }).updatedAt ?? "") };
 }
 
-async function saveStateToServer(state: PersistedState, token: string): Promise<void> {
-  const response = await fetch("/api/metabright/dashboard-state", {
-    body: JSON.stringify(state),
-    headers: { "Content-Type": "application/json", "x-master-unlock-token": token },
-    method: "PUT",
-  });
-  if (response.status === 503) throw new Error("Database Neon belum dikonfigurasi (isi DATABASE_URL di Vercel).");
-  if (!response.ok) throw new Error("Gagal menyimpan data MetaBright ke database.");
-}
-
-export function MetabrightDashboard({ permissions = fullAccess }: { permissions?: DashboardPermissions }) {
+export function MetabrightDashboard({ permissions = NO_ACCESS }: { permissions?: DashboardPermissions }) {
   const [periods, setPeriods] = useState<Record<string, Dataset>>({ [DEFAULT_LABEL]: DEFAULT });
   const [cur, setCur] = useState<string | null>(DEFAULT_LABEL);
   const [witel, setWitel] = useState("ALL");
@@ -61,10 +53,9 @@ export function MetabrightDashboard({ permissions = fullAccess }: { permissions?
   const [over, setOver] = useState(false);
   const [del, setDel] = useState<string | null>(null);
   const [dlOpen, setDlOpen] = useState(false);
-  const [unlockToken, setUnlockToken] = useState<string | null>(null);
   const [unlockOpen, setUnlockOpen] = useState(false);
-  const pendingAction = useRef<((token: string) => void) | null>(null);
-  const canManage = permissions.canAccessMaster;
+  const [token, setToken] = useState<string | null>(null);
+  const pendingSave = useRef<{ periods: Record<string, Dataset>; selected: string | null } | null>(null);
 
   const fileRef = useRef<HTMLInputElement>(null);
   const capRef = useRef<HTMLDivElement>(null);
@@ -77,46 +68,55 @@ export function MetabrightDashboard({ permissions = fullAccess }: { permissions?
     return () => clearTimeout(id);
   }, [msg]);
 
-  // Muat data tersimpan dari database agar sama di semua perangkat dan bisa dibaca bot Telegram.
-  useEffect(() => {
-    let cancelled = false;
-    loadStateFromServer()
-      .then(({ state }) => {
-        if (cancelled || !state) return;
-        setPeriods(state.periods);
-        const keys = Object.keys(state.periods);
-        setCur(state.cur && state.periods[state.cur] ? state.cur : keys[0]);
-      })
-      .catch(() => undefined);
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
-  // Jalankan aksi yang butuh akses MASTER; minta password bila belum di-unlock.
-  const withMaster = useCallback(
-    (action: (token: string) => void) => {
-      if (unlockToken) return action(unlockToken);
-      pendingAction.current = action;
-      setUnlockOpen(true);
-    },
-    [unlockToken],
-  );
-
-  const persist = useCallback(
-    async (next: Record<string, Dataset>, current: string | null, token: string) => {
-      try {
-        await saveStateToServer({ cur: current, periods: next, savedAt: new Date().toISOString() }, token);
-        flash("Data MetaBright tersimpan di database.", "okk");
-      } catch (e) {
-        flash(e instanceof Error ? e.message : "Gagal menyimpan data MetaBright.", "err");
-      }
-    },
-    [flash],
-  );
-
   const d = cur ? periods[cur] : null;
   const shown: Tab = cap ?? tab;
+
+  /* ---------- sinkron dengan database ---------- */
+  // Muat data tersimpan dari server supaya sama di semua perangkat dan dengan bot Telegram.
+  useEffect(() => {
+    let alive = true;
+    fetch("/api/metabright/dashboard-state", { cache: "no-store" })
+      .then((r) => (r.ok ? (r.json() as Promise<{ state?: unknown }>) : null))
+      .then((body) => {
+        const st = parsePersisted(body?.state);
+        if (!alive || !st) return;
+        const keys = Object.keys(st.periods);
+        setPeriods(st.periods);
+        setCur(st.selected && st.periods[st.selected] ? st.selected : keys[0] ?? null);
+      })
+      .catch(() => undefined);
+    return () => { alive = false; };
+  }, []);
+
+  const saveToServer = useCallback(async (data: Record<string, Dataset>, selected: string | null, tk: string) => {
+    try {
+      const res = await fetch("/api/metabright/dashboard-state", {
+        body: JSON.stringify({ periods: data, selected, updatedAt: new Date().toISOString() } satisfies PersistedState),
+        headers: { "Content-Type": "application/json", "x-master-unlock-token": tk },
+        method: "PUT",
+      });
+      if (res.status === 503) return flash("Data tampil di browser; database server belum dikonfigurasi.", "err");
+      if (res.status === 401) { setToken(null); return flash("Sesi MASTER berakhir. Upload ulang lalu masukkan password MASTER.", "err"); }
+      if (!res.ok) return flash("Gagal menyimpan data ke server.", "err");
+      flash("Data tersimpan di server. Bot Telegram dan perangkat lain memakai data ini.", "okk");
+    } catch {
+      flash("Gagal menyimpan data ke server.", "err");
+    }
+  }, [flash]);
+
+  // Hanya akun master (dengan password MASTER) yang boleh menyimpan permanen; akun lain hanya sementara di browser.
+  const requestSave = useCallback((data: Record<string, Dataset>, selected: string | null) => {
+    if (!permissions.canAccessMaster) {
+      flash("Data hanya tampil sementara di browser ini. Hanya akun master yang bisa menyimpannya ke server.");
+      return;
+    }
+    if (!token) {
+      pendingSave.current = { periods: data, selected };
+      setUnlockOpen(true);
+      return;
+    }
+    void saveToServer(data, selected, token);
+  }, [permissions.canAccessMaster, token, saveToServer, flash]);
 
   /* ---------- turunan ---------- */
   const ws = useMemo(() => (d ? [...new Set(d.rows.map((r) => r.witel))].sort() : []), [d]);
@@ -137,12 +137,7 @@ export function MetabrightDashboard({ permissions = fullAccess }: { permissions?
     setRadarTelda("");
   }
 
-  function requestUpload(files: File[]) {
-    if (!files.length) return;
-    withMaster((token) => void loadMany(files, token));
-  }
-
-  async function loadMany(files: File[], token: string) {
+  async function loadMany(files: File[]) {
     let last: string | undefined;
     let n = 0;
     let warn = "";
@@ -164,11 +159,11 @@ export function MetabrightDashboard({ permissions = fullAccess }: { permissions?
       setPeriods(next);
       setup(last);
       flash(n + " file berhasil dimuat." + (warn ? " Catatan: " + warn : ""), warn ? undefined : "okk");
-      void persist(next, last, token);
+      requestSave(next, last);
     }
   }
 
-  function removePeriod(p: string, token: string) {
+  function removePeriod(p: string) {
     const next = { ...periods };
     delete next[p];
     setPeriods(next);
@@ -176,8 +171,8 @@ export function MetabrightDashboard({ permissions = fullAccess }: { permissions?
     const nextCur = keys.length ? (keys.includes(cur ?? "") ? cur : keys[0]) : null;
     setup(nextCur);
     setDel(null);
-    void persist(next, nextCur, token);
     flash('Data "' + p + '" telah dihapus.');
+    requestSave(next, nextCur);
   }
 
   const begin = useCallback(() => { saved.current = { witel, q }; setQ(""); }, [witel, q]);
@@ -302,7 +297,6 @@ export function MetabrightDashboard({ permissions = fullAccess }: { permissions?
                 </div>
               )}
             </div>
-            {canManage && (<>
             <button className="btn pr upb" onClick={() => fileRef.current?.click()}>
               <Icon name="upload" />Upload Data
             </button>
@@ -312,9 +306,8 @@ export function MetabrightDashboard({ permissions = fullAccess }: { permissions?
               accept=".xls,.xlsx,.csv"
               multiple
               hidden
-              onChange={(e) => { requestUpload([...(e.target.files ?? [])]); e.target.value = ""; }}
+              onChange={(e) => { loadMany([...(e.target.files ?? [])]); e.target.value = ""; }}
             />
-            </>)}
           </div>
 
           <div className="fbar">
@@ -349,21 +342,21 @@ export function MetabrightDashboard({ permissions = fullAccess }: { permissions?
               {keys.map((p) => (
                 <span key={p} className={"chip" + (p === cur ? " cur" : "")} onClick={() => setup(p)}>
                   {p}
-                  {canManage && <u onClick={(e) => { e.stopPropagation(); setDel(p); }}>Hapus</u>}
+                  <u onClick={(e) => { e.stopPropagation(); setDel(p); }}>Hapus</u>
                 </span>
               ))}
             </div>
-            {canManage && <div
+            <div
               className={"drop" + (over ? " over" : "")}
               onClick={() => fileRef.current?.click()}
               onDragOver={(e) => { e.preventDefault(); setOver(true); }}
               onDragEnter={(e) => { e.preventDefault(); setOver(true); }}
               onDragLeave={(e) => { e.preventDefault(); setOver(false); }}
-              onDrop={(e) => { e.preventDefault(); setOver(false); requestUpload([...e.dataTransfer.files]); }}
+              onDrop={(e) => { e.preventDefault(); setOver(false); loadMany([...e.dataTransfer.files]); }}
             >
               <Icon name="upload" />
               <span><b>Tarik dan lepas</b> file Excel ke sini, atau klik area ini untuk memilih file.</span>
-            </div>}
+            </div>
           </div>
           {msg && <div className={"msg" + (msg.c ? " " + msg.c : "")} role="status">{msg.t}</div>}
         </div>
@@ -511,13 +504,14 @@ export function MetabrightDashboard({ permissions = fullAccess }: { permissions?
 
       <MasterUnlockModal
         open={unlockOpen}
-        onClose={() => { pendingAction.current = null; setUnlockOpen(false); }}
-        onUnlocked={(token) => {
-          setUnlockToken(token);
+        theme="metabright"
+        onClose={() => { pendingSave.current = null; setUnlockOpen(false); flash("Data tidak disimpan ke server (password MASTER dibatalkan)."); }}
+        onUnlocked={(tk) => {
+          setToken(tk);
           setUnlockOpen(false);
-          const action = pendingAction.current;
-          pendingAction.current = null;
-          action?.(token);
+          const p = pendingSave.current;
+          pendingSave.current = null;
+          if (p) void saveToServer(p.periods, p.selected, tk);
         }}
       />
 
@@ -529,7 +523,7 @@ export function MetabrightDashboard({ permissions = fullAccess }: { permissions?
             <p>Data periode <b>{del}</b> akan dihapus dari dashboard. Anda dapat mengupload ulang file tersebut kapan saja.</p>
             <div className="mf">
               <button className="btn ol" onClick={() => setDel(null)}>Batal</button>
-              <button className="btn dn" onClick={() => withMaster((token) => removePeriod(del, token))}>Hapus</button>
+              <button className="btn dn" onClick={() => removePeriod(del)}>Hapus</button>
             </div>
           </div>
         </div>

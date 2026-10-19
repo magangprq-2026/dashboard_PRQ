@@ -18,6 +18,7 @@ import { downloadTelegramFile, sendTelegramDocument } from "@/features/telegram/
 import {
   buildReportExcel,
   buildReportImages,
+  loadMetabrightReportData,
   REPORT_DOWNLOAD_PRODUCTS,
   type ReportProductKey,
 } from "@/features/telegram/report-files";
@@ -332,7 +333,7 @@ function myIdKeyboard(): TelegramInlineKeyboardMarkup {
 
 // Upload dari web/bot menulis ke dashboard_state, sedangkan dashboard_records hanya terisi lewat halaman /migration.
 // Keduanya dicek supaya status & last update selalu mengikuti data terbaru.
-const STATE_KEY_BY_PRODUCT: Partial<Record<DashboardProduct, string>> = { HSI: "default", LTS: "lts", WMS: "wms" };
+const STATE_KEY_BY_PRODUCT: Partial<Record<DashboardProduct, string>> = { HSI: "default", LTS: "lts", METABRIGHT: "metabright", WMS: "wms" };
 
 async function stateUpdatedAt(product: DashboardProduct) {
   const key = STATE_KEY_BY_PRODUCT[product];
@@ -699,16 +700,35 @@ async function buildLtsReport(): Promise<ProductReport> {
 }
 
 async function buildMetabrightReport(): Promise<ProductReport> {
-  const [available, lastUpdate] = await Promise.all([hasProductData("METABRIGHT"), latestProductUpdate("METABRIGHT")]);
-
-  return {
-    available,
-    lastUpdate: lastUpdate ?? undefined,
-    metrics: [],
-    note: available ? "Data METABRIGHT tersedia di database." : "Data METABRIGHT belum tersedia di dashboard_records.",
-    product: "METABRIGHT",
-    title: "METABRIGHT Report",
-  };
+  try {
+    const mb = await loadMetabrightReportData();
+    const rows = [...mb.data.rows].sort((a, b) => b.total - a.total);
+    const metrics: ReportMetric[] = [];
+    if (rows.length) {
+      const average = rows.reduce((sum, r) => sum + r.total, 0) / rows.length;
+      addMetric(metrics, "Telda dianalisis", String(rows.length));
+      addMetric(metrics, "Rata-rata total score", formatNumber(Math.round(average * 100) / 100));
+      addMetric(metrics, "Skor tertinggi", `${rows[0].telda} (${formatNumber(rows[0].total)})`);
+      addMetric(metrics, "Skor terendah", `${rows[rows.length - 1].telda} (${formatNumber(rows[rows.length - 1].total)})`);
+    }
+    return {
+      available: rows.length > 0,
+      lastUpdate: (mb.updatedAt ? formatJakartaTimestamp(mb.updatedAt) : null) ?? undefined,
+      metrics,
+      note: mb.fromDatabase ? undefined : "Menampilkan data bawaan aplikasi (belum ada data MetaBright yang diupload di web).",
+      periodLabel: mb.label,
+      product: "METABRIGHT",
+      title: "METABRIGHT Report",
+    };
+  } catch (error) {
+    return {
+      available: false,
+      metrics: [],
+      note: error instanceof Error ? error.message : "Data METABRIGHT belum tersedia.",
+      product: "METABRIGHT",
+      title: "METABRIGHT Report",
+    };
+  }
 }
 
 async function buildProductReport(product: ReportProduct) {

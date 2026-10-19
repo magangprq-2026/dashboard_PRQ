@@ -7,6 +7,7 @@ import defaultMetabright from "@/features/metabright/data/default.json";
 import { toAoa } from "@/features/metabright/domain/export";
 import { periodLabel as metabrightPeriodLabel } from "@/features/metabright/domain/utils";
 import type { Dataset } from "@/features/metabright/domain/types";
+import { readMetabrightDashboardState } from "@/features/metabright/backend/dashboard-state/db-state";
 import { buildReportFile, loadLatestEntry } from "./master-upload";
 import { buildHsiImages, type ReportHistory } from "./report-images/hsi-image";
 import { buildLtsImage } from "./report-images/lts-image";
@@ -26,6 +27,26 @@ export type ExcelReport = { bytes: Uint8Array; filename: string; caption: string
 
 const METABRIGHT_DATA = defaultMetabright as unknown as Dataset;
 const METABRIGHT_PERIOD = metabrightPeriodLabel("202610");
+
+// ---------- Data MetaBright ----------
+export type MetabrightReportData = { data: Dataset; label: string; updatedAt: string | null; fromDatabase: boolean };
+
+/**
+ * Data MetaBright yang sama dengan halaman web: periode terpilih dari database (key "metabright").
+ * Jika database belum berisi data MetaBright (belum pernah diupload di web), dipakai data bawaan aplikasi.
+ */
+export async function loadMetabrightReportData(): Promise<MetabrightReportData> {
+  const result = await readMetabrightDashboardState().catch(() => null);
+  const state = (result?.body as { state?: { periods?: Record<string, Dataset>; selected?: string; updatedAt?: string } | null } | undefined)?.state;
+  const periods = state && typeof state === "object" && state.periods && typeof state.periods === "object" ? state.periods : null;
+  if (periods) {
+    const labels = Object.keys(periods).filter((k) => Array.isArray(periods[k]?.rows) && Array.isArray(periods[k]?.indicators));
+    if (labels.length === 0) throw new Error("Belum ada data MetaBright. Upload file Impactful Award Telda di halaman MetaBright dulu.");
+    const label = state?.selected && labels.includes(state.selected) ? state.selected : labels[labels.length - 1];
+    return { data: periods[label], fromDatabase: true, label, updatedAt: state?.updatedAt ?? null };
+  }
+  return { data: METABRIGHT_DATA, fromDatabase: false, label: METABRIGHT_PERIOD, updatedAt: null };
+}
 
 // ---------- Gambar (PNG) ----------
 export async function buildReportImages(product: ReportProductKey, deps: ReportDeps): Promise<ReportImage[]> {
@@ -48,7 +69,8 @@ export async function buildReportImages(product: ReportProductKey, deps: ReportD
     return reports.map((report) => buildLtsImage(report, timestamp));
   }
 
-  return [buildMetabrightImage(METABRIGHT_DATA, METABRIGHT_PERIOD)];
+  const mb = await loadMetabrightReportData();
+  return [buildMetabrightImage(mb.data, mb.label)];
 }
 
 async function ltsReports(deps: ReportDeps): Promise<LtsComputedReport[]> {
@@ -105,14 +127,15 @@ export async function buildReportExcel(product: ReportProductKey, deps: ReportDe
   }
 
   // MetaBright: tabel data skor per indikator, format sama dengan unduhan Excel di halaman MetaBright.
-  const aoa = toAoa(METABRIGHT_DATA.rows, METABRIGHT_DATA);
+  const mb = await loadMetabrightReportData();
+  const aoa = toAoa(mb.data.rows, mb.data);
   const ws = XLSX.utils.aoa_to_sheet(aoa);
   ws["!cols"] = aoa[0].map((_, i) => ({ wch: i < 2 ? 7 : i === 2 ? 22 : i === 3 ? 18 : i === aoa[0].length - 1 ? 12 : 17 }));
   XLSX.utils.book_append_sheet(wb, ws, "Semua witel");
   const bytes = XLSX.write(wb, { bookType: "xlsx", type: "array" }) as ArrayBuffer;
   return {
     bytes: new Uint8Array(bytes),
-    caption: `Report MetaBright (Impactful Award Telda)\nPeriode: ${METABRIGHT_PERIOD}`,
-    filename: `Impactful_Award_Telda_${METABRIGHT_PERIOD.replace(/\s+/g, "_")}.xlsx`,
+    caption: `Report MetaBright (Impactful Award Telda)\nPeriode: ${mb.label}`,
+    filename: `Impactful_Award_Telda_${mb.label.replace(/\s+/g, "_")}.xlsx`,
   };
 }
