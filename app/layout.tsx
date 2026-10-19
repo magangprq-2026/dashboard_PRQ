@@ -3,14 +3,14 @@ import { SessionTabGuard } from "@/features/shared/dashboard/session-tab-guard";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Reporting Portal",
-  description: "Integrated reporting portal for HSI, WMS, and LTS dashboards.",
+  title: "PRQ Performance Hub",
+  description: "PRQ Performance Hub: integrated dashboards for HSI, WMS, LTS, and MetaBright.",
   other: {
     "codex-preview": "development",
   },
   icons: {
-    icon: "/favicon.svg",
-    shortcut: "/favicon.svg",
+    icon: "/favicon.png?v=3",
+    shortcut: "/favicon.png?v=3",
   },
 };
 

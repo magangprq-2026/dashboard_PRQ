@@ -7,6 +7,7 @@ const PUBLIC_PATHS = [
   "/api/logout",
   "/api/telegram/webhook",
   "/favicon.svg",
+  "/favicon.png",
   "/logo-telkom-latest.png",
   "/module-covers",
 ];
