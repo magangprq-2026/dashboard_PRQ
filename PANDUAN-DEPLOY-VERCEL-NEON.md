@@ -159,9 +159,5 @@ Jika langkah 5 atau 6 gagal, lihat bagian G.
 ## H. Batasan dan keputusan yang masih terbuka
 
 1. **Batas ukuran 4,5 MB per request/response di Vercel.** Satu bulan data LTS di server kira-kira 1 MB. Setelah sekitar 4 periode tersimpan, simpan atau muat data dari server bisa gagal dengan error 413. Solusinya: hapus periode lama dari arsip, atau minta saya buat pembatasan otomatis (hanya N periode terbaru yang disimpan di server).
-2. **Data di server belum dibaca saat halaman dibuka.** Kode saat ini menyimpan data ke Neon saat master meng-upload, tetapi saat dashboard dibuka, permintaan baca ke server ditolak (401) karena server meminta token Master, sedangkan token itu hanya ada di memori setelah Master dibuka. Akibatnya:
-   - data hasil upload terlihat di browser tempat Anda upload (tersimpan di browser),
-   - di browser atau perangkat lain, dashboard menampilkan data bawaan (seed), bukan data terbaru dari Neon.
-
-   Ini bukan masalah Neon. Ini perilaku akses di `app/api/lts/dashboard-state/route.ts`. Perbaikannya perlu keputusan keamanan dari Anda: mengizinkan semua pengguna yang sudah login membaca data (metode GET) berarti pengguna VIEWER juga bisa membaca data master mentah lewat API itu. Saya belum mengubahnya tanpa persetujuan Anda.
+2. **Membaca data dari server** (sudah diperbaiki): semua pengguna yang login, termasuk VIEWER, bisa membaca data lewat GET. Menyimpan tetap hanya untuk akun master dengan token master. Data di server hanya ada setelah master menyimpan/upload; data yang hanya ada di satu browser tidak otomatis naik ke server, jadi upload ulang sekali dari Master.
 3. **Ganti semua password bawaan** sebelum dipakai orang lain, terutama `MASTER_ACCESS_PASSWORD`.
