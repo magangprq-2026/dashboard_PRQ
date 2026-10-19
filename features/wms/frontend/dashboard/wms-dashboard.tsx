@@ -1,5 +1,6 @@
 "use client";
 
+import { safeStorageRemove, safeStorageSet, MAX_SNAPSHOTS_PER_PERIOD } from "@/features/shared/storage/safe-storage";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
 import {
@@ -681,6 +682,7 @@ function parseSaveSnapshots(value: string | null): SaveSnapshots {
         Array.isArray(versions)
           ? versions
               .filter((version) => Array.isArray(version.rows))
+              .slice(-MAX_SNAPSHOTS_PER_PERIOD)
               .map((version) => ({
                 periodKey: typeof version.periodKey === "string" ? version.periodKey : periodKey,
                 rows: (version.rows ?? []).map((row) => ensureRowWidth(Array.isArray(row) ? row : [])),
@@ -723,16 +725,18 @@ function parsePersistedDashboardState(value: unknown): DashboardPersistedState |
 }
 
 function persistDashboardStateLocally(state: DashboardPersistedState) {
+  // Hapus salinan lama dulu agar kuota browser lega, lalu tulis ulang di akhir (best effort).
+  safeStorageRemove(SAVE_SNAPSHOTS_KEY);
   const activePeriod = state.periodArchive[state.selectedPeriodKey];
-  window.localStorage.setItem(PERIOD_ARCHIVE_KEY, JSON.stringify(state.periodArchive));
-  window.localStorage.setItem(SAVE_SNAPSHOTS_KEY, JSON.stringify(state.saveSnapshots));
-  window.localStorage.setItem(SELECTED_PERIOD_KEY, state.selectedPeriodKey);
-  window.localStorage.setItem(STORAGE_KEY, JSON.stringify(activePeriod?.rows ?? []));
+  safeStorageSet(PERIOD_ARCHIVE_KEY, JSON.stringify(state.periodArchive));
+  safeStorageSet(SELECTED_PERIOD_KEY, state.selectedPeriodKey);
+  safeStorageSet(STORAGE_KEY, JSON.stringify(activePeriod?.rows ?? []));
   if (activePeriod?.savedAt) {
-    window.localStorage.setItem(SAVED_AT_KEY, activePeriod.savedAt);
+    safeStorageSet(SAVED_AT_KEY, activePeriod.savedAt);
   } else {
     window.localStorage.removeItem(SAVED_AT_KEY);
   }
+  safeStorageSet(SAVE_SNAPSHOTS_KEY, JSON.stringify(state.saveSnapshots));
 }
 
 async function loadDashboardStateFromServer(): Promise<{ configured: boolean; state: DashboardPersistedState | null }> {
@@ -1188,7 +1192,7 @@ export function WmsDashboard({ permissions = fullAccessPermissions }: { permissi
           setAutoSaveStatus("Data lokal dimuat; server belum bisa diakses");
         })
         .finally(() => {
-          window.localStorage.setItem(DATA_VERSION_KEY, wmsDataVersion);
+          safeStorageSet(DATA_VERSION_KEY, wmsDataVersion);
           setHydrated(true);
         });
     }, 0);
@@ -1210,7 +1214,7 @@ export function WmsDashboard({ permissions = fullAccessPermissions }: { permissi
               rows: previousEntry?.rows ?? [],
               savedAt: previousEntry?.savedAt ?? null,
             },
-          ].slice(-10),
+          ].slice(-MAX_SNAPSHOTS_PER_PERIOD),
         }
       : saveSnapshots;
     const nextArchive = {
@@ -1267,7 +1271,7 @@ export function WmsDashboard({ permissions = fullAccessPermissions }: { permissi
         nextSnapshots[periodKey] = [
           ...(nextSnapshots[periodKey] ?? []),
           { periodKey, rows: previousEntry.rows, savedAt: previousEntry.savedAt },
-        ].slice(-10);
+        ].slice(-MAX_SNAPSHOTS_PER_PERIOD);
       }
       const persistedState: DashboardPersistedState = {
         periodArchive: nextArchive,
@@ -1327,10 +1331,10 @@ export function WmsDashboard({ permissions = fullAccessPermissions }: { permissi
     setSavedAt(entry.savedAt);
     setDirty(false);
     setAutoSaveStatus("Auto-save standby");
-    window.localStorage.setItem(SELECTED_PERIOD_KEY, periodKey);
-    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(entry.rows));
+    safeStorageSet(SELECTED_PERIOD_KEY, periodKey);
+    safeStorageSet(STORAGE_KEY, JSON.stringify(entry.rows));
     if (entry.savedAt) {
-      window.localStorage.setItem(SAVED_AT_KEY, entry.savedAt);
+      safeStorageSet(SAVED_AT_KEY, entry.savedAt);
     } else {
       window.localStorage.removeItem(SAVED_AT_KEY);
     }

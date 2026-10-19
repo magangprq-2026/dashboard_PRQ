@@ -1,5 +1,6 @@
 "use client";
 
+import { safeStorageSet } from "@/features/shared/storage/safe-storage";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
 import {
@@ -487,7 +488,7 @@ function parsePersistedState(value: unknown): DashboardPersistedState | null {
 // dibangun ulang saat dibaca (parsePersistedState), jadi ruang yang dipakai separuhnya.
 function persistLocally(state: DashboardPersistedState) {
   try {
-    window.localStorage.setItem(STORAGE_KEY, JSON.stringify({ ...state, datasets: {} }));
+    safeStorageSet(STORAGE_KEY, JSON.stringify({ ...state, datasets: {} }));
     return true;
   } catch {
     return false;
@@ -1455,7 +1456,7 @@ export function LtsDashboard({ permissions = fullAccessPermissions }: { permissi
     setScreenColumns(screen);
     setPngColumns(png);
     try {
-      window.localStorage.setItem(LTS_COLUMN_STORAGE_KEY, JSON.stringify({ png, screen }));
+      safeStorageSet(LTS_COLUMN_STORAGE_KEY, JSON.stringify({ png, screen }));
     } catch {
       // Abaikan jika storage penuh/diblokir.
     }
@@ -1540,7 +1541,7 @@ export function LtsDashboard({ permissions = fullAccessPermissions }: { permissi
       selectedPeriodKey: currentPeriodKey,
       updatedAt: currentUpdatedAt,
     });
-    window.localStorage.setItem(DATA_VERSION_KEY, ltsSeedData.dataVersion);
+    safeStorageSet(DATA_VERSION_KEY, ltsSeedData.dataVersion);
 
     void loadStateFromServer()
       .then(({ configured, state }) => {

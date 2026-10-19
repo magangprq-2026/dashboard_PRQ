@@ -1,5 +1,6 @@
 "use client";
 
+import { safeStorageRemove, safeStorageSet, MAX_SNAPSHOTS_PER_PERIOD } from "@/features/shared/storage/safe-storage";
 import {
   Bar,
   CartesianGrid,
@@ -619,6 +620,7 @@ function parseSaveSnapshots(value: string | null): SaveSnapshots {
         Array.isArray(versions)
           ? versions
               .filter((version) => Array.isArray(version.rows))
+              .slice(-MAX_SNAPSHOTS_PER_PERIOD)
               .map((version) => ({
                 periodKey: parsePeriodKey(version.periodKey) ?? periodKey,
                 reportHistory:
@@ -654,23 +656,25 @@ function parsePersistedDashboardState(value: unknown): DashboardPersistedState |
 }
 
 function persistDashboardStateLocally(state: DashboardPersistedState) {
+  // Hapus salinan lama dulu agar kuota browser lega, lalu tulis ulang di akhir (best effort).
+  safeStorageRemove(SAVE_SNAPSHOTS_KEY);
   const activePeriod = state.periodArchive[state.selectedPeriodKey];
-  window.localStorage.setItem(PERIOD_ARCHIVE_KEY, JSON.stringify(state.periodArchive));
-  window.localStorage.setItem(SELECTED_PERIOD_KEY, state.selectedPeriodKey);
-  window.localStorage.setItem(DATA_VERSION_KEY, state.dataVersion);
-  window.localStorage.setItem(SAVE_SNAPSHOTS_KEY, JSON.stringify(state.saveSnapshots));
-  window.localStorage.setItem(MASTER_HEADERS_CLEARED_KEY, String(state.masterHeadersCleared));
-  window.localStorage.setItem(STORAGE_KEY, JSON.stringify(activePeriod.rows));
+  safeStorageSet(PERIOD_ARCHIVE_KEY, JSON.stringify(state.periodArchive));
+  safeStorageSet(SELECTED_PERIOD_KEY, state.selectedPeriodKey);
+  safeStorageSet(DATA_VERSION_KEY, state.dataVersion);
+  safeStorageSet(MASTER_HEADERS_CLEARED_KEY, String(state.masterHeadersCleared));
+  safeStorageSet(STORAGE_KEY, JSON.stringify(activePeriod.rows));
   if (activePeriod.savedAt) {
-    window.localStorage.setItem(SAVED_AT_KEY, activePeriod.savedAt);
+    safeStorageSet(SAVED_AT_KEY, activePeriod.savedAt);
   } else {
     window.localStorage.removeItem(SAVED_AT_KEY);
   }
   if (activePeriod.reportHistory) {
-    window.localStorage.setItem(REPORT_HISTORY_KEY, JSON.stringify(activePeriod.reportHistory));
+    safeStorageSet(REPORT_HISTORY_KEY, JSON.stringify(activePeriod.reportHistory));
   } else {
     window.localStorage.removeItem(REPORT_HISTORY_KEY);
   }
+  safeStorageSet(SAVE_SNAPSHOTS_KEY, JSON.stringify(state.saveSnapshots));
 }
 
 async function loadDashboardStateFromServer(): Promise<{ configured: boolean; state: DashboardPersistedState | null }> {
@@ -2551,7 +2555,7 @@ export function HsiDashboard({ permissions = fullAccessPermissions }: { permissi
       } else {
         const initialHistory = createReportHistory(computeReport(seedRows, null, seedRowsPeriodKey), null);
         nextHistory = mergeReportHistory(initialHistory, computeReport(nextRows, currentSavedAt, currentRowsPeriodKey), currentSavedAt);
-        window.localStorage.setItem(REPORT_HISTORY_KEY, JSON.stringify(nextHistory));
+        safeStorageSet(REPORT_HISTORY_KEY, JSON.stringify(nextHistory));
       }
       const seedArchive = initialSeedPeriodArchive();
       const archiveWithCurrent: PeriodArchive = shouldRefreshSeed
@@ -2585,19 +2589,19 @@ export function HsiDashboard({ permissions = fullAccessPermissions }: { permissi
       setSaveSnapshots(storedSnapshots);
       setMasterHeadersCleared(shouldRefreshSeed ? false : storedHeadersCleared);
       setDirty(false);
-      window.localStorage.setItem(PERIOD_ARCHIVE_KEY, JSON.stringify(archiveWithCurrent));
-      window.localStorage.setItem(SELECTED_PERIOD_KEY, activePeriodKey);
-      window.localStorage.setItem(DATA_VERSION_KEY, seedData.dataVersion);
-      window.localStorage.setItem(SAVE_SNAPSHOTS_KEY, JSON.stringify(storedSnapshots));
-      window.localStorage.setItem(MASTER_HEADERS_CLEARED_KEY, shouldRefreshSeed ? "false" : String(storedHeadersCleared));
-      window.localStorage.setItem(STORAGE_KEY, JSON.stringify(activePeriod.rows));
+      safeStorageSet(PERIOD_ARCHIVE_KEY, JSON.stringify(archiveWithCurrent));
+      safeStorageSet(SELECTED_PERIOD_KEY, activePeriodKey);
+      safeStorageSet(DATA_VERSION_KEY, seedData.dataVersion);
+      safeStorageSet(SAVE_SNAPSHOTS_KEY, JSON.stringify(storedSnapshots));
+      safeStorageSet(MASTER_HEADERS_CLEARED_KEY, shouldRefreshSeed ? "false" : String(storedHeadersCleared));
+      safeStorageSet(STORAGE_KEY, JSON.stringify(activePeriod.rows));
       if (activePeriod.savedAt) {
-        window.localStorage.setItem(SAVED_AT_KEY, activePeriod.savedAt);
+        safeStorageSet(SAVED_AT_KEY, activePeriod.savedAt);
       } else {
         window.localStorage.removeItem(SAVED_AT_KEY);
       }
       if (activePeriod.reportHistory) {
-        window.localStorage.setItem(REPORT_HISTORY_KEY, JSON.stringify(activePeriod.reportHistory));
+        safeStorageSet(REPORT_HISTORY_KEY, JSON.stringify(activePeriod.reportHistory));
       } else {
         window.localStorage.removeItem(REPORT_HISTORY_KEY);
       }
@@ -2669,7 +2673,7 @@ export function HsiDashboard({ permissions = fullAccessPermissions }: { permissi
               rows: previousEntry?.rows ?? [],
               savedAt: previousEntry?.savedAt ?? null,
             },
-          ].slice(-10),
+          ].slice(-MAX_SNAPSHOTS_PER_PERIOD),
         }
       : saveSnapshots;
     const nextArchive = {
@@ -2716,7 +2720,7 @@ export function HsiDashboard({ permissions = fullAccessPermissions }: { permissi
     setMasterHeadersCleared(true);
     setDirty(true);
     setAutoSaveStatus("Auto-save dalam 3 menit jika tidak ada perubahan");
-    window.localStorage.setItem(MASTER_HEADERS_CLEARED_KEY, "true");
+    safeStorageSet(MASTER_HEADERS_CLEARED_KEY, "true");
   }
 
   function restorePreviousSave() {
@@ -2761,16 +2765,16 @@ export function HsiDashboard({ permissions = fullAccessPermissions }: { permissi
     setDirty(false);
     setAutoSaveStatus("Auto-save standby");
     setMasterHeadersCleared(false);
-    window.localStorage.setItem(SELECTED_PERIOD_KEY, periodKey);
-    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(entry.rows));
-    window.localStorage.setItem(MASTER_HEADERS_CLEARED_KEY, "false");
+    safeStorageSet(SELECTED_PERIOD_KEY, periodKey);
+    safeStorageSet(STORAGE_KEY, JSON.stringify(entry.rows));
+    safeStorageSet(MASTER_HEADERS_CLEARED_KEY, "false");
     if (entry.savedAt) {
-      window.localStorage.setItem(SAVED_AT_KEY, entry.savedAt);
+      safeStorageSet(SAVED_AT_KEY, entry.savedAt);
     } else {
       window.localStorage.removeItem(SAVED_AT_KEY);
     }
     if (entry.reportHistory) {
-      window.localStorage.setItem(REPORT_HISTORY_KEY, JSON.stringify(entry.reportHistory));
+      safeStorageSet(REPORT_HISTORY_KEY, JSON.stringify(entry.reportHistory));
     } else {
       window.localStorage.removeItem(REPORT_HISTORY_KEY);
     }
