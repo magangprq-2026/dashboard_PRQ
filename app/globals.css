@@ -687,25 +687,8 @@ body {
 .metabright-page #cap.capmode {
   max-width: none;
   padding: 4px;
-  background: #ffffff;
+  background: linear-gradient(135deg, #ffffff 0%, #f7faff 45%, #edf5ff 100%);
 }
-
-/* Hasil unduh PNG: latar putih polos, pemisah antar bagian hanya berupa garis */
-.metabright-page .capmode .cph { margin: 0 0 14px; border-bottom: 2px solid #1a44fc; }
-.metabright-page .capmode .card,
-.metabright-page .capmode .k,
-.metabright-page .capmode .hero {
-  background: #ffffff !important;
-  background-image: none !important;
-  border: 1px solid #94a3b8 !important;
-  box-shadow: none !important;
-  outline: none !important;
-}
-.metabright-page .capmode .card::before,
-.metabright-page .capmode .card::after,
-.metabright-page .capmode .hero::after { display: none; }
-.metabright-page .capmode .tw { border: 1px solid #94a3b8; }
-.metabright-page .capmode .cpf { margin-top: 14px; border-top: 1px solid #94a3b8; }
 
 .metabright-page .cph,
 .metabright-page .cpf { display: none; }

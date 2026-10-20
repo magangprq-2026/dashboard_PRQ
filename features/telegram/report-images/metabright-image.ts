@@ -84,20 +84,28 @@ export function buildMetabrightImage(d: Dataset, period: string, timestamp = new
   const H = HEADER + INFO_H + HEAD_ROW_H + rows.length * ROW_H + 64;
   const { canvas, ctx } = newCanvas(W, H, 2);
 
-  // latar putih polos; pemisah antar bagian berupa garis
-  ctx.fillStyle = "#ffffff";
+  // latar: gradien warna MetaBright
+  const bgGrad = ctx.createLinearGradient(0, 0, W, H);
+  bgGrad.addColorStop(0, "#3a0ad0");
+  bgGrad.addColorStop(0.52, BRAND_BLUE);
+  bgGrad.addColorStop(1, "#0077e0");
+  ctx.fillStyle = bgGrad;
   ctx.fillRect(0, 0, W, H);
-  ctx.strokeStyle = "#94a3b8";
-  ctx.lineWidth = 1;
-  ctx.strokeRect(0.5, 0.5, W - 1, H - 1);
+  const glowA = ctx.createRadialGradient(W * 0.9, H * 0.04, 0, W * 0.9, H * 0.04, W * 0.38);
+  glowA.addColorStop(0, "rgba(0,149,253,0.45)");
+  glowA.addColorStop(1, "rgba(0,149,253,0)");
+  ctx.fillStyle = glowA;
+  ctx.fillRect(0, 0, W, H);
+  const glowB = ctx.createRadialGradient(W * 0.08, H * 0.12, 0, W * 0.08, H * 0.12, W * 0.34);
+  glowB.addColorStop(0, "rgba(81,13,252,0.5)");
+  glowB.addColorStop(1, "rgba(81,13,252,0)");
+  ctx.fillStyle = glowB;
+  ctx.fillRect(0, 0, W, H);
 
-  // header
+  // header (di atas latar brand)
   ctx.fillStyle = "#ffffff";
   rr(ctx, tableX, 24, 64, 64, 16);
   ctx.fill();
-  ctx.strokeStyle = "#cbd5e1";
-  rr(ctx, tableX + 0.5, 24.5, 63, 63, 16);
-  ctx.stroke();
   const logoGrad = ctx.createLinearGradient(tableX, 0, tableX + 64, 0);
   logoGrad.addColorStop(0, BRAND_VIOLET);
   logoGrad.addColorStop(1, BRAND_CYAN);
@@ -108,32 +116,24 @@ export function buildMetabrightImage(d: Dataset, period: string, timestamp = new
   ctx.fillText("MB", tableX + 32, 57);
   ctx.textAlign = "left";
   ctx.textBaseline = "alphabetic";
-  ctx.fillStyle = BRAND_BLUE;
+  ctx.fillStyle = "#bae6fd";
   ctx.font = "700 12px Arial";
   ctx.fillText("PRIME • METABRIGHT", tableX + 82, 40);
-  ctx.fillStyle = "#071426";
+  ctx.fillStyle = "#ffffff";
   ctx.font = "700 30px Arial";
   ctx.fillText("Impactful Award Telda", tableX + 82, 74);
-  ctx.fillStyle = "#475569";
+  ctx.fillStyle = "#e0f2fe";
   ctx.font = "600 14px Arial";
   ctx.fillText(`${period}  |  ${rows.length} telda  |  ${indicators.length} indikator`, tableX + 82, 98);
   ctx.textAlign = "right";
-  ctx.fillStyle = "#64748b";
+  ctx.fillStyle = "#bae6fd";
   ctx.font = "600 13px Arial";
   ctx.fillText(`Rendered ${formatJakartaDateTime(timestamp, true)}`, tableX + tableW, 98);
   ctx.textAlign = "left";
 
-  ctx.strokeStyle = BRAND_BLUE;
-  ctx.lineWidth = 2;
-  ctx.beginPath();
-  ctx.moveTo(tableX, HEADER - 4);
-  ctx.lineTo(tableX + tableW, HEADER - 4);
-  ctx.stroke();
-  ctx.lineWidth = 1;
-
   // keterangan + legenda warna
   let y = HEADER + 20;
-  ctx.fillStyle = "#475569";
+  ctx.fillStyle = "#e0f2fe";
   ctx.font = "13px Arial";
   ctx.textBaseline = "middle";
   const info = `${rows.length} telda. Warna sel menunjukkan skor terhadap maksimum indikator:`;
@@ -149,6 +149,9 @@ export function buildMetabrightImage(d: Dataset, period: string, timestamp = new
   // kartu tabel
   const tableH = HEAD_ROW_H + rows.length * ROW_H;
   ctx.save();
+  ctx.shadowColor = "rgba(15,23,42,0.08)";
+  ctx.shadowBlur = 16;
+  ctx.shadowOffsetY = 5;
   ctx.fillStyle = "#ffffff";
   rr(ctx, tableX, y, tableW, tableH, 14);
   ctx.fill();
@@ -209,7 +212,7 @@ export function buildMetabrightImage(d: Dataset, period: string, timestamp = new
       ctx.fillStyle = "#f8fbff";
       ctx.fillRect(tableX, ry, tableW, ROW_H);
     }
-    ctx.strokeStyle = "#cbd5e1";
+    ctx.strokeStyle = "#eef2f7";
     ctx.beginPath();
     ctx.moveTo(tableX, ry + ROW_H - 0.5);
     ctx.lineTo(tableX + tableW, ry + ROW_H - 0.5);
@@ -261,7 +264,7 @@ export function buildMetabrightImage(d: Dataset, period: string, timestamp = new
     ctx.fillText(nf(r.total), xTotal + COL_TOTAL - 12, cy + 0.5);
   });
   ctx.restore();
-  ctx.strokeStyle = "#64748b";
+  ctx.strokeStyle = "rgba(255,255,255,0.55)";
   ctx.lineWidth = 1;
   rr(ctx, tableX + 0.5, y + 0.5, tableW - 1, tableH - 1, 14);
   ctx.stroke();
@@ -269,12 +272,7 @@ export function buildMetabrightImage(d: Dataset, period: string, timestamp = new
   // footer
   ctx.textBaseline = "alphabetic";
   ctx.textAlign = "left";
-  ctx.strokeStyle = "#cbd5e1";
-  ctx.beginPath();
-  ctx.moveTo(tableX, H - 44.5);
-  ctx.lineTo(tableX + tableW, H - 44.5);
-  ctx.stroke();
-  ctx.fillStyle = BRAND_BLUE;
+  ctx.fillStyle = "#e0f2fe";
   ctx.font = "700 12px Arial";
   ctx.fillText(`Dibuat ${formatJakartaDateTime(timestamp, false)} · Dashboard Impactful Award Telda`, tableX, H - 24);
 
