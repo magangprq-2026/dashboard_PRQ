@@ -14,6 +14,7 @@ import {
   indicatorAvg, witelColor,
 } from "./metabright-charts";
 import { DataTable, Heatmap } from "./metabright-tables";
+import { renderMetabrightTablePng } from "@/features/metabright/domain/report-image-browser";
 import DownloadModal from "./metabright-download-modal";
 import { MasterUnlockModal } from "@/features/shared/dashboard/master-unlock-modal";
 import type { DashboardPermissions } from "@/features/hsi/backend/auth/session";
@@ -185,6 +186,11 @@ export function MetabrightDashboard({ permissions = NO_ACCESS }: { permissions?:
   }, []);
 
   const capture = useCallback(async (w: string, mode: Tab): Promise<Blob> => {
+    // Tabel data: digambar langsung di canvas dengan kode yang sama seperti bot Telegram (hasil identik & rapi).
+    if (mode === "data" && d) {
+      const subset = w === "ALL" ? d.rows : d.rows.filter((r) => r.witel === w);
+      return renderMetabrightTablePng(d, subset, cur ?? DEFAULT_LABEL);
+    }
     setWitel(w);
     setCap(mode);
     await wait(1000);
@@ -199,7 +205,7 @@ export function MetabrightDashboard({ permissions = NO_ACCESS }: { permissions?:
     const W = el.offsetWidth;
     try {
       const c = await html2canvas(el, {
-        backgroundColor: "#f7faff",
+        backgroundColor: "#ffffff",
         scale: mode === "data" ? 2 : 1.5,
         useCORS: true,
         width: W,
@@ -211,7 +217,7 @@ export function MetabrightDashboard({ permissions = NO_ACCESS }: { permissions?:
     } finally {
       el.style.width = "";
     }
-  }, []);
+  }, [d, cur]);
 
   /* ---------- render ---------- */
   const ind = d?.indicators[iIdx] ?? d?.indicators[0];
