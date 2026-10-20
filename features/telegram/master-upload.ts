@@ -100,7 +100,13 @@ function isBinaryWorkbook(buffer: Buffer) {
 export function delimitedRows(buffer: Buffer): unknown[][] | null {
   if (isBinaryWorkbook(buffer)) return null;
   const text = buffer.toString("utf8").replace(/^\uFEFF/, "");
-  if (!text.slice(0, 2000).includes("#")) return null;
+  // Hanya anggap berpemisah "#" bila baris header lebih banyak berisi "#" daripada ",".
+  // Header CSV biasa bisa memuat "#" di nama kolom (mis. "PACKAGE_NAME (Custom SQL Query) #1").
+  if (/^\s*</.test(text)) return null; // tabel HTML (mis. ekspor .xls dari BRIGHT) memuat "#" pada kode warna
+  const headerLine = text.split(/\r?\n/, 1)[0] ?? "";
+  const hashCount = (headerLine.match(/#/g) ?? []).length;
+  const commaCount = (headerLine.match(/,/g) ?? []).length;
+  if (hashCount === 0 || hashCount <= commaCount) return null;
   const parsed = parseDelimitedRows(text, "#");
   return parsed.length > 0 && parsed[0].length > 1 ? parsed : null;
 }

@@ -14,13 +14,21 @@ import {
   parseMasterRows,
 } from "@/features/telegram/master-upload";
 import {
+  claimLtsReport,
   detectLtsDataset,
   importLtsDataset,
   ltsDatasetLabel,
   ltsProgress,
+  LTS_BATCH_WINDOW_MINUTES,
   LTS_DATASET_KEYS,
   parseLtsDataset,
 } from "@/features/telegram/lts-upload";
+import {
+  hasMetabrightHint,
+  importMetabright,
+  parseMetabrightFile,
+  tryParseMetabrightFile,
+} from "@/features/telegram/metabright-upload";
 import { downloadTelegramFile, sendTelegramDocument } from "@/features/telegram/telegram-api";
 import {
   buildReportExcel,
@@ -974,7 +982,9 @@ function uploadHelpText() {
     "",
     "Modul dikenali otomatis dari header kolom. Agar pasti, tulis <b>HSI</b> atau <b>WMS</b> di caption (atau di nama file).",
     "",
-    "<b>LTS</b>: kirim 3 file — <b>ps</b> (Sales), <b>nal</b> (CAPS), <b>reg</b> (CT0). Boleh sekaligus; report LTS dikirim otomatis setelah ketiganya lengkap.",
+    "<b>MetaBright</b>: kirim file <b>Impactful Award Telda</b> (.xls / .xlsx), mis. <i>Impactful Award Telda - 202610.xls</i>. Periode diambil dari nama file; data periode yang sama diperbarui.",
+    "",
+    `<b>LTS</b>: wajib 3 file — <b>ps</b> (Sales), <b>nal</b> (CAPS), <b>reg</b> (CT0). Kirim ketiganya dalam satu rangkaian (boleh sekaligus, selisih maksimal ${LTS_BATCH_WINDOW_MINUTES} menit). Bila baru satu atau dua file, bot akan menunggu sisanya; report LTS dikirim otomatis setelah ketiganya lengkap.`,
     "",
     "Setelah selesai, bot menyimpan data ke dashboard dan mengirim report (gambar PNG) yang sudah diperbarui.",
     "",
@@ -1039,6 +1049,12 @@ function afterUploadKeyboard(): TelegramInlineKeyboardMarkup {
       [{ callback_data: "menu:upload", text: "📤 Upload Lagi" }],
       homeRow,
     ],
+  };
+}
+
+function uploadWaitingKeyboard(): TelegramInlineKeyboardMarkup {
+  return {
+    inline_keyboard: [[{ callback_data: "menu:upload", text: "📤 Cara Upload" }], homeRow],
   };
 }
 
@@ -1137,27 +1153,69 @@ async function handleDocumentUpload(botToken: string, chatId: number, message: T
     if (ltsKey) {
       const dataset = parseLtsDataset(ltsKey, fileName, buffer);
       await importLtsDataset(dataset);
-      const progress = await ltsProgress(dataset.periodKey);
+      const progress = await ltsProgress(dataset.periodKey, dataset.uploadedAt);
       const line = LTS_DATASET_KEYS.map((k) => `${progress.present[k] ? "✅" : "⬜"} ${ltsDatasetLabel(k)}`).join("\n");
       const head = `✅ <b>${ltsDatasetLabel(ltsKey)}</b> tersimpan: ${escapeHtml(progress.periodLabel)} (${dataset.rowCount.toLocaleString("id-ID")} baris)`;
-      if (progress.complete) {
+      if (!progress.complete) {
+        // Belum lengkap: beri tahu file mana yang masih ditunggu. Report baru dikirim setelah ketiganya masuk.
+        const remaining = progress.missing.length;
+        const waiting = progress.missing.map((k) => `<b>${ltsDatasetLabel(k)}</b>`).join(" dan ");
+        await sendTelegramMessage(
+          botToken,
+          chatId,
+          [
+            head,
+            "",
+            line,
+            "",
+            `⏳ <b>Menunggu ${remaining} file lagi</b>: ${waiting}.`,
+            `Report LTS dikirim otomatis setelah ketiga file (ps, nal, reg) diterima, maksimal selisih ${LTS_BATCH_WINDOW_MINUTES} menit.`,
+          ].join("\n"),
+          { replyMarkup: uploadWaitingKeyboard() },
+        );
+      } else if (progress.batchKey && (await claimLtsReport(progress.batchKey))) {
         const sent = await sendReportImages(botToken, chatId, "LTS", `${head}\n\n${line}\n\nData LTS lengkap.\n`, afterUploadKeyboard());
         if (sent.failed > 0) {
           await sendTelegramMessage(botToken, chatId, "✅ Data LTS tersimpan, tetapi gambar report gagal dikirim. Coba unduh lewat menu.", { replyMarkup: afterUploadKeyboard() });
         }
       } else {
-        await sendTelegramMessage(botToken, chatId, `${head}\n\n${line}\n\nKirim file yang masih ⬜ untuk melengkapi report LTS.`, { replyMarkup: afterUploadKeyboard() });
+        // Ketiga file sudah lengkap, tetapi report dikirim oleh proses lain (file dikirim bersamaan).
+        await sendTelegramMessage(botToken, chatId, `${head}\n\n${line}\n\nData LTS lengkap. Report dikirim otomatis.`, { replyMarkup: afterUploadKeyboard() });
       }
       await deleteTelegramMessage(botToken, chatId, workingId);
       return;
     }
-    const product = detectProduct(fileName, message.caption, buffer);
+    // MetaBright (Impactful Award Telda): dikenali dari nama file/caption, atau dari struktur file bila bukan HSI/WMS.
+    const metabrightHint = hasMetabrightHint(fileName, message.caption);
+    const product = metabrightHint ? null : detectProduct(fileName, message.caption, buffer);
+    const metabright = metabrightHint
+      ? parseMetabrightFile(fileName, message.caption, buffer)
+      : product
+        ? null
+        : tryParseMetabrightFile(fileName, message.caption, buffer);
+    if (metabright) {
+      await importMetabright(metabright);
+      const { dataset, label } = metabright;
+      const note = dataset.warn ? `\n⚠️ <i>Catatan: ${escapeHtml(dataset.warn)}</i>` : "";
+      const sent = await sendReportImages(
+        botToken,
+        chatId,
+        "METABRIGHT",
+        `✅ <b>Upload MetaBright berhasil</b>: ${escapeHtml(label)} (${dataset.rows.length.toLocaleString("id-ID")} telda, ${dataset.indicators.length} indikator)${note}\n`,
+        afterUploadKeyboard(),
+      );
+      await deleteTelegramMessage(botToken, chatId, workingId);
+      if (sent.failed > 0) {
+        await sendTelegramMessage(botToken, chatId, `✅ Data MetaBright ${escapeHtml(label)} tersimpan, tetapi gambar report gagal dikirim. Coba unduh lewat menu.`, { replyMarkup: afterUploadKeyboard() });
+      }
+      return;
+    }
     if (!product) {
       await deleteTelegramMessage(botToken, chatId, workingId);
       await sendTelegramMessage(
         botToken,
         chatId,
-        "⚠️ Modul tidak dikenali. Kirim ulang file dengan caption <b>HSI</b> atau <b>WMS</b>. Untuk LTS, pastikan file ps / nal / reg dengan kolom sesuai MASTER LTS di web.",
+        "⚠️ Modul tidak dikenali. Kirim ulang file dengan caption <b>HSI</b>, <b>WMS</b>, atau <b>MetaBright</b>. Untuk LTS, pastikan file ps / nal / reg dengan kolom sesuai MASTER LTS di web.",
         { replyMarkup: uploadErrorKeyboard() },
       );
       return;
