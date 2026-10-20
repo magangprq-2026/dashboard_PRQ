@@ -831,10 +831,12 @@ function aggregateRows(
   const targetYtd = ytdRows.reduce((sum, part) => sum + part.row.targetFm * part.weight, 0);
   const realMtdPrev = rows.reduce((sum, part) => sum + part.row.realMtdPrev * part.weight, 0);
   const realFmPrev = rows.reduce((sum, part) => sum + part.row.realFmPrev * part.weight, 0);
-  const previousYtd = ytdRows.reduce((sum, part) => {
-    const previous = previousFromGrowth(part.row.realYtd, part.row.growthYtd);
-    return sum + previous * part.weight;
-  }, 0);
+  // GR YTD mengikuti workbook: realisasi YTD dibanding YTD tahun lalu pada cutoff terakhir.
+  // Jangan menjumlahkan pembanding YTD setiap bulan karena nilainya sudah kumulatif.
+  const latestYtdPart = ytdRows[ytdRows.length - 1];
+  const previousYtd = latestYtdPart
+    ? previousFromGrowth(latestYtdPart.row.realYtd, latestYtdPart.row.growthYtd)
+    : 0;
   return {
     ...(base ?? {
       achYtd: null,
@@ -1973,20 +1975,20 @@ function ReportTableView({
         <table className="min-w-[2350px] border-separate border-spacing-0 text-[11px]">
           <thead>
             <tr>
-              <th rowSpan={2} className="sticky left-0 top-0 z-30 w-[170px] min-w-[170px] max-w-[170px] border-b border-r border-slate-700 bg-[#082f6b] px-2 py-2 text-center font-semibold text-white shadow-[8px_0_18px_-18px_rgba(15,23,42,0.8)]">
+              <th rowSpan={2} className="sticky left-0 top-0 z-30 w-[170px] min-w-[170px] max-w-[170px] border-b border-r border-slate-700 bg-slate-950 px-2 py-2 text-center font-semibold text-white shadow-[8px_0_18px_-18px_rgba(15,23,42,0.8)]">
                 {table.total.label === "Total" ? "WITEL" : "BRANCH"}
               </th>
-              <th rowSpan={2} className="sticky top-0 z-20 w-[76px] min-w-[76px] max-w-[76px] border-b border-r border-blue-700 bg-[#1456a0] px-1.5 py-2 text-center font-semibold leading-tight text-white">
+              <th rowSpan={2} className="sticky top-0 z-20 w-[76px] min-w-[76px] max-w-[76px] border-b border-r border-indigo-700 bg-indigo-800 px-1.5 py-2 text-center font-semibold leading-tight text-white">
                 TARGET FM
               </th>
-              <th rowSpan={2} className="sticky top-0 z-20 w-[76px] min-w-[76px] max-w-[76px] border-b border-r border-blue-700 bg-[#1456a0] px-1.5 py-2 text-center font-semibold leading-tight text-white">
+              <th rowSpan={2} className="sticky top-0 z-20 w-[76px] min-w-[76px] max-w-[76px] border-b border-r border-indigo-700 bg-indigo-800 px-1.5 py-2 text-center font-semibold leading-tight text-white">
                 TARGET YTD
               </th>
-              <th colSpan={dayCount} className="sticky top-0 z-20 border-b border-r border-blue-700 bg-[#1d65b8] px-2 py-2 text-center font-semibold text-white">
+              <th colSpan={dayCount} className="sticky top-0 z-20 border-b border-r border-teal-700 bg-teal-800 px-2 py-2 text-center font-semibold text-white">
                 TANGGAL
               </th>
               {summaryHeaders.map((header) => (
-                <th key={header} rowSpan={2} className="sticky top-0 z-20 w-[80px] min-w-[80px] max-w-[80px] whitespace-normal border-b border-r border-blue-700 bg-[#0b3978] px-1.5 py-2 text-center text-[9px] font-semibold leading-[1.12] text-white">
+                <th key={header} rowSpan={2} className="sticky top-0 z-20 w-[80px] min-w-[80px] max-w-[80px] whitespace-normal border-b border-r border-slate-700 bg-slate-900 px-1.5 py-2 text-center text-[9px] font-semibold leading-[1.12] text-white">
                   {header}
                 </th>
               ))}
@@ -1996,7 +1998,7 @@ function ReportTableView({
                 <th
                   key={index}
                   className={`sticky top-[34px] z-20 w-8 min-w-8 max-w-8 border-b border-r border-slate-200 px-1 py-1.5 text-center text-[10px] font-semibold ${
-                    index + 1 > latestDay ? "bg-slate-100 text-slate-400" : "bg-[#dbeafe] text-[#123d70]"
+                    index + 1 > latestDay ? "bg-slate-100 text-slate-400" : "bg-teal-50 text-teal-900"
                   }`}
                 >
                   {index + 1}
