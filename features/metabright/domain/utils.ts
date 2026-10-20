@@ -4,8 +4,8 @@ export const MN = [
 ];
 
 export const COL = [
-  "#2563eb", "#0ea5e9", "#14b8a6", "#f59e0b", "#8b5cf6",
-  "#e11d48", "#64748b", "#84cc16", "#ec4899", "#f97316",
+  "#1a44fc", "#0095fd", "#7c3aed", "#14b8a6", "#f59e0b",
+  "#ec4899", "#64748b", "#84cc16", "#f97316", "#e11d48",
 ];
 
 export const nf = (n: number, d = 2) =>

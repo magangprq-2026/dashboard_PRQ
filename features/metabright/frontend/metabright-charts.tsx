@@ -8,10 +8,10 @@ import {
 import type { Dataset, Row } from "@/features/metabright/domain/types";
 import { COL, avg, fmt, nf } from "@/features/metabright/domain/utils";
 
-const GRID = "#e8eef6";
+const GRID = "#e6ecf7";
 const AXIS = { fontSize: 11, fill: "#475569" };
 const LBL = { fontSize: 11, fontWeight: 700, fill: "#1e293b" };
-const tipStyle = { background: "rgba(15,23,42,.94)", border: 0, borderRadius: 12, color: "#fff", fontSize: 12, padding: "8px 12px", boxShadow: "0 12px 30px rgba(15,23,42,.25)" };
+const tipStyle = { background: "rgba(26,20,87,.96)", border: 0, borderRadius: 12, color: "#fff", fontSize: 12, padding: "8px 12px", boxShadow: "0 12px 30px rgba(15,23,42,.25)" };
 const tipItem = { color: "#fff" };
 const tv = (value: unknown) => (typeof value === "number" ? value : Number(value ?? 0));
 
@@ -136,7 +136,7 @@ export function RadarProfile({ t, rows, d }: { t?: Row; rows: Row[]; d: Dataset 
         <PolarGrid stroke="#e2e8f0" />
         <PolarAngleAxis dataKey="name" tick={{ fontSize: 10.5, fill: "#334155", fontWeight: 600 }} />
         <PolarRadiusAxis angle={90} domain={[0, 100]} tickCount={5} tickFormatter={(v) => v + "%"} tick={{ fontSize: 9, fill: "#94a3b8" }} axisLine={false} />
-        <Radar name={t?.telda ?? "-"} dataKey="telda" stroke="#2563eb" fill="#2563eb" fillOpacity={0.22} strokeWidth={2.5} isAnimationActive={false} />
+        <Radar name={t?.telda ?? "-"} dataKey="telda" stroke="#1a44fc" fill="#1a44fc" fillOpacity={0.28} strokeWidth={2.5} isAnimationActive={false} />
         <Radar name="Rata-rata filter" dataKey="rata" stroke="#f59e0b" fill="#f59e0b" fillOpacity={0.08} strokeWidth={2} strokeDasharray="5 4" isAnimationActive={false} />
         <Legend verticalAlign="bottom" iconType="circle" iconSize={9} wrapperStyle={{ fontSize: 12, fontWeight: 700 }} />
         <Tooltip contentStyle={tipStyle} itemStyle={tipItem} labelStyle={{ color: "#fff", fontWeight: 700 }} formatter={(v: unknown) => nf(tv(v), 1) + "%"} />
@@ -149,7 +149,7 @@ export function RadarProfile({ t, rows, d }: { t?: Row; rows: Row[]; d: Dataset 
 const BUCKETS: [string, number, number, string][] = [
   ["< 50%", 0, 50, "#e11d48"],
   ["50–79%", 50, 80, "#f59e0b"],
-  ["80–99%", 80, 100, "#38bdf8"],
+  ["80–99%", 80, 100, "#0095fd"],
   ["≥ 100%", 100, 1e9, "#059669"],
 ];
 
@@ -194,7 +194,7 @@ export function TargetChart({ rows, i }: { rows: Row[]; i: number }) {
         />
         <Legend verticalAlign="top" align="right" iconType="circle" iconSize={9} wrapperStyle={{ paddingBottom: 8, fontSize: 12, fontWeight: 700 }} />
         <Bar dataKey="Target" fill="#cbd5e1" radius={[6, 6, 0, 0]} maxBarSize={14} isAnimationActive={false} />
-        <Bar dataKey="Realisasi" fill="#2563eb" radius={[6, 6, 0, 0]} maxBarSize={14} isAnimationActive={false} />
+        <Bar dataKey="Realisasi" fill="#1a44fc" radius={[6, 6, 0, 0]} maxBarSize={14} isAnimationActive={false} />
         <Bar dataKey="Shortage" fill="#fb7185" radius={[6, 6, 0, 0]} maxBarSize={14} isAnimationActive={false} />
         <Line yAxisId="r" type="monotone" dataKey="ach" name="Achievement (%)" stroke="#059669" strokeWidth={2.5} dot={{ r: 3, fill: "#fff", stroke: "#059669" }} isAnimationActive={false} />
       </ComposedChart>
