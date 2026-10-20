@@ -1322,3 +1322,76 @@ body {
   .metabright-page .sub { margin-left: 0; }
 }
 
+
+/* ---------- Tabel data: lebih jelas & kolom Rank/Witel/Telda dibekukan ---------- */
+.metabright-page .tw { max-height: 70vh; border-radius: 10px; }
+
+.metabright-page table.dt { border-collapse: separate; border-spacing: 0; font-size: 13px; }
+
+.metabright-page table.dt th,
+.metabright-page table.dt td { padding: 11px 12px; border-bottom: 1px solid #e8eef6; }
+
+.metabright-page table.dt thead th {
+  position: sticky;
+  top: 0;
+  z-index: 3;
+  min-width: 104px;
+  padding: 10px 12px;
+  background: #071426;
+  border-bottom: 2px solid #38bdf8;
+  font-size: 10.5px;
+  line-height: 1.3;
+  text-align: center;
+  white-space: normal;
+  vertical-align: bottom;
+}
+.metabright-page table.dt thead th span { display: block; }
+.metabright-page table.dt thead th small { display: block; margin-top: 3px; color: #7dd3fc; font-size: 10px; font-weight: 700; }
+
+.metabright-page table.dt td { text-align: center; font-variant-numeric: tabular-nums; }
+.metabright-page table.dt .pill { min-width: 54px; padding: 4px 10px; }
+
+/* kolom beku */
+.metabright-page table.dt .c-rank,
+.metabright-page table.dt .c-witel,
+.metabright-page table.dt .c-telda { position: sticky; text-align: left; background: #ffffff; }
+.metabright-page table.dt .c-rank { left: 0; width: 64px; min-width: 64px; max-width: 64px; text-align: center; }
+.metabright-page table.dt .c-witel { left: 64px; width: 150px; min-width: 150px; max-width: 150px; overflow: hidden; text-overflow: ellipsis; font-size: 12px; font-weight: 700; color: #475569; text-transform: uppercase; }
+.metabright-page table.dt .c-telda { left: 214px; width: 150px; min-width: 150px; max-width: 150px; overflow: hidden; text-overflow: ellipsis; box-shadow: 6px 0 8px -6px rgba(15, 23, 42, 0.28); color: var(--mb-navy); }
+.metabright-page table.dt tbody .c-rank,
+.metabright-page table.dt tbody .c-witel,
+.metabright-page table.dt tbody .c-telda { z-index: 2; }
+.metabright-page table.dt thead .c-rank,
+.metabright-page table.dt thead .c-witel,
+.metabright-page table.dt thead .c-telda { z-index: 5; background: #071426; text-align: left; }
+.metabright-page table.dt thead .c-rank { text-align: center; }
+
+.metabright-page table.dt tbody tr:nth-child(even) td { background: #f8fafc; }
+.metabright-page table.dt tbody tr:hover td { background: #eaf2ff; }
+
+/* kolom total: dipisah & ditonjolkan */
+.metabright-page table.dt .c-total { min-width: 150px; border-left: 2px solid #e2e8f0; }
+.metabright-page table.dt thead .c-total { border-left: 2px solid #38bdf8; }
+.metabright-page table.dt td:last-child { border-left: 2px solid #e2e8f0; background-clip: padding-box; }
+
+/* Peta capaian witel: kolom Witel tetap, header lebih rapi */
+.metabright-page table.hm { border-collapse: separate; border-spacing: 0; font-size: 13px; }
+.metabright-page table.hm th,
+.metabright-page table.hm td { padding: 11px 12px; }
+.metabright-page table.hm th:first-child,
+.metabright-page table.hm td:first-child { box-shadow: 6px 0 8px -6px rgba(15, 23, 42, 0.28); z-index: 3; }
+.metabright-page table.hm th { vertical-align: bottom; }
+.metabright-page table.hm th small { color: #7dd3fc; }
+.metabright-page table.hm tbody tr:nth-child(even) td { background: #f8fafc; }
+.metabright-page table.hm tbody tr:hover td { background: #eaf2ff; }
+.metabright-page table.hm tr.all td { background: #eef2f7; font-weight: 800; }
+.metabright-page table.hm td:last-child,
+.metabright-page table.hm th:last-child { border-left: 2px solid #e2e8f0; }
+
+@media (max-width: 640px) {
+  .metabright-page table.dt .c-witel { display: none; }
+  .metabright-page table.dt .c-telda { left: 64px; }
+}
+.metabright-page table.dt thead .c-rank,
+.metabright-page table.dt thead .c-witel,
+.metabright-page table.dt thead .c-telda { color: #ffffff; font-size: 10.5px; font-weight: 800; }

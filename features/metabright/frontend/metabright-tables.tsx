@@ -69,22 +69,22 @@ export function DataTable({ rows, d }: { rows: Row[]; d: Dataset }) {
         <span className="lgc" style={pillStyle(10)}>&lt; 50%</span>
       </div>
       <div className="tw">
-        <table>
+        <table className="dt">
           <thead>
             <tr>
-              <th>Rank</th><th>Witel</th><th>Telda</th>
+              <th className="c-rank">Rank</th><th className="c-witel">Witel</th><th className="c-telda">Telda</th>
               {d.indicators.map((x, k) => (
-                <th key={k} title={x.name}>{x.name} ({x.weight})</th>
+                <th key={k} title={x.name}><span>{x.name}</span><small>bobot {x.weight}</small></th>
               ))}
-              <th>Total score</th>
+              <th className="c-total">Total score</th>
             </tr>
           </thead>
           <tbody>
             {sorted.map((r) => (
               <tr key={r.telda + r.no}>
-                <td><span className="rk" style={TOP_RANK_STYLE[r.rank] ?? { background: "#e2e8f0", color: "#475569" }}>{r.rank}</span></td>
-                <td>{r.witel}</td>
-                <td><b>{r.telda}</b></td>
+                <td className="c-rank"><span className="rk" style={TOP_RANK_STYLE[r.rank] ?? { background: "#e2e8f0", color: "#475569" }}>{r.rank}</span></td>
+                <td className="c-witel">{r.witel}</td>
+                <td className="c-telda"><b>{r.telda}</b></td>
                 {r.v.map((v, k) => {
                   const wt = d.indicators[k].weight || 1;
                   const p = Math.min(v[3] / (wt * 1.1), 1) * 100;
