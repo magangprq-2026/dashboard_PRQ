@@ -23,6 +23,7 @@ export async function sendTelegramDocument(
   bytes: Uint8Array,
   caption?: string,
   mimeType = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  replyMarkup?: unknown,
 ) {
   const form = new FormData();
   form.append("chat_id", String(chatId));
@@ -30,6 +31,7 @@ export async function sendTelegramDocument(
     form.append("caption", caption);
     form.append("parse_mode", "HTML");
   }
+  if (replyMarkup) form.append("reply_markup", JSON.stringify(replyMarkup));
   form.append(
     "document",
     new Blob([new Uint8Array(bytes)], { type: mimeType }),
