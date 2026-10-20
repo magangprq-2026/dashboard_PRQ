@@ -23,8 +23,9 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type React from "react";
 import type { DashboardPermissions } from "@/features/hsi/backend/auth/session";
 import { CompactRankingInsight } from "@/features/shared/dashboard/compact-ranking-insight";
+import { renderReportPngBlob } from "@/features/shared/dashboard/report-png";
 import { ReportCard, achTone as reportAchTone, dayKind as reportDayKind, parsePeriodLabel as parseReportPeriodLabel, rankTone as reportRankTone, signTone as reportSignTone, type CellStyle as ReportCellStyle, type ReportTheme, type TableCol as ReportCol } from "@/features/shared/dashboard/report-table";
-import { rankColor, rankTotal } from "@/features/shared/dashboard/rank-color";
+import { rankTotal } from "@/features/shared/dashboard/rank-color";
 import {
   cutoffDateFromPeriodPart,
   dateRangeLabel,
@@ -145,13 +146,6 @@ function formatPercent(value: number | null | undefined) {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
   }).format(value);
-}
-
-function achievementTone(value: number | null | undefined) {
-  if (value === null || value === undefined || Number.isNaN(value)) return "neutral";
-  if (value >= 1) return "good";
-  if (value >= 0.8) return "near";
-  return "low";
 }
 
 function formatCell(value: unknown) {
@@ -386,189 +380,36 @@ function downloadBlob(blob: Blob, filename: string) {
   URL.revokeObjectURL(url);
 }
 
+// Unduhan PNG memakai kolom, warna, dan penggambar yang sama dengan gambar report di bot Telegram.
 async function createWmsReportPng(report: WmsComputedReport, timestamp: Date) {
-  const witelRows = [...report.witel.rows, report.witel.total];
-  const teldaRows = [...report.telda.rows, report.telda.total];
   const latestDay = report.cutoffDay;
-  const weekStartDay = Math.max(1, latestDay - 6);
-  const weekDays = Array.from({ length: latestDay - weekStartDay + 1 }, (_, index) => weekStartDay + index);
-  const columns = [
-    { key: "label", label: "WILAYAH", width: 190 },
-    { key: "targetFm", label: "TARGET FM", width: 82 },
-    { key: "targetYtd", label: "TARGET YTD", width: 82 },
-    ...weekDays.map((day) => ({ key: `d${day - 1}`, label: String(day), width: 42 })),
-    { key: "mtd", label: "MTD", width: 72 },
-    { key: "ach", label: "ACH", width: 72 },
-    { key: "rank", label: "RANK", width: 62 },
-    { key: "shortageFm", label: "SHORTAGE FM", width: 92 },
-    { key: "realYtd", label: "REAL YTD", width: 82 },
-    { key: "achYtd", label: "ACH YTD", width: 82 },
-    { key: "rankYtd", label: "RANK YTD", width: 74 },
-    { key: "shortageYtd", label: "SHORTAGE YTD", width: 96 },
-  ];
-  const tableWidth = columns.reduce((sum, column) => sum + column.width, 0);
-  const width = Math.max(1180, tableWidth + 80);
-  const rowHeight = 28;
-  const headerHeight = 104;
-  const tableTitleHeight = 94;
-  const height = headerHeight + (witelRows.length + teldaRows.length + 4) * rowHeight + tableTitleHeight * 2 + 60;
-  const scale = 2;
-  const canvas = document.createElement("canvas");
-  canvas.width = width * scale;
-  canvas.height = height * scale;
-  const context = canvas.getContext("2d");
-  if (!context) throw new Error("Canvas tidak tersedia.");
-  const ctx = context;
-  ctx.scale(scale, scale);
-  ctx.fillStyle = "#f8f3ec";
-  ctx.fillRect(0, 0, width, height);
-  ctx.fillStyle = "#160d08";
-  ctx.fillRect(0, 0, width, headerHeight);
-  ctx.fillStyle = "#ffffff";
-  ctx.font = "700 26px Arial";
-  ctx.fillText("REPORT WMS TARGET RKAP", 40, 43);
-  ctx.font = "600 13px Arial";
-  ctx.fillStyle = "#fed7aa";
-  ctx.fillText(`Tanggal ${weekStartDay}-${latestDay} | ${report.periodLabel} | Data ${report.cutoffLabel}`, 40, 72);
-  ctx.fillStyle = "#b9a38e";
-  ctx.fillText(`Rendered ${formatJakartaDateTime(timestamp, true)}`, 40, 91);
-
-  function headerFill(columnKey: string) {
-    if (columnKey === "label") return "#140b06";
-    if (columnKey === "targetFm" || columnKey === "targetYtd") return "#7c3f16";
-    if (columnKey.startsWith("d")) return "#8a5a16";
-    return "#21140c";
-  }
-
-  function achievementFill(value: number | null | undefined) {
-    const tone = achievementTone(value);
-    if (tone === "good") return "#ecfdf3";
-    if (tone === "near") return "#fff7ed";
-    if (tone === "low") return "#fff1f2";
-    return "#f8f3ec";
-  }
-
-  function achievementText(value: number | null | undefined) {
-    const tone = achievementTone(value);
-    if (tone === "good") return "#047857";
-    if (tone === "near") return "#92400e";
-    if (tone === "low") return "#be123c";
-    return "#334155";
-  }
-
-  function bodyFill(columnKey: string, rowIndex: number, isTotal: boolean, row: WmsReportRow) {
-    if (isTotal) return columnKey === "targetFm" || columnKey === "targetYtd" ? "#2a1a10" : "#140b06";
-    if (columnKey === "label") return rowIndex % 2 === 0 ? "#ffffff" : "#faf7f2";
-    if (columnKey === "targetFm" || columnKey === "targetYtd") return "#f7eadf";
-    if (columnKey.startsWith("d")) return "#ffffff";
-    if (columnKey === "mtd" || columnKey === "realYtd") return "#f5eadf";
-    if (columnKey === "ach") return achievementFill(row.ach);
-    if (columnKey === "achYtd") return achievementFill(row.achYtd);
-    if (columnKey === "shortageFm") return row.shortageFm < 0 ? "#fff1f2" : "#ecfdf3";
-    if (columnKey === "shortageYtd") return row.shortageYtd < 0 ? "#fff1f2" : "#ecfdf3";
-    if (columnKey === "rank" || columnKey === "rankYtd") return "#faf7f2";
-    return rowIndex % 2 === 0 ? "#ffffff" : "#faf7f2";
-  }
-
-  function bodyTextFill(columnKey: string, isTotal: boolean, row: WmsReportRow) {
-    if (isTotal) return "#ffffff";
-    if (columnKey === "targetFm" || columnKey === "targetYtd") return "#6b3a13";
-    if (columnKey === "mtd" || columnKey === "realYtd") return "#5b3418";
-    if (columnKey === "ach") return achievementText(row.ach);
-    if (columnKey === "achYtd") return achievementText(row.achYtd);
-    if (columnKey === "shortageFm") return row.shortageFm < 0 ? "#be123c" : "#047857";
-    if (columnKey === "shortageYtd") return row.shortageYtd < 0 ? "#be123c" : "#047857";
-    if (columnKey === "rank" || columnKey === "rankYtd") return "#0f172a";
-    return "#0f172a";
-  }
-
-  function drawTable(scope: string, tableRows: WmsReportRow[], startY: number) {
-    let y = startY;
-    const gradient = ctx.createLinearGradient(40, y, 40 + tableWidth, y);
-    gradient.addColorStop(0, "#070302");
-    gradient.addColorStop(0.58, "#1f130c");
-    gradient.addColorStop(1, "#7c3f16");
-    ctx.fillStyle = gradient;
-    ctx.fillRect(40, y, tableWidth, tableTitleHeight);
-    ctx.fillStyle = "#ffffff";
-    ctx.textAlign = "center";
-    ctx.font = "700 10px Arial";
-    ctx.fillStyle = "#fed7aa";
-    ctx.fillText("MAIN TABLE", 40 + tableWidth / 2, y + 23);
-    ctx.font = "700 18px Arial";
-    ctx.fillStyle = "#ffffff";
-    ctx.fillText("PS HARIAN WMS", 40 + tableWidth / 2, y + 48);
-    ctx.font = "600 12px Arial";
-    ctx.fillStyle = "#e7d4c2";
-    ctx.fillText(scope, 40 + tableWidth / 2, y + 68);
-    ctx.fillStyle = "rgba(255,255,255,0.10)";
-    ctx.fillRect(40 + tableWidth / 2 - 130, y + 75, 260, 18);
-    ctx.font = "700 10px Arial";
-    ctx.fillStyle = "#f8fafc";
-    ctx.fillText(`${report.periodLabel} | Data s.d. Tgl ${latestDay}`, 40 + tableWidth / 2, y + 88);
-    ctx.textAlign = "left";
-    y += tableTitleHeight;
-
-    let x = 40;
-    ctx.font = "700 10px Arial";
-    for (const column of columns) {
-      ctx.fillStyle = headerFill(column.key);
-      ctx.fillRect(x, y, column.width, rowHeight);
-      ctx.strokeStyle = "#ffffff";
-      ctx.strokeRect(x, y, column.width, rowHeight);
-      ctx.fillStyle = "#ffffff";
-      ctx.fillText(column.label, x + 6, y + 18);
-      x += column.width;
-    }
-    y += rowHeight;
-
-    const dataRowsOnly = tableRows.filter((item) => item.label !== "Total" && item.label !== "YK JATENG SELATAN");
-    const rankCountAch = rankTotal(dataRowsOnly.map((item) => item.rank));
-    const rankCountYtd = rankTotal(dataRowsOnly.map((item) => item.rankYtd));
-    tableRows.forEach((row, rowIndex) => {
-      const isTotal = row.label === "Total" || row.label === "YK JATENG SELATAN";
-      x = 40;
-      ctx.font = isTotal ? "700 11px Arial" : "600 11px Arial";
-      for (const column of columns) {
-        const cellRank = isTotal
-          ? null
-          : column.key === "rank"
-            ? rankColor(row.rank, rankCountAch)
-            : column.key === "rankYtd"
-              ? rankColor(row.rankYtd, rankCountYtd)
-              : null;
-        ctx.fillStyle = cellRank ? cellRank.bg : bodyFill(column.key, rowIndex, isTotal, row);
-        ctx.fillRect(x, y, column.width, rowHeight);
-        ctx.strokeStyle = "#e7e5e4";
-        ctx.strokeRect(x, y, column.width, rowHeight);
-        let value = "";
-        if (column.key === "label") value = row.label;
-        else if (column.key === "targetFm") value = formatNumber(row.targetFm);
-        else if (column.key === "targetYtd") value = formatNumber(row.targetYtd);
-        else if (column.key === "mtd") value = formatNumber(row.mtd);
-        else if (column.key === "ach") value = formatPercent(row.ach);
-        else if (column.key === "rank") value = formatNumber(row.rank);
-        else if (column.key === "shortageFm") value = formatNumber(row.shortageFm);
-        else if (column.key === "realYtd") value = formatNumber(row.realYtd);
-        else if (column.key === "achYtd") value = formatPercent(row.achYtd);
-        else if (column.key === "rankYtd") value = formatNumber(row.rankYtd);
-        else if (column.key === "shortageYtd") value = formatNumber(row.shortageYtd);
-        else if (column.key.startsWith("d")) value = formatNumber(row.days[Number(column.key.slice(1))]);
-        ctx.fillStyle = cellRank ? cellRank.fg : bodyTextFill(column.key, isTotal, row);
-        ctx.textAlign = column.key === "label" ? "left" : "right";
-        ctx.fillText(value, column.key === "label" ? x + 6 : x + column.width - 6, y + 18);
-        x += column.width;
-      }
-      y += rowHeight;
-    });
-    ctx.textAlign = "left";
-    return y + 18;
-  }
-
-  const afterWitel = drawTable("WITEL", witelRows, headerHeight + 26);
-  drawTable("TELDA / BRANCH", teldaRows, afterWitel);
-  const blob = await new Promise<Blob>((resolve, reject) => {
-    canvas.toBlob((result) => (result ? resolve(result) : reject(new Error("PNG gagal dibuat."))), "image/png");
+  const startDay = Math.max(1, latestDay - 6);
+  const table = (labelHeader: string, source: { rows: WmsReportRow[]; total: WmsReportRow }) => ({
+    cols: wmsReportColumns({
+      compact: true,
+      dayCount: latestDay,
+      endDay: latestDay,
+      labelHeader,
+      latestDay,
+      periodLabel: report.periodLabel,
+      previousMonthLabel: report.previousMonthLabel,
+      rankCount: source.rows.length,
+      startDay,
+    }),
+    rows: source.rows,
+    total: source.total,
+  });
+  const blob = await renderReportPngBlob({
+    banner: {
+      note: `TARGET RKAP  •  TANGGAL ${startDay}-${latestDay}  •  ${report.cutoffLabel.toUpperCase()}`,
+      periodLabel: report.periodLabel,
+      scope: "WITEL YOGYA JATENG SELATAN",
+      title: "PS HARIAN WMS",
+    },
+    footer: `Data s.d. Tgl ${latestDay}`,
+    tables: [table("WITEL", report.witel), table("TELDA", report.telda)],
+    theme: WMS_REPORT_THEME,
+    timestamp,
   });
   downloadBlob(blob, reportFileName(timestamp, report.periodLabel));
 }
@@ -2029,32 +1870,25 @@ const WMS_REPORT_THEME: ReportTheme = {
   zebra: "#fbf7f1",
 };
 
-// Gaya sama dengan gambar PNG (features/telegram/report-images/wms-image.ts); di web semua tanggal dan kolom pembanding tetap ditampilkan.
-function ReportTable({
-  cutoffDay,
-  periodLabel,
-  previousMonthLabel,
-  rows,
-  scopeLabel,
-  showBanner = false,
-}: {
-  cutoffDay: number;
+type WmsColumnInput = {
+  /** true = kolom ringkas seperti gambar PNG/Telegram (tanpa kolom pembanding bulan lalu). */
+  compact: boolean;
+  dayCount: number;
+  endDay: number;
+  labelHeader: string;
+  latestDay: number;
   periodLabel: string;
   previousMonthLabel: string;
-  rows: WmsReportRow[];
-  scopeLabel: string;
-  showBanner?: boolean;
-}) {
-  const dash = "–";
-  const dayCount = rows[0]?.days.length ?? 31;
-  const latestDay = Math.max(1, Math.min(dayCount, cutoffDay));
-  const isTotalRow = (item: WmsReportRow) => item.label === "Total" || item.label === "YK JATENG SELATAN";
-  const dataRows = rows.filter((item) => !isTotalRow(item));
-  const totalRow = rows.find(isTotalRow) ?? rows[rows.length - 1];
-  const count = Math.max(rankTotal(dataRows.map((item) => item.rank)), rankTotal(dataRows.map((item) => item.rankYtd)), dataRows.length);
-  const period = parseReportPeriodLabel(periodLabel);
-  const labelHeader = scopeLabel.toUpperCase().startsWith("TELDA") ? "TELDA" : scopeLabel;
+  rankCount: number;
+  startDay: number;
+};
 
+// Kolom report WMS. Dipakai tabel di layar (semua tanggal) dan PNG (7 hari terakhir, kolom ringkas),
+// dengan gaya sama dengan features/telegram/report-images/wms-image.ts.
+function wmsReportColumns(input: WmsColumnInput): ReportCol<WmsReportRow>[] {
+  const dash = "–";
+  const { compact, endDay, labelHeader, latestDay, periodLabel, previousMonthLabel, rankCount: count, startDay } = input;
+  const period = parseReportPeriodLabel(periodLabel);
   const num = (value: number | null | undefined): ReportCellStyle => ({ text: value === null || value === undefined ? dash : formatNumber(value) });
   const pct = (value: number | null | undefined, tone: ReturnType<typeof reportSignTone> = reportSignTone(value)): ReportCellStyle => {
     if (value === null || value === undefined || Number.isNaN(value)) return { text: dash };
@@ -2068,9 +1902,8 @@ function ReportTable({
     const tone = reportSignTone(value);
     return { bold: true, color: tone?.color, fill: tone?.fill, text: formatNumber(value) };
   };
-
   const dayCols: ReportCol<WmsReportRow>[] = [];
-  for (let day = 1; day <= dayCount; day += 1) {
+  for (let day = startDay; day <= endDay; day += 1) {
     const weekend = reportDayKind(period, day) === "weekend";
     const future = day > latestDay;
     dayCols.push({
@@ -2086,12 +1919,28 @@ function ReportTable({
   }
   const base = { fill: "#3b2414", subFill: "#f3e7d8", subText: "#5b3418" };
   const prev = (value: number): ReportCellStyle => ({ color: "#5b4636", fill: "#f5efe6", text: formatNumber(value) });
-  const cols: ReportCol<WmsReportRow>[] = [
+  const head: ReportCol<WmsReportRow>[] = [
     { align: "left", cell: (row) => ({ bold: true, text: row.label.toUpperCase() }), fill: WMS_REPORT_THEME.ink, head: labelHeader, width: 200 },
     { cell: (row) => ({ bold: true, color: "#6b3a13", fill: "#f7eadf", text: formatNumber(row.targetFm) }), fill: "#7c3f16", head: "TARGET FM", width: 88 },
     { cell: (row) => ({ bold: true, color: "#6b3a13", fill: "#f7eadf", text: formatNumber(row.targetYtd) }), fill: "#7c3f16", head: "TARGET YTD", width: 92 },
     ...dayCols,
     { cell: (row) => ({ bold: true, color: "#5b2d06", fill: "#fde9c8", text: formatNumber(row.mtd) }), fill: "#f59e0b", head: "MTD", sub: "TOTAL", subFill: "#fcd9a0", subText: "#5b2d06", text: "#3a1d04", width: 80 },
+  ];
+  const ytdReal: ReportCol<WmsReportRow> = { ...base, cell: (row) => ({ bold: true, color: "#5b3418", fill: "#f3e7d8", text: formatNumber(row.realYtd) }), head: compact ? "REAL YTD" : `REAL YTD ${period?.year ?? ""}`.trim(), sub: "YTD", width: 92 };
+  if (compact) {
+    return [
+      ...head,
+      { ...base, cell: (row) => pct(row.ach, reportAchTone(row.ach)), head: "ACH", sub: "MTD", width: 84 },
+      { ...base, cell: (row) => rank(row.rank), head: "RANK", sub: "MTD", width: 70 },
+      { ...base, cell: (row) => shortage(row.shortageFm), head: "SHORTAGE FM", sub: "MTD", width: 100 },
+      ytdReal,
+      { ...base, cell: (row) => pct(row.achYtd, reportAchTone(row.achYtd)), head: "ACH YTD", sub: "%", width: 88 },
+      { ...base, cell: (row) => rank(row.rankYtd), head: "RANK YTD", sub: "YTD", width: 78 },
+      { ...base, cell: (row) => shortage(row.shortageYtd), head: "SHORTAGE YTD", sub: "YTD", width: 104 },
+    ];
+  }
+  return [
+    ...head,
     { ...base, cell: (row) => pct(row.ach, reportAchTone(row.ach)), head: "TARGET ACH", sub: "MTD", width: 92 },
     { ...base, cell: (row) => rank(row.rank), head: "RANK ACH", sub: "MTD", width: 78 },
     { ...base, cell: (row) => shortage(row.shortageFm), head: "SHORTAGE TO TARGET FM", sub: "MTD", width: 104 },
@@ -2099,12 +1948,47 @@ function ReportTable({
     { ...base, cell: (row) => pct(row.growthMtd), head: "GR MTD", sub: "%", width: 82 },
     { ...base, cell: (row) => prev(row.realFmPrev), head: `REAL FM ${previousMonthLabel}`, sub: "FM", width: 96 },
     { ...base, cell: (row) => pct(row.growthFm), head: "GR FM", sub: "%", width: 82 },
-    { ...base, cell: (row) => ({ bold: true, color: "#5b3418", fill: "#f3e7d8", text: formatNumber(row.realYtd) }), head: `REAL YTD ${period?.year ?? ""}`.trim(), sub: "YTD", width: 92 },
+    ytdReal,
     { ...base, cell: (row) => pct(row.achYtd, reportAchTone(row.achYtd)), head: "ACH YTD", sub: "%", width: 88 },
     { ...base, cell: (row) => pct(row.growthYtd), head: "GR YTD", sub: "%", width: 82 },
     { ...base, cell: (row) => rank(row.rankYtd), head: "RANK YTD", sub: "YTD", width: 78 },
     { ...base, cell: (row) => shortage(row.shortageYtd), head: "SHORTAGE TO TARGET YTD", sub: "YTD", width: 104 },
   ];
+}
+
+const isWmsTotalRow = (item: WmsReportRow) => item.label === "Total" || item.label === "YK JATENG SELATAN";
+const wmsRankCount = (dataRows: WmsReportRow[]) => Math.max(rankTotal(dataRows.map((item) => item.rank)), rankTotal(dataRows.map((item) => item.rankYtd)), dataRows.length);
+
+function ReportTable({
+  cutoffDay,
+  periodLabel,
+  previousMonthLabel,
+  rows,
+  scopeLabel,
+  showBanner = false,
+}: {
+  cutoffDay: number;
+  periodLabel: string;
+  previousMonthLabel: string;
+  rows: WmsReportRow[];
+  scopeLabel: string;
+  showBanner?: boolean;
+}) {
+  const dayCount = rows[0]?.days.length ?? 31;
+  const latestDay = Math.max(1, Math.min(dayCount, cutoffDay));
+  const dataRows = rows.filter((item) => !isWmsTotalRow(item));
+  const totalRow = rows.find(isWmsTotalRow) ?? rows[rows.length - 1];
+  const cols = wmsReportColumns({
+    compact: false,
+    dayCount,
+    endDay: dayCount,
+    labelHeader: scopeLabel.toUpperCase().startsWith("TELDA") ? "TELDA" : scopeLabel,
+    latestDay,
+    periodLabel,
+    previousMonthLabel,
+    rankCount: wmsRankCount(dataRows),
+    startDay: 1,
+  });
   return (
     <ReportCard
       banner={showBanner ? {

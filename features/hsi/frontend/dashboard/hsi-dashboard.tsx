@@ -45,8 +45,8 @@ import { DashboardMetricCard, type DashboardMetricTone } from "@/features/shared
 import { MasterUnlockModal } from "@/features/shared/dashboard/master-unlock-modal";
 import { DashboardPeriodFilter, defaultPeriodFilter, type DashboardPeriodFilterState } from "@/features/shared/dashboard/period-filter";
 import { DashboardStatusPill } from "@/features/shared/dashboard/status-pill";
+import { renderReportPngBlob } from "@/features/shared/dashboard/report-png";
 import { ReportCard, achTone as reportAchTone, dayKind as reportDayKind, parsePeriodLabel as parseReportPeriodLabel, rankTone as reportRankTone, signTone as reportSignTone, type CellStyle as ReportCellStyle, type ReportTheme, type TableCol as ReportCol } from "@/features/shared/dashboard/report-table";
-import { rankColor, rankTotal } from "@/features/shared/dashboard/rank-color";
 import {
   computeReport,
   initialMasterRows,
@@ -144,12 +144,6 @@ const chartTooltipStyle = {
   border: "1px solid rgba(203,213,225,0.75)",
   borderRadius: 8,
   boxShadow: "0 18px 42px -26px rgba(15,23,42,0.45)",
-} as const;
-const reportCanvasColumns = {
-  day: 28,
-  label: 168,
-  summary: 78,
-  target: 72,
 } as const;
 const nperColumnIndex = masterHeaders.indexOf("NPER");
 const fallbackPeriodKey = "202609";
@@ -1007,13 +1001,6 @@ function reportForPeriodFilter(
   };
 }
 
-function achievementTone(value: number | null) {
-  if (value === null) return "neutral";
-  if (value >= 1) return "good";
-  if (value >= 0.8) return "near";
-  return "low";
-}
-
 function downloadBlob(blob: Blob, filename: string) {
   const url = URL.createObjectURL(blob);
   const link = document.createElement("a");
@@ -1826,24 +1813,6 @@ function MasterPage({
   );
 }
 
-function summaryHeadersFor(previousMonthLabel: string) {
-  return [
-    "Total",
-    "TARGET ACH",
-    "RANK ACH",
-    "SHORTAGE TO TARGET FM",
-    `REAL MTD ${previousMonthLabel}`,
-    "GR MTD",
-    `REAL FM ${previousMonthLabel}`,
-    "GR FM",
-    "REAL YTD 2026",
-    "ACH YTD",
-    "GR YTD",
-    "RANK YTD",
-    "SHORTAGE TO TARGET YTD",
-  ];
-}
-
 const HSI_REPORT_THEME: ReportTheme = {
   bannerStops: ["#071426", "#0b2a55", "#1d4ed8"],
   canvasBg: "#f3f7fd",
@@ -1855,28 +1824,22 @@ const HSI_REPORT_THEME: ReportTheme = {
   zebra: "#f7faff",
 };
 
-// Gaya sama dengan gambar PNG (features/telegram/report-images/hsi-image.ts); di web semua tanggal tetap ditampilkan.
-function ReportTableView({
-  latestDay,
-  note,
-  periodLabel,
-  previousMonthLabel,
-  showBanner = false,
-  table,
-}: {
+type HsiColumnInput = {
+  endDay: number;
   latestDay: number;
-  note?: string;
   periodLabel: string;
   previousMonthLabel: string;
-  showBanner?: boolean;
+  startDay: number;
   table: ReportTable;
-}) {
+};
+
+// Kolom report HSI. Dipakai tabel di layar (semua tanggal) dan PNG (7 hari terakhir),
+// dengan gaya sama dengan features/telegram/report-images/hsi-image.ts.
+function hsiReportColumns({ endDay, latestDay, periodLabel, previousMonthLabel, startDay, table }: HsiColumnInput): ReportCol<ReportRow>[] {
   const dash = "–";
-  const dayCount = table.rows[0]?.days.length ?? 30;
   const count = table.rows.length;
   const period = parseReportPeriodLabel(periodLabel);
   const labelHeader = table.total.label === "Total" ? "WITEL" : "TELDA";
-
   const num = (value: number | null | undefined): ReportCellStyle => ({ text: value === null || value === undefined ? dash : formatNumber(value) });
   const pct = (value: number | null | undefined, tone: ReturnType<typeof reportSignTone> = reportSignTone(value)): ReportCellStyle => {
     if (value === null || value === undefined || Number.isNaN(value)) return { text: dash };
@@ -1890,9 +1853,8 @@ function ReportTableView({
     const tone = reportSignTone(value);
     return { bold: true, color: tone?.color, fill: tone?.fill, text: formatNumber(value) };
   };
-
   const dayCols: ReportCol<ReportRow>[] = [];
-  for (let day = 1; day <= dayCount; day += 1) {
+  for (let day = startDay; day <= endDay; day += 1) {
     const weekend = reportDayKind(period, day) === "weekend";
     const future = day > latestDay;
     dayCols.push({
@@ -1908,7 +1870,7 @@ function ReportTableView({
   }
   const base = { fill: "#0f2a4d", subFill: "#e3ecfa", subText: "#1e3a8a" };
   const prev = (value: number): ReportCellStyle => ({ color: "#334155", fill: "#f1f5f9", text: formatNumber(value) });
-  const cols: ReportCol<ReportRow>[] = [
+  return [
     { align: "left", cell: (row) => ({ bold: true, text: row.label.toUpperCase() }), fill: HSI_REPORT_THEME.ink, head: labelHeader, width: 200 },
     { cell: (row) => ({ bold: true, color: "#1e3a8a", fill: "#eaf1ff", text: formatNumber(row.targetFm) }), fill: "#1d4ed8", head: "TARGET FM", width: 86 },
     { cell: (row) => ({ bold: true, color: "#1e3a8a", fill: "#eaf1ff", text: formatNumber(row.targetYtd) }), fill: "#1d4ed8", head: "TARGET YTD", width: 90 },
@@ -1927,6 +1889,25 @@ function ReportTableView({
     { ...base, cell: (row) => rank(row.rankYtd), head: "RANK YTD", sub: "YTD", width: 78 },
     { ...base, cell: (row) => shortage(row.shortageYtd), head: "SHORTAGE TO TARGET YTD", sub: "YTD", width: 104 },
   ];
+}
+
+function ReportTableView({
+  latestDay,
+  note,
+  periodLabel,
+  previousMonthLabel,
+  showBanner = false,
+  table,
+}: {
+  latestDay: number;
+  note?: string;
+  periodLabel: string;
+  previousMonthLabel: string;
+  showBanner?: boolean;
+  table: ReportTable;
+}) {
+  const dayCount = table.rows[0]?.days.length ?? 30;
+  const cols = hsiReportColumns({ endDay: dayCount, latestDay, periodLabel, previousMonthLabel, startDay: 1, table });
   return (
     <ReportCard
       banner={showBanner ? {
@@ -1943,259 +1924,7 @@ function ReportTableView({
   );
 }
 
-function wrapCanvasText(context: CanvasRenderingContext2D, text: string, maxWidth: number) {
-  const words = text.split(" ");
-  const lines: string[] = [];
-  let current = "";
-  for (const word of words) {
-    const next = current ? `${current} ${word}` : word;
-    if (context.measureText(next).width <= maxWidth || !current) {
-      current = next;
-    } else {
-      lines.push(current);
-      current = word;
-    }
-  }
-  if (current) lines.push(current);
-  return lines;
-}
-
-function drawCell(
-  context: CanvasRenderingContext2D,
-  text: string,
-  x: number,
-  y: number,
-  width: number,
-  height: number,
-  options: {
-    align?: CanvasTextAlign;
-    border?: string;
-    fill?: string;
-    font?: string;
-    padding?: number;
-    textColor?: string;
-    wrap?: boolean;
-  } = {},
-) {
-  context.fillStyle = options.fill ?? "#ffffff";
-  context.fillRect(x, y, width, height);
-  context.strokeStyle = options.border ?? "#e2e8f0";
-  context.lineWidth = 1;
-  context.strokeRect(x, y, width, height);
-  context.fillStyle = options.textColor ?? "#0f172a";
-  context.font = options.font ?? "12px Arial";
-  context.textAlign = options.align ?? "right";
-  context.textBaseline = "middle";
-  const padding = options.padding ?? 8;
-  const textX = options.align === "left" ? x + padding : options.align === "center" ? x + width / 2 : x + width - padding;
-  if (options.wrap) {
-    const lines = wrapCanvasText(context, text, width - padding * 2).slice(0, 3);
-    const lineHeight = 11;
-    const startY = y + height / 2 - ((lines.length - 1) * lineHeight) / 2;
-    lines.forEach((line, index) => context.fillText(line, textX, startY + index * lineHeight));
-  } else {
-    context.fillText(text, textX, y + height / 2);
-  }
-}
-
-function drawReportTableCanvas(
-  context: CanvasRenderingContext2D,
-  table: ReportTable,
-  exportStartDay: number,
-  latestDay: number,
-  periodLabel: string,
-  previousMonthLabel: string,
-  x: number,
-  y: number,
-  totalWidth: number,
-) {
-  const summaryHeaders = summaryHeadersFor(previousMonthLabel);
-  const rankCountAch = rankTotal(table.rows.map((row) => row.rankAch));
-  const rankCountYtd = rankTotal(table.rows.map((row) => row.rankYtd));
-  const labelWidth = reportCanvasColumns.label;
-  const targetWidth = reportCanvasColumns.target;
-  const dayWidth = reportCanvasColumns.day;
-  const summaryWidth = reportCanvasColumns.summary;
-  const exportDayCount = latestDay - exportStartDay + 1;
-  const titleHeight = 58;
-  const groupHeaderHeight = 36;
-  const dayHeaderHeight = 26;
-  const rowHeight = 28;
-  const rows = [...table.rows, table.total];
-  const tableHeight = titleHeight + groupHeaderHeight + dayHeaderHeight + rows.length * rowHeight;
-
-  context.fillStyle = "#ffffff";
-  context.fillRect(x, y, totalWidth, tableHeight);
-  context.strokeStyle = "#cbd5e1";
-  context.strokeRect(x, y, totalWidth, tableHeight);
-
-  context.fillStyle = "#020617";
-  context.fillRect(x, y, totalWidth, titleHeight);
-  const accent = context.createLinearGradient(x, y, x + totalWidth, y);
-  accent.addColorStop(0, "#22d3ee");
-  accent.addColorStop(0.45, "#e11d48");
-  accent.addColorStop(1, "#f59e0b");
-  context.fillStyle = accent;
-  context.fillRect(x, y, totalWidth, 4);
-  context.fillStyle = "#ffffff";
-  context.font = "700 18px Arial";
-  context.textAlign = "center";
-  context.textBaseline = "top";
-  context.fillText(table.title, x + totalWidth / 2, y + 12);
-  context.fillStyle = "#cbd5e1";
-  context.font = "600 12px Arial";
-  context.fillText(table.subtitle, x + totalWidth / 2, y + 34);
-  context.font = "700 11px Arial";
-  context.fillText(`${periodLabel} | Data s.d. Tgl ${latestDay}`, x + totalWidth / 2, y + 48);
-  context.textAlign = "left";
-
-  let cursorX = x;
-  const headerY = y + titleHeight;
-  const labelHeader = table.total.label === "Total" ? "WITEL" : "BRANCH";
-  drawCell(context, labelHeader, cursorX, headerY, labelWidth, groupHeaderHeight + dayHeaderHeight, {
-    align: "center",
-    border: "#334155",
-    fill: "#020617",
-    font: "700 11px Arial",
-    textColor: "#ffffff",
-  });
-  cursorX += labelWidth;
-  drawCell(context, "TARGET FM", cursorX, headerY, targetWidth, groupHeaderHeight + dayHeaderHeight, {
-    align: "center",
-    border: "#4338ca",
-    fill: "#3730a3",
-    font: "700 10px Arial",
-    textColor: "#ffffff",
-    wrap: true,
-  });
-  cursorX += targetWidth;
-  drawCell(context, "TARGET YTD", cursorX, headerY, targetWidth, groupHeaderHeight + dayHeaderHeight, {
-    align: "center",
-    border: "#4338ca",
-    fill: "#3730a3",
-    font: "700 10px Arial",
-    textColor: "#ffffff",
-    wrap: true,
-  });
-  cursorX += targetWidth;
-  drawCell(context, "TANGGAL", cursorX, headerY, exportDayCount * dayWidth, groupHeaderHeight, {
-    align: "center",
-    border: "#0f766e",
-    fill: "#0f766e",
-    font: "700 11px Arial",
-    textColor: "#ffffff",
-  });
-  for (let day = exportStartDay; day <= latestDay; day += 1) {
-    drawCell(context, String(day), cursorX + (day - exportStartDay) * dayWidth, headerY + groupHeaderHeight, dayWidth, dayHeaderHeight, {
-      align: "center",
-      border: "#99f6e4",
-      fill: "#ccfbf1",
-      font: "700 10px Arial",
-      textColor: "#134e4a",
-    });
-  }
-  cursorX += exportDayCount * dayWidth;
-  for (const header of summaryHeaders) {
-    drawCell(context, header, cursorX, headerY, summaryWidth, groupHeaderHeight + dayHeaderHeight, {
-      align: "center",
-      border: "#334155",
-      fill: "#1e293b",
-      font: "700 8px Arial",
-      padding: 4,
-      textColor: "#ffffff",
-      wrap: true,
-    });
-    cursorX += summaryWidth;
-  }
-
-  rows.forEach((row, rowIndex) => {
-    const total = rowIndex === rows.length - 1;
-    const rowY = headerY + groupHeaderHeight + dayHeaderHeight + rowIndex * rowHeight;
-    const baseFill = total ? "#e2e8f0" : rowIndex % 2 === 0 ? "#ffffff" : "#f8fafc";
-    let cellX = x;
-    const bodyFont = total ? "700 11px Arial" : "11px Arial";
-    drawCell(context, row.label, cellX, rowY, labelWidth, rowHeight, {
-      align: "left",
-      fill: baseFill,
-      font: bodyFont,
-    });
-    cellX += labelWidth;
-    drawCell(context, formatNumber(row.targetFm), cellX, rowY, targetWidth, rowHeight, {
-      fill: "#eef2ff",
-      font: "700 11px Arial",
-      textColor: "#312e81",
-    });
-    cellX += targetWidth;
-    drawCell(context, formatNumber(row.targetYtd), cellX, rowY, targetWidth, rowHeight, {
-      fill: "#eef2ff",
-      font: "700 11px Arial",
-      textColor: "#312e81",
-    });
-    cellX += targetWidth;
-    row.days.slice(exportStartDay - 1, latestDay).forEach((value) => {
-      drawCell(context, formatNumber(value), cellX, rowY, dayWidth, rowHeight, {
-        fill: baseFill,
-        font: bodyFont,
-      });
-      cellX += dayWidth;
-    });
-
-    const summaryValues = [
-      { value: formatNumber(row.mtd), fill: "#ccfbf1", color: "#134e4a", bold: true },
-      { value: formatPercent(row.targetAch), tone: achievementTone(row.targetAch) },
-      { value: formatNumber(row.rankAch), fill: "#f1f5f9", color: "#0f172a", bold: true, rank: total ? null : rankColor(row.rankAch, rankCountAch) },
-      { value: formatNumber(row.shortageFm), fill: row.shortageFm < 0 ? "#ffe4e6" : "#dcfce7", color: row.shortageFm < 0 ? "#9f1239" : "#166534", bold: true },
-      { value: formatNumber(row.realMtdPrev), fill: "#f8fafc", color: "#334155" },
-      { value: formatPercent(row.growthMtd), fill: baseFill, color: "#0f172a" },
-      { value: formatNumber(row.realFmPrev), fill: "#f8fafc", color: "#334155" },
-      { value: formatPercent(row.growthFm), fill: baseFill, color: "#0f172a" },
-      { value: formatNumber(row.realYtd), fill: "#ccfbf1", color: "#134e4a", bold: true },
-      { value: formatPercent(row.achYtd), tone: achievementTone(row.achYtd) },
-      { value: formatPercent(row.growthYtd), fill: baseFill, color: "#0f172a" },
-      { value: formatNumber(row.rankYtd), fill: "#f1f5f9", color: "#0f172a", bold: true, rank: total ? null : rankColor(row.rankYtd, rankCountYtd) },
-      { value: formatNumber(row.shortageYtd), fill: row.shortageYtd < 0 ? "#ffe4e6" : "#dcfce7", color: row.shortageYtd < 0 ? "#9f1239" : "#166534", bold: true },
-    ];
-    for (const item of summaryValues) {
-      let fill = item.fill ?? baseFill;
-      let color = item.color ?? "#0f172a";
-      if (item.rank) {
-        fill = item.rank.bg;
-        color = item.rank.fg;
-      } else if (item.tone === "good") {
-        fill = "#dcfce7";
-        color = "#166534";
-      } else if (item.tone === "near") {
-        fill = "#fef3c7";
-        color = "#92400e";
-      } else if (item.tone === "low") {
-        fill = "#ffe4e6";
-        color = "#9f1239";
-      }
-      drawCell(context, item.value, cellX, rowY, summaryWidth, rowHeight, {
-        fill,
-        font: item.bold || item.tone ? "700 11px Arial" : bodyFont,
-        textColor: color,
-      });
-      cellX += summaryWidth;
-    }
-  });
-
-  return tableHeight;
-}
-
-function drawConfidentialWatermark(context: CanvasRenderingContext2D, width: number, height: number) {
-  context.save();
-  context.globalAlpha = 0.055;
-  context.fillStyle = "#0f172a";
-  context.font = "700 58px Arial";
-  context.textAlign = "center";
-  context.textBaseline = "middle";
-  context.translate(width / 2, height / 2);
-  context.rotate((-22 * Math.PI) / 180);
-  context.fillText("CONFIDENTIAL", 0, 0);
-  context.restore();
-}
-
+// Unduhan PNG memakai kolom, warna, dan penggambar yang sama dengan gambar report di bot Telegram.
 async function createReportPng(
   witelTable: ReportTable,
   branchTable: ReportTable,
@@ -2205,47 +1934,23 @@ async function createReportPng(
   periodLabel: string,
   previousMonthLabel: string,
 ) {
-  await document.fonts?.ready;
-  const scale = 2;
-  const padding = 28;
-  const labelWidth = reportCanvasColumns.label;
-  const targetWidth = reportCanvasColumns.target;
-  const dayWidth = reportCanvasColumns.day;
-  const summaryWidth = reportCanvasColumns.summary;
-  const summaryHeaders = summaryHeadersFor(previousMonthLabel);
   const exportStartDay = Math.max(1, latestDay - 6);
-  const exportDayCount = latestDay - exportStartDay + 1;
-  const tableWidth = labelWidth + targetWidth * 2 + exportDayCount * dayWidth + summaryHeaders.length * summaryWidth;
-  const tableHeight = 58 + 36 + 26 + 9 * 28;
-  const logicalWidth = tableWidth + padding * 2;
-  const logicalHeight = padding + 68 + tableHeight + 22 + tableHeight + padding;
-  const canvas = document.createElement("canvas");
-  canvas.width = logicalWidth * scale;
-  canvas.height = logicalHeight * scale;
-  const context = canvas.getContext("2d");
-  if (!context) throw new Error("Canvas browser tidak tersedia.");
-  context.scale(scale, scale);
-  context.fillStyle = "#ffffff";
-  context.fillRect(0, 0, logicalWidth, logicalHeight);
-  context.fillStyle = "#0f172a";
-  context.font = "700 28px Arial";
-  context.textAlign = "left";
-  context.textBaseline = "top";
-  context.fillText(variant === "stf" ? "Report HSI Target STF" : "Report HSI Target RKAP", padding, padding);
-  context.fillStyle = "#475569";
-  context.font = "15px Arial";
-  context.fillText(`Downloaded: ${formatJakartaDateTime(timestamp, false)}`, padding, padding + 36);
-  context.fillText(`Periode: ${periodLabel} | Tanggal ${exportStartDay}-${latestDay}`, padding + 360, padding + 36);
-  context.fillStyle = "#881337";
-  context.font = "700 12px Arial";
-  context.textAlign = "right";
-  context.fillText("CONFIDENTIAL - INTERNAL USE ONLY", logicalWidth - padding, padding + 8);
-  context.textAlign = "left";
-  const firstTableHeight = drawReportTableCanvas(context, witelTable, exportStartDay, latestDay, periodLabel, previousMonthLabel, padding, padding + 68, tableWidth);
-  drawReportTableCanvas(context, branchTable, exportStartDay, latestDay, periodLabel, previousMonthLabel, padding, padding + 68 + firstTableHeight + 22, tableWidth);
-  drawConfidentialWatermark(context, logicalWidth, logicalHeight);
-  const blob = await new Promise<Blob>((resolve, reject) => {
-    canvas.toBlob((result) => (result ? resolve(result) : reject(new Error("Gagal menyimpan PNG."))), "image/png", 1);
+  const spec = (table: ReportTable) => ({
+    cols: hsiReportColumns({ endDay: latestDay, latestDay, periodLabel, previousMonthLabel, startDay: exportStartDay, table }),
+    rows: table.rows,
+    total: table.total,
+  });
+  const blob = await renderReportPngBlob({
+    banner: {
+      note: `${variant === "stf" ? "TARGET STF" : "TARGET RKAP"}  •  TANGGAL ${exportStartDay}-${latestDay}`,
+      periodLabel,
+      scope: "WITEL YOGYA JATENG SELATAN",
+      title: "PS HARIAN HSI",
+    },
+    footer: `Data s.d. Tgl ${latestDay}`,
+    tables: [spec(witelTable), spec(branchTable)],
+    theme: HSI_REPORT_THEME,
+    timestamp,
   });
   downloadBlob(blob, reportFileName(timestamp, variant));
 }

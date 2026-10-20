@@ -146,22 +146,29 @@ export function ReportBanner({ theme, text }: { theme: ReportTheme; text: Banner
       <Ribbon side="right" />
       <Dots side="left" theme={theme} />
       <Dots side="right" theme={theme} />
-      <div className="relative px-4" style={{ paddingTop: 28 }}>
-        <h2 className="m-0 truncate font-bold leading-none text-white" style={{ fontSize: 42, height: 48 }}>
-          {text.title}
-        </h2>
-        <p className="m-0 flex flex-wrap items-center justify-center whitespace-pre text-white" style={{ fontSize: 21, fontWeight: 600, marginTop: 22 }}>
-          <span>PERIODE : </span>
-          <span style={{ color: theme.highlight, fontWeight: 700 }}>{text.periodLabel}</span>
-          <span style={{ color: "rgba(255,255,255,0.55)", fontWeight: 400 }}>{"     |     "}</span>
-          <span>{text.scope}</span>
+      <h2
+        className="absolute m-0 w-full truncate px-4 text-center font-bold leading-none text-white"
+        style={{ fontSize: 42, left: 0, top: 52, transform: "translateY(-50%)" }}
+      >
+        {text.title}
+      </h2>
+      <p
+        className="absolute m-0 flex w-full items-center justify-center whitespace-pre px-4 leading-none text-white"
+        style={{ fontSize: 21, fontWeight: 600, left: 0, top: 96, transform: "translateY(-50%)" }}
+      >
+        <span>PERIODE : </span>
+        <span style={{ color: theme.highlight, fontWeight: 700 }}>{text.periodLabel}</span>
+        <span style={{ color: "rgba(255,255,255,0.55)", fontWeight: 400 }}>{"     |     "}</span>
+        <span>{text.scope}</span>
+      </p>
+      {text.note && (
+        <p
+          className="absolute m-0 w-full px-4 text-center leading-none"
+          style={{ color: "rgba(255,255,255,0.72)", fontSize: 13, fontWeight: 600, left: 0, top: 130, transform: "translateY(-50%)" }}
+        >
+          {text.note}
         </p>
-        {text.note && (
-          <p className="m-0" style={{ color: "rgba(255,255,255,0.72)", fontSize: 13, fontWeight: 600, marginTop: 14 }}>
-            {text.note}
-          </p>
-        )}
-      </div>
+      )}
       <div
         aria-hidden
         style={{
