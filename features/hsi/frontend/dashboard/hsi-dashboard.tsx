@@ -1746,7 +1746,7 @@ function MasterPage({
       <div className={`${panelClass} flex flex-col gap-4 bg-[linear-gradient(135deg,#ffffff,#f8fafc)] p-5 lg:flex-row lg:items-end lg:justify-between`}>
         <div className="min-w-0 flex-1">
           <p className="text-sm font-semibold uppercase text-rose-700">MASTER</p>
-          <h1 className="mt-1 text-3xl font-semibold tracking-normal text-slate-950">Input Data Utama HSI</h1>
+          <h1 className="mt-1 text-3xl font-bold tracking-tight text-slate-950">Input Data Utama HSI</h1>
           <div className="mt-3 flex flex-wrap gap-2">
             <StatusPill>{formatNumber(rows.length)} baris MASTER</StatusPill>
             <StatusPill>Last saved: {formatSavedAt(savedAt)}</StatusPill>
@@ -1959,12 +1959,12 @@ function ReportTableView({
   const rankCountYtd = rankTotal(table.rows.map((row) => row.rankYtd));
   return (
     <section className={`${panelClass} overflow-hidden`}>
-      <div className="border-b border-slate-800 bg-[linear-gradient(135deg,#020617,#0f172a_58%,#155e75)] px-5 py-4 text-center text-white">
+      <div className="border-b border-slate-200 bg-[linear-gradient(110deg,#f8fafc_0%,#eff6ff_58%,#ecfeff_100%)] px-5 py-5 text-center text-slate-900">
         <div className="mx-auto flex max-w-3xl flex-col items-center gap-2">
-          <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-cyan-200">Main Table</p>
-          <h2 className="text-xl font-semibold tracking-normal text-white">{table.title}</h2>
-          <p className="text-sm font-medium text-slate-300">{table.subtitle}</p>
-          <span className="rounded-full border border-white/15 bg-white/10 px-3 py-1 text-xs font-semibold text-cyan-50">
+          <p className="text-[11px] font-bold uppercase tracking-[0.18em] text-cyan-800">Main Table</p>
+          <h2 className="text-xl font-bold tracking-tight text-slate-900">{table.title}</h2>
+          <p className="text-sm font-medium text-slate-600">{table.subtitle}</p>
+          <span className="rounded-full border border-cyan-200 bg-white px-3 py-1 text-xs font-bold text-cyan-900 shadow-sm">
             {periodLabel} | Data s.d. Tgl {latestDay}
           </span>
         </div>
@@ -2344,7 +2344,7 @@ function ReportPage({ report, variant }: { report: ComputedReport; variant: "sem
 
   return (
     <div className="space-y-6">
-      <div className={`${panelClass} flex flex-wrap items-end justify-between gap-4 bg-[linear-gradient(135deg,#ffffff,#f8fafc_55%,#fff1f2)] p-5`}>
+      <div className={`${panelClass} flex flex-wrap items-end justify-between gap-4 bg-[linear-gradient(135deg,#ffffff_0%,#fff7f8_55%,#eef5ff_100%)] p-6 shadow-[0_16px_40px_-28px_rgba(15,23,42,0.32)]`}>
         <div>
           <p className="text-sm font-semibold uppercase text-rose-700">
             {isStf ? "Report HSI Target STF" : "Report HSI Target RKAP"}

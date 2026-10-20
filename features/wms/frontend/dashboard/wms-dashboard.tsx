@@ -1925,10 +1925,10 @@ function MasterPage({
 
   return (
     <div className="space-y-5">
-      <div className={`${panelClass} flex flex-col gap-4 bg-[linear-gradient(135deg,#ffffff,#fffaf2)] p-5 lg:flex-row lg:items-end lg:justify-between`}>
+      <div className={`${panelClass} flex flex-col gap-4 bg-[linear-gradient(135deg,#ffffff_0%,#fffaf2_55%,#f0f9ff_100%)] p-6 shadow-[0_16px_40px_-28px_rgba(68,42,12,0.3)] lg:flex-row lg:items-end lg:justify-between`}>
         <div className="min-w-0 flex-1">
           <p className="text-sm font-semibold uppercase text-amber-700">MASTER</p>
-          <h1 className="mt-1 text-3xl font-semibold tracking-normal text-stone-950">Input Data Utama WMS</h1>
+          <h1 className="mt-1 text-3xl font-bold tracking-tight text-stone-950">Input Data Utama WMS</h1>
           <div className="mt-3 flex flex-wrap gap-2">
             <StatusPill>{formatNumber(rows.length)} baris MASTER</StatusPill>
             <StatusPill>Last saved: {formatSavedAt(savedAt)}</StatusPill>
@@ -1989,7 +1989,7 @@ function ReportPage({ report }: { report: WmsComputedReport }) {
 
   return (
     <div className="space-y-5">
-      <div className={`${panelClass} flex flex-wrap items-end justify-between gap-4 bg-[linear-gradient(135deg,#ffffff,#fffaf2)] p-5`}>
+      <div className={`${panelClass} flex flex-wrap items-end justify-between gap-4 bg-[linear-gradient(135deg,#ffffff_0%,#fffaf2_55%,#f0f9ff_100%)] p-6 shadow-[0_16px_40px_-28px_rgba(68,42,12,0.3)]`}>
         <div>
           <p className="text-sm font-semibold uppercase text-amber-700">Report WMS Target RKAP</p>
           <h1 className="mt-1 text-3xl font-semibold tracking-normal text-stone-950">Report WMS Target RKAP</h1>
@@ -2064,12 +2064,12 @@ function ReportTable({
   ];
   return (
     <section className={`${panelClass} overflow-hidden`}>
-      <div className="border-b border-[#4a2a15] bg-[linear-gradient(135deg,#070302,#1f130c_58%,#7c3f16)] px-5 py-4 text-center text-white">
+      <div className="border-b border-orange-100 bg-[linear-gradient(110deg,#fffaf2_0%,#ffedd5_55%,#f0f9ff_100%)] px-5 py-5 text-center text-stone-900">
         <div className="mx-auto flex max-w-3xl flex-col items-center gap-2">
-          <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-orange-200">Main Table</p>
-          <h2 className="text-xl font-semibold tracking-normal text-white">PS HARIAN WMS</h2>
-          <p className="text-sm font-medium text-orange-100/80">{scopeLabel}</p>
-          <span className="rounded-full border border-white/15 bg-white/10 px-3 py-1 text-xs font-semibold text-orange-50">
+          <p className="text-[11px] font-bold uppercase tracking-[0.18em] text-orange-800">Main Table</p>
+          <h2 className="text-xl font-bold tracking-tight text-stone-900">PS HARIAN WMS</h2>
+          <p className="text-sm font-medium text-stone-600">{scopeLabel}</p>
+          <span className="rounded-full border border-orange-200 bg-white px-3 py-1 text-xs font-bold text-orange-900 shadow-sm">
             {periodLabel} | Data s.d. Tgl {latestDay}
           </span>
         </div>

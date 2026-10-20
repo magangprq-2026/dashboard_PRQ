@@ -1368,10 +1368,10 @@ function ReportDataTable({ table, showChurnGap, showRankCaps }: { table: LtsRepo
   ];
   return (
     <section className={`${glassPanel} overflow-hidden bg-white`}>
-      <div className="border-b border-violet-200/10 bg-[linear-gradient(135deg,#07040f,#24103f_60%,#43206a)] px-5 py-5 text-center">
-        <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-violet-200">Main Table</p>
-        <h2 className="mt-2 text-xl font-bold tracking-normal text-white">{table.title}</h2>
-        <p className="mt-1 text-sm font-semibold uppercase text-violet-100/70">{table.subtitle}</p>
+      <div className="border-b border-violet-100 bg-[linear-gradient(110deg,#faf5ff_0%,#f3e8ff_58%,#eff6ff_100%)] px-5 py-5 text-center">
+        <p className="text-[11px] font-bold uppercase tracking-[0.18em] text-violet-800">Main Table</p>
+        <h2 className="mt-2 text-xl font-bold tracking-tight text-slate-900">{table.title}</h2>
+        <p className="mt-1 text-sm font-semibold uppercase tracking-wide text-slate-600">{table.subtitle}</p>
       </div>
       <div className="max-h-[72vh] overflow-auto bg-white">
         <table className="w-full min-w-[1320px] border-separate border-spacing-0 text-[11px] text-slate-800">
@@ -1403,9 +1403,9 @@ function ReportDataTable({ table, showChurnGap, showRankCaps }: { table: LtsRepo
           <tbody>
             {allRows.map((row, index) => {
               const total = index === allRows.length - 1;
-              const rowBackground = index % 2 === 0 ? "bg-white" : "bg-[#f7f4ff]";
+              const rowBackground = index % 2 === 0 ? "bg-white" : "bg-[#faf7ff]";
               return (
-                <tr key={`${row.label}-${total ? "total" : "row"}`} className={total ? "bg-[#0b0614] font-bold text-white" : `${rowBackground} text-slate-800 hover:bg-[#efe8ff]`}>
+                <tr key={`${row.label}-${total ? "total" : "row"}`} className={total ? "bg-[#0b0614] font-bold text-white" : `${rowBackground} text-slate-800 hover:bg-[#f1eaff]`}>
                   <th className={`sticky left-0 z-10 border-b border-r border-violet-100/80 px-3 py-2 text-left ${total ? "bg-[#0b0614] text-white" : `${rowBackground} text-slate-800`}`}>{row.label}</th>
                   {showCoordinator && <td className={`border-b border-r border-violet-100/80 px-3 py-2 ${total ? "bg-[#160d24] text-white" : `${rowBackground} text-slate-700`}`}>{row.coordinator ?? ""}</td>}
                   <td className={`border-b border-r border-violet-100/80 px-2 py-2 text-right ${total ? "bg-[#160d24] text-white" : "bg-[#f3edff] font-semibold text-[#321653]"}`}>{formatNumber(row.sales)}</td>
