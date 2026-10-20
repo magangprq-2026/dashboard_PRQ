@@ -23,7 +23,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type React from "react";
 import type { DashboardPermissions } from "@/features/hsi/backend/auth/session";
 import { CompactRankingInsight } from "@/features/shared/dashboard/compact-ranking-insight";
-import { rankColor, rankPillStyle, rankTotal } from "@/features/shared/dashboard/rank-color";
+import { ReportCard, achTone as reportAchTone, dayKind as reportDayKind, parsePeriodLabel as parseReportPeriodLabel, rankTone as reportRankTone, signTone as reportSignTone, type CellStyle as ReportCellStyle, type ReportTheme, type TableCol as ReportCol } from "@/features/shared/dashboard/report-table";
+import { rankColor, rankTotal } from "@/features/shared/dashboard/rank-color";
 import {
   cutoffDateFromPeriodPart,
   dateRangeLabel,
@@ -2011,177 +2012,112 @@ function ReportPage({ report }: { report: WmsComputedReport }) {
           PNG belum berhasil dibuat. Coba tekan Download Report sekali lagi.
         </div>
       )}
-      <ReportTable scopeLabel="WITEL" rows={[...report.witel.rows, report.witel.total]} periodLabel={report.periodLabel} previousMonthLabel={report.previousMonthLabel} cutoffDay={report.cutoffDay} />
+      <ReportTable showBanner scopeLabel="WITEL" rows={[...report.witel.rows, report.witel.total]} periodLabel={report.periodLabel} previousMonthLabel={report.previousMonthLabel} cutoffDay={report.cutoffDay} />
       <ReportTable scopeLabel="TELDA / BRANCH" rows={[...report.telda.rows, report.telda.total]} periodLabel={report.periodLabel} previousMonthLabel={report.previousMonthLabel} cutoffDay={report.cutoffDay} />
     </div>
   );
 }
 
-function wmsSummaryCellClass(kind: string) {
-  if (kind === "actual") return "bg-orange-50/80 font-semibold text-[#5b3418]";
-  if (kind === "previous") return "bg-stone-50 text-stone-700";
-  if (kind === "rank") return "bg-stone-50";
-  if (kind === "shortage-low") return "bg-rose-50/80 font-semibold text-rose-800";
-  if (kind === "shortage-good") return "bg-emerald-50/70 font-semibold text-emerald-800";
-  if (kind === "achievement-good") return "bg-emerald-50/70 font-semibold text-emerald-800";
-  if (kind === "achievement-near") return "bg-orange-50/80 font-semibold text-[#92400e]";
-  if (kind === "achievement-low") return "bg-rose-50/80 font-semibold text-rose-800";
-  return "bg-white text-stone-800";
-}
+const WMS_REPORT_THEME: ReportTheme = {
+  bannerStops: ["#160d08", "#3b2414", "#8a4b1a"],
+  canvasBg: "#f8f3ec",
+  highlight: "#fdba74",
+  ink: "#2a1a10",
+  line: "#e7dccd",
+  muted: "#6b5645",
+  text: "#1c1209",
+  zebra: "#fbf7f1",
+};
 
+// Gaya sama dengan gambar PNG (features/telegram/report-images/wms-image.ts); di web semua tanggal dan kolom pembanding tetap ditampilkan.
 function ReportTable({
   cutoffDay,
   periodLabel,
   previousMonthLabel,
   rows,
   scopeLabel,
+  showBanner = false,
 }: {
   cutoffDay: number;
   periodLabel: string;
   previousMonthLabel: string;
   rows: WmsReportRow[];
   scopeLabel: string;
+  showBanner?: boolean;
 }) {
+  const dash = "–";
   const dayCount = rows[0]?.days.length ?? 31;
   const latestDay = Math.max(1, Math.min(dayCount, cutoffDay));
-  const dataRowsOnly = rows.filter((item) => item.label !== "Total" && item.label !== "YK JATENG SELATAN");
-  const rankCountAch = rankTotal(dataRowsOnly.map((item) => item.rank));
-  const rankCountYtd = rankTotal(dataRowsOnly.map((item) => item.rankYtd));
-  const summaryHeaders = [
-    "MTD",
-    "TARGET ACH",
-    "RANK ACH",
-    "SHORTAGE TO TARGET FM",
-    `REAL MTD ${previousMonthLabel}`,
-    "GR MTD",
-    `REAL FM ${previousMonthLabel}`,
-    "GR FM",
-    "REAL YTD 2026",
-    "ACH YTD",
-    "GR YTD",
-    "RANK YTD",
-    "SHORTAGE TO TARGET YTD",
+  const isTotalRow = (item: WmsReportRow) => item.label === "Total" || item.label === "YK JATENG SELATAN";
+  const dataRows = rows.filter((item) => !isTotalRow(item));
+  const totalRow = rows.find(isTotalRow) ?? rows[rows.length - 1];
+  const count = Math.max(rankTotal(dataRows.map((item) => item.rank)), rankTotal(dataRows.map((item) => item.rankYtd)), dataRows.length);
+  const period = parseReportPeriodLabel(periodLabel);
+  const labelHeader = scopeLabel.toUpperCase().startsWith("TELDA") ? "TELDA" : scopeLabel;
+
+  const num = (value: number | null | undefined): ReportCellStyle => ({ text: value === null || value === undefined ? dash : formatNumber(value) });
+  const pct = (value: number | null | undefined, tone: ReturnType<typeof reportSignTone> = reportSignTone(value)): ReportCellStyle => {
+    if (value === null || value === undefined || Number.isNaN(value)) return { text: dash };
+    return { bold: true, color: tone?.color, fill: tone?.fill, text: formatPercent(value) };
+  };
+  const rank = (value: number | null): ReportCellStyle => {
+    const tone = reportRankTone(value, count);
+    return { bold: true, color: tone?.color, fill: tone?.fill, text: value === null || value === undefined ? dash : formatNumber(value) };
+  };
+  const shortage = (value: number): ReportCellStyle => {
+    const tone = reportSignTone(value);
+    return { bold: true, color: tone?.color, fill: tone?.fill, text: formatNumber(value) };
+  };
+
+  const dayCols: ReportCol<WmsReportRow>[] = [];
+  for (let day = 1; day <= dayCount; day += 1) {
+    const weekend = reportDayKind(period, day) === "weekend";
+    const future = day > latestDay;
+    dayCols.push({
+      cell: (row) => (future ? { color: "#d6d3d1", fill: "#faf7f2", text: num(row.days[day - 1]).text } : num(row.days[day - 1])),
+      fill: weekend ? "#be123c" : "#8a5a16",
+      group: `TANGGAL (${periodLabel})`,
+      head: String(day),
+      key: `day-${day}`,
+      subFill: weekend ? "#ffe4e6" : "#f8ead2",
+      subText: weekend ? "#9f1239" : "#5b3a0c",
+      width: 46,
+    });
+  }
+  const base = { fill: "#3b2414", subFill: "#f3e7d8", subText: "#5b3418" };
+  const prev = (value: number): ReportCellStyle => ({ color: "#5b4636", fill: "#f5efe6", text: formatNumber(value) });
+  const cols: ReportCol<WmsReportRow>[] = [
+    { align: "left", cell: (row) => ({ bold: true, text: row.label.toUpperCase() }), fill: WMS_REPORT_THEME.ink, head: labelHeader, width: 200 },
+    { cell: (row) => ({ bold: true, color: "#6b3a13", fill: "#f7eadf", text: formatNumber(row.targetFm) }), fill: "#7c3f16", head: "TARGET FM", width: 88 },
+    { cell: (row) => ({ bold: true, color: "#6b3a13", fill: "#f7eadf", text: formatNumber(row.targetYtd) }), fill: "#7c3f16", head: "TARGET YTD", width: 92 },
+    ...dayCols,
+    { cell: (row) => ({ bold: true, color: "#5b2d06", fill: "#fde9c8", text: formatNumber(row.mtd) }), fill: "#f59e0b", head: "MTD", sub: "TOTAL", subFill: "#fcd9a0", subText: "#5b2d06", text: "#3a1d04", width: 80 },
+    { ...base, cell: (row) => pct(row.ach, reportAchTone(row.ach)), head: "TARGET ACH", sub: "MTD", width: 92 },
+    { ...base, cell: (row) => rank(row.rank), head: "RANK ACH", sub: "MTD", width: 78 },
+    { ...base, cell: (row) => shortage(row.shortageFm), head: "SHORTAGE TO TARGET FM", sub: "MTD", width: 104 },
+    { ...base, cell: (row) => prev(row.realMtdPrev), head: `REAL MTD ${previousMonthLabel}`, sub: "MTD", width: 96 },
+    { ...base, cell: (row) => pct(row.growthMtd), head: "GR MTD", sub: "%", width: 82 },
+    { ...base, cell: (row) => prev(row.realFmPrev), head: `REAL FM ${previousMonthLabel}`, sub: "FM", width: 96 },
+    { ...base, cell: (row) => pct(row.growthFm), head: "GR FM", sub: "%", width: 82 },
+    { ...base, cell: (row) => ({ bold: true, color: "#5b3418", fill: "#f3e7d8", text: formatNumber(row.realYtd) }), head: `REAL YTD ${period?.year ?? ""}`.trim(), sub: "YTD", width: 92 },
+    { ...base, cell: (row) => pct(row.achYtd, reportAchTone(row.achYtd)), head: "ACH YTD", sub: "%", width: 88 },
+    { ...base, cell: (row) => pct(row.growthYtd), head: "GR YTD", sub: "%", width: 82 },
+    { ...base, cell: (row) => rank(row.rankYtd), head: "RANK YTD", sub: "YTD", width: 78 },
+    { ...base, cell: (row) => shortage(row.shortageYtd), head: "SHORTAGE TO TARGET YTD", sub: "YTD", width: 104 },
   ];
   return (
-    <section className={`${panelClass} overflow-hidden`}>
-      <div className="border-b border-orange-100 bg-[linear-gradient(110deg,#fffaf2_0%,#ffedd5_55%,#f0f9ff_100%)] px-5 py-5 text-center text-stone-900">
-        <div className="mx-auto flex max-w-3xl flex-col items-center gap-2">
-          <p className="text-[11px] font-bold uppercase tracking-[0.18em] text-orange-800">Main Table</p>
-          <h2 className="text-xl font-bold tracking-tight text-stone-900">PS HARIAN WMS</h2>
-          <p className="text-sm font-medium text-stone-600">{scopeLabel}</p>
-          <span className="rounded-full border border-orange-200 bg-white px-3 py-1 text-xs font-bold text-orange-900 shadow-sm">
-            {periodLabel} | Data s.d. Tgl {latestDay}
-          </span>
-        </div>
-      </div>
-      <div className="max-h-[72vh] overflow-auto">
-        <table className="min-w-[2600px] border-separate border-spacing-0 text-[11px]">
-          <thead>
-            <tr>
-              <th rowSpan={2} className="sticky left-0 top-0 z-30 w-[170px] min-w-[170px] max-w-[170px] border-b border-r border-[#174a85] bg-[#082f6b] px-2 py-2 text-center font-semibold text-white shadow-[8px_0_18px_-18px_rgba(44,24,12,0.9)]">
-                WILAYAH
-              </th>
-              <th rowSpan={2} className="sticky top-0 z-20 w-[76px] min-w-[76px] max-w-[76px] border-b border-r border-[#1d5da8] bg-[#1456a0] px-1.5 py-2 text-center font-semibold leading-tight text-white">
-                TARGET FM
-              </th>
-              <th rowSpan={2} className="sticky top-0 z-20 w-[76px] min-w-[76px] max-w-[76px] border-b border-r border-[#1d5da8] bg-[#1456a0] px-1.5 py-2 text-center font-semibold leading-tight text-white">
-                TARGET YTD
-              </th>
-              <th colSpan={dayCount} className="sticky top-0 z-20 border-b border-r border-[#1d5da8] bg-[#1d65b8] px-2 py-2 text-center font-semibold text-white">
-                TANGGAL
-              </th>
-              {summaryHeaders.map((header) => (
-                <th key={header} rowSpan={2} className="sticky top-0 z-20 w-[80px] min-w-[80px] max-w-[80px] whitespace-normal border-b border-r border-[#174a85] bg-[#0b3978] px-1.5 py-2 text-center text-[9px] font-semibold leading-[1.12] text-white">
-                  {header}
-                </th>
-              ))}
-            </tr>
-            <tr>
-              {Array.from({ length: dayCount }, (_, index) => (
-                <th
-                  key={index}
-                  className={`sticky top-[34px] z-20 w-8 min-w-8 max-w-8 border-b border-r border-slate-200 px-1 py-1.5 text-center text-[10px] font-semibold ${
-                    index + 1 > latestDay ? "bg-stone-100 text-stone-400" : "bg-[#dbeafe] text-[#123d70]"
-                  }`}
-                >
-                  {index + 1}
-                </th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {rows.map((row) => {
-              const total = row.label === "Total" || row.label === "YK JATENG SELATAN";
-              const values = [
-                formatNumber(row.mtd),
-                formatPercent(row.ach),
-                formatNumber(row.rank),
-                formatNumber(row.shortageFm),
-                formatNumber(row.realMtdPrev),
-                formatPercent(row.growthMtd),
-                formatNumber(row.realFmPrev),
-                formatPercent(row.growthFm),
-                formatNumber(row.realYtd),
-                formatPercent(row.achYtd),
-                formatPercent(row.growthYtd),
-                formatNumber(row.rankYtd),
-                formatNumber(row.shortageYtd),
-              ];
-              const summaryMeta = [
-                "actual",
-                `achievement-${achievementTone(row.ach)}`,
-                "rank",
-                row.shortageFm < 0 ? "shortage-low" : "shortage-good",
-                "previous",
-                "growth",
-                "previous",
-                "growth",
-                "actual",
-                `achievement-${achievementTone(row.achYtd)}`,
-                "growth",
-                "rank",
-                row.shortageYtd < 0 ? "shortage-low" : "shortage-good",
-              ];
-              return (
-                <tr key={row.label} className={total ? "bg-[#140b06] font-semibold text-white" : "odd:bg-white even:bg-stone-50/70 text-stone-800 hover:bg-orange-50/40"}>
-                  <td className={`sticky left-0 z-10 w-[170px] min-w-[170px] max-w-[170px] border-b border-r border-stone-200 px-2 py-1.5 text-left ${total ? "bg-[#140b06] text-white" : "bg-inherit"}`}>{row.label}</td>
-                  <td className={`w-[76px] min-w-[76px] max-w-[76px] border-b border-r border-stone-200 px-1.5 py-1.5 text-right font-medium ${total ? "bg-[#2a1a10] text-white" : "bg-orange-50/70 text-[#6b3a13]"}`}>{formatNumber(row.targetFm)}</td>
-                  <td className={`w-[76px] min-w-[76px] max-w-[76px] border-b border-r border-stone-200 px-1.5 py-1.5 text-right font-medium ${total ? "bg-[#2a1a10] text-white" : "bg-orange-50/70 text-[#6b3a13]"}`}>{formatNumber(row.targetYtd)}</td>
-                  {Array.from({ length: dayCount }, (_, index) => (
-                    <td
-                      key={index}
-                      className={`w-8 min-w-8 max-w-8 border-b border-r border-stone-100 px-1 py-1.5 text-right ${
-                        total
-                          ? "bg-[#140b06] text-white"
-                          : index + 1 > latestDay
-                            ? "bg-stone-50 text-stone-300"
-                            : "bg-white text-stone-800"
-                      }`}
-                    >
-                      {formatNumber(row.days[index])}
-                    </td>
-                  ))}
-                  {values.map((value, index) => (
-                    <td key={summaryHeaders[index]} className={`w-[80px] min-w-[80px] max-w-[80px] border-b border-r border-stone-200 px-1.5 py-1.5 text-right ${total ? "bg-[#140b06] text-white" : wmsSummaryCellClass(summaryMeta[index])}`}>
-                      {summaryMeta[index] === "rank" && value && !total ? (
-                        <span
-                          className="inline-block min-w-[26px] rounded-full bg-[#2a1a10] px-2 py-0.5 text-center text-[11px] font-bold text-white"
-                          style={rankPillStyle(index === 2 ? row.rank : row.rankYtd, index === 2 ? rankCountAch : rankCountYtd)}
-                        >
-                          {value}
-                        </span>
-                      ) : (
-                        value
-                      )}
-                    </td>
-                  ))}
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
-      </div>
-    </section>
+    <ReportCard
+      banner={showBanner ? {
+        note: `TARGET RKAP  •  DATA S.D. TANGGAL ${latestDay}`,
+        periodLabel,
+        scope: "WITEL YOGYA JATENG SELATAN",
+        title: "PS HARIAN WMS",
+      } : undefined}
+      cols={cols}
+      rows={dataRows}
+      theme={WMS_REPORT_THEME}
+      total={totalRow}
+    />
   );
 }
 

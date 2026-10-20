@@ -63,7 +63,8 @@ import {
   type LtsUploadedDataset,
 } from "@/features/lts/domain/reporting/reporting";
 import { ltsSeedData } from "@/features/lts/domain/reporting/seed-data";
-import { rankStepColor, rankStepPillStyle, rankTotal } from "@/features/shared/dashboard/rank-color";
+import { ReportCard, GOOD as REPORT_GOOD, LOW as REPORT_LOW, rankTone as reportRankTone, type CellStyle as ReportCellStyle, type ReportTheme, type TableCol as ReportCol } from "@/features/shared/dashboard/report-table";
+import { rankStepColor, rankTotal } from "@/features/shared/dashboard/rank-color";
 
 type View = "home" | "master" | "report";
 
@@ -1343,94 +1344,87 @@ function MasterUploadCard({
   );
 }
 
-function ReportDataTable({ table, showChurnGap, showRankCaps }: { table: LtsReportTable; showChurnGap: boolean; showRankCaps: boolean }) {
-  const allRows = [...table.rows, table.total];
-  const showCoordinator = table.scope === "hotda";
-  const ct0RankCount = rankTotal(table.rows.map((item) => item.ct0Rank));
-  const capsRankCount = rankTotal(table.rows.map((item) => item.capsRank));
-  const scoreRankCount = rankTotal(table.rows.map((item) => item.scoreRank));
-  const capsRankOnlyCount = rankTotal(table.rows.map((item) => item.capsRankOnly));
-  const subHeaders = [
-    { label: "CT0", className: "bg-[#eef2ff] text-indigo-800" },
-    { label: "CT0/Sales", className: "bg-[#eef2ff] text-indigo-800" },
-    { label: "Rank", className: "bg-[#eef2ff] text-indigo-800" },
-    { label: "CAPS", className: "bg-[#ecfeff] text-cyan-800" },
-    { label: "CAPS/Sales", className: "bg-[#ecfeff] text-cyan-800" },
-    { label: "Rank", className: "bg-[#ecfeff] text-cyan-800" },
-    { label: "Score", className: "bg-[#f5f1ff] text-violet-800" },
-    { label: "Rank", className: "bg-[#f5f1ff] text-violet-800" },
-    ...(showChurnGap
-      ? [
-          { label: "Churn", className: "bg-[#fff7ed] text-amber-800" },
-          { label: "Gap", className: "bg-[#ecfdf5] text-emerald-800" },
-        ]
-      : []),
+const LTS_REPORT_THEME: ReportTheme = {
+  bannerStops: ["#07040f", "#24103f", "#5b2a9a"],
+  canvasBg: "#f7f4fb",
+  highlight: "#fcd34d",
+  ink: "#24103f",
+  line: "#e2d9f0",
+  muted: "#5b4b78",
+  text: "#1f1233",
+  zebra: "#faf7ff",
+};
+
+// Kolom sama persis dengan gambar PNG (features/telegram/report-images/lts-image.ts).
+function ltsReportColumns(table: LtsReportTable, options: { churnGap: boolean; rankCaps: boolean }): ReportCol<LtsReportRow>[] {
+  const count = table.rows.length;
+  const dash = "–";
+  const rank = (key: "ct0Rank" | "capsRank" | "scoreRank" | "capsRankOnly") => (row: LtsReportRow): ReportCellStyle => {
+    const value = row[key];
+    const tone = reportRankTone(value, count);
+    return { bold: true, color: tone?.color, fill: tone?.fill, text: value === null || value === undefined ? dash : formatNumber(value) };
+  };
+  const tinted = (fill: string, color: string, text: string, bold = false): ReportCellStyle => ({ bold, color, fill, text });
+  const ct0 = { fill: "#3730a3", subFill: "#eef2ff", subText: "#3730a3", group: "Bobot 50% CT0" };
+  const caps = { fill: "#0e7490", subFill: "#ecfeff", subText: "#0e7490", group: "Bobot 50% CAPS" };
+  const score = { fill: "#5b21b6", subFill: "#f5f1ff", subText: "#5b21b6", group: "Score" };
+  const churn = { fill: "#047857", subFill: "#ecfdf5", subText: "#047857", group: "CAPS 27/8" };
+
+  const cols: ReportCol<LtsReportRow>[] = [
+    { align: "left", cell: (row) => ({ bold: true, text: row.label.toUpperCase() }), fill: LTS_REPORT_THEME.ink, head: table.scope === "witel" ? "WITEL" : "BRANCH", width: 225 },
   ];
+  if (table.scope !== "witel") {
+    cols.push({ align: "left", cell: (row) => ({ text: row.coordinator ?? "" }), fill: "#1a0d2f", head: "KOORDINATOR", width: 250 });
+  }
+  cols.push(
+    { cell: (row) => tinted("#f3edff", "#321653", formatNumber(row.sales), true), fill: "#43206a", head: "SALES", width: 84 },
+    { ...ct0, cell: (row) => tinted("#eef2ff", "#312e81", formatNumber(row.ct0)), head: "CT0", width: 84 },
+    { ...ct0, cell: (row) => tinted("#e0e7ff", "#3730a3", formatPercent(row.ct0Ratio), true), head: "CT0/SALES", width: 104 },
+    { ...ct0, cell: rank("ct0Rank"), head: "RANK", width: 70 },
+    { ...caps, cell: (row) => tinted("#ecfeff", "#164e63", formatNumber(row.caps)), head: "CAPS", width: 84 },
+    { ...caps, cell: (row) => tinted("#cffafe", "#0e7490", formatPercent(row.capsRatio), true), head: "CAPS/SALES", width: 108 },
+    { ...caps, cell: rank("capsRank"), head: "RANK", width: 70 },
+    { ...score, cell: (row) => tinted("#f5f1ff", "#5b21b6", formatPercent(row.score), true), head: "SCORE", width: 100 },
+    { ...score, cell: rank("scoreRank"), head: "RANK", width: 70 },
+  );
+  if (table.scope === "witel" && options.rankCaps) {
+    cols.push({ cell: rank("capsRankOnly"), fill: "#92400e", head: "RANK LTS CAPS", width: 104 });
+  }
+  if (options.churnGap) {
+    cols.push(
+      { ...churn, cell: (row) => tinted("#fff7ed", "#92400e", formatNumber(row.churn)), head: "CHURN", width: 90 },
+      { ...churn, cell: (row) => ({ bold: true, color: row.gap < 0 ? REPORT_LOW.color : REPORT_GOOD.color, fill: row.gap < 0 ? REPORT_LOW.fill : REPORT_GOOD.fill, text: formatNumber(row.gap) }), head: "GAP", width: 84 },
+    );
+  }
+  return cols;
+}
+
+/** Skalakan lebar kolom supaya tabel WITEL dan BRANCH sama lebar (seperti di PNG). */
+function scaleReportCols<R>(cols: ReportCol<R>[], target: number) {
+  const current = cols.reduce((sum, col) => sum + col.width, 0);
+  const factor = target / current;
+  return cols.map((col) => ({ ...col, width: col.width * factor }));
+}
+
+function ReportDataTable({ report, table, showChurnGap, showRankCaps }: { report: LtsComputedReport; table: LtsReportTable; showChurnGap: boolean; showRankCaps: boolean }) {
+  const options = { churnGap: showChurnGap, rankCaps: showRankCaps };
+  const widthOf = (cols: ReportCol<LtsReportRow>[]) => cols.reduce((sum, col) => sum + col.width, 0);
+  const target = Math.max(widthOf(ltsReportColumns(report.witel, options)), widthOf(ltsReportColumns(report.hotda, options)));
+  const cols = scaleReportCols(ltsReportColumns(table, options), target);
+  const cutoff = report.cutoffLabel.replace(/^cut\s*off\s*:?\s*/i, "").toUpperCase();
   return (
-    <section className={`${glassPanel} overflow-hidden bg-white`}>
-      <div className="border-b border-violet-100 bg-[linear-gradient(110deg,#faf5ff_0%,#f3e8ff_58%,#eff6ff_100%)] px-5 py-5 text-center">
-        <p className="text-[11px] font-bold uppercase tracking-[0.18em] text-violet-800">Main Table</p>
-        <h2 className="mt-2 text-xl font-bold tracking-tight text-slate-900">{table.title}</h2>
-        <p className="mt-1 text-sm font-semibold uppercase tracking-wide text-slate-600">{table.subtitle}</p>
-      </div>
-      <div className="max-h-[72vh] overflow-auto bg-white">
-        <table className="w-full min-w-[1320px] border-separate border-spacing-0 text-[11px] text-slate-800">
-          <thead>
-            <tr>
-              <th rowSpan={2} className="sticky left-0 top-0 z-30 w-[180px] min-w-[180px] border-b border-r border-violet-700/60 bg-[#082f6b] px-2 py-2 text-center font-semibold text-white">
-                {table.scope === "witel" ? "WITEL" : "BRANCH"}
-              </th>
-              {showCoordinator && (
-                <th rowSpan={2} className="sticky top-0 z-20 w-[190px] min-w-[190px] border-b border-r border-blue-700 bg-[#0b3978] px-2 py-2 text-center font-semibold text-white">
-                  KOORDINATOR
-                </th>
-              )}
-              <th rowSpan={2} className="sticky top-0 z-20 w-[84px] border-b border-r border-blue-700 bg-[#1456a0] px-2 py-2 text-center font-semibold text-white">Sales</th>
-              <th colSpan={3} className="sticky top-0 z-20 border-b border-r border-blue-700 bg-[#1d65b8] px-2 py-2 text-center font-semibold text-white">Bobot 50% CT0</th>
-              <th colSpan={3} className="sticky top-0 z-20 border-b border-r border-blue-700 bg-[#1d65b8] px-2 py-2 text-center font-semibold text-white">Bobot 50% CAPS</th>
-              <th colSpan={2} className="sticky top-0 z-20 border-b border-r border-blue-700 bg-[#0b3978] px-2 py-2 text-center font-semibold text-white">Score</th>
-              {!showCoordinator && showRankCaps && <th rowSpan={2} className="sticky top-0 z-20 w-[92px] border-b border-r border-blue-700 bg-[#1456a0] px-2 py-2 text-center font-semibold text-white">Rank LTS CAPS</th>}
-              {showChurnGap && <th colSpan={2} className="sticky top-0 z-20 border-b border-r border-blue-700 bg-[#0b3978] px-2 py-2 text-center font-semibold text-white">CAPS 27/8</th>}
-            </tr>
-            <tr>
-              {subHeaders.map((header, headerIndex) => (
-                <th key={`${header.label}-${headerIndex}`} className={`sticky top-[33px] z-20 w-[82px] border-b border-r border-slate-200 px-2 py-2 text-center font-semibold ${header.className}`}>
-                  {header.label}
-                </th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {allRows.map((row, index) => {
-              const total = index === allRows.length - 1;
-              const rowBackground = index % 2 === 0 ? "bg-white" : "bg-[#f5f9ff]";
-              return (
-                <tr key={`${row.label}-${total ? "total" : "row"}`} className={total ? "bg-[#082f6b] font-bold text-white" : `${rowBackground} text-slate-800 hover:bg-[#eaf3ff]`}>
-                  <th className={`sticky left-0 z-10 border-b border-r border-violet-100/80 px-3 py-2 text-left ${total ? "bg-[#082f6b] text-white" : `${rowBackground} text-slate-800`}`}>{row.label}</th>
-                  {showCoordinator && <td className={`border-b border-r border-violet-100/80 px-3 py-2 ${total ? "bg-[#10427f] text-white" : `${rowBackground} text-slate-700`}`}>{row.coordinator ?? ""}</td>}
-                  <td className={`border-b border-r border-violet-100/80 px-2 py-2 text-right ${total ? "bg-[#10427f] text-white" : "bg-[#eaf2ff] font-semibold text-[#123d70]"}`}>{formatNumber(row.sales)}</td>
-                  <td className="border-b border-r border-indigo-100 bg-indigo-50/45 px-2 py-2 text-right">{formatNumber(row.ct0)}</td>
-                  <td className="border-b border-r border-indigo-100 bg-indigo-50/80 px-2 py-2 text-right font-semibold text-indigo-800">{formatPercent(row.ct0Ratio)}</td>
-                  <td className="border-b border-r border-indigo-100 bg-indigo-50/45 px-2 py-2 text-center">{row.ct0Rank && !total ? <span className="inline-flex min-w-8 justify-center rounded-full bg-indigo-900 px-2 py-0.5 font-bold text-white shadow-sm" style={rankStepPillStyle(row.ct0Rank, ct0RankCount)}>{row.ct0Rank}</span> : row.ct0Rank ? <span className="font-bold">{row.ct0Rank}</span> : ""}</td>
-                  <td className="border-b border-r border-cyan-100 bg-cyan-50/45 px-2 py-2 text-right">{formatNumber(row.caps)}</td>
-                  <td className="border-b border-r border-cyan-100 bg-cyan-50/80 px-2 py-2 text-right font-semibold text-cyan-800">{formatPercent(row.capsRatio)}</td>
-                  <td className="border-b border-r border-cyan-100 bg-cyan-50/45 px-2 py-2 text-center">{row.capsRank && !total ? <span className="inline-flex min-w-8 justify-center rounded-full bg-cyan-900 px-2 py-0.5 font-bold text-white shadow-sm" style={rankStepPillStyle(row.capsRank, capsRankCount)}>{row.capsRank}</span> : row.capsRank ? <span className="font-bold">{row.capsRank}</span> : ""}</td>
-                  <td className="border-b border-r border-violet-100 bg-violet-50/90 px-2 py-2 text-right font-bold text-violet-900">{formatPercent(row.score)}</td>
-                  <td className="border-b border-r border-violet-100 bg-violet-50/50 px-2 py-2 text-center">{row.scoreRank && !total ? <span className="inline-flex min-w-8 justify-center rounded-full bg-violet-950 px-2 py-0.5 font-bold text-white shadow-sm" style={rankStepPillStyle(row.scoreRank, scoreRankCount)}>{row.scoreRank}</span> : row.scoreRank ? <span className="font-bold">{row.scoreRank}</span> : ""}</td>
-                  {!showCoordinator && showRankCaps && <td className="border-b border-r border-amber-100 bg-amber-50/70 px-2 py-2 text-center">{row.capsRankOnly && !total ? <span className="inline-flex min-w-8 justify-center rounded-full bg-amber-800 px-2 py-0.5 font-bold text-white shadow-sm" style={rankStepPillStyle(row.capsRankOnly, capsRankOnlyCount)}>{row.capsRankOnly}</span> : row.capsRankOnly ? <span className="font-bold">{row.capsRankOnly}</span> : ""}</td>}
-                  {showChurnGap && (
-                    <>
-                      <td className="border-b border-r border-amber-100 bg-amber-50/60 px-2 py-2 text-right text-amber-900">{formatNumber(row.churn)}</td>
-                                        <td className={`border-b border-r border-violet-100/80 px-2 py-2 text-right font-semibold ${row.gap < 0 ? "bg-rose-50 text-rose-700" : "bg-teal-50 text-teal-700"}`}>{formatNumber(row.gap)}</td>
-                    </>
-                  )}
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
-      </div>
-    </section>
+    <ReportCard
+      banner={table.scope === "witel" ? {
+        note: `SOURCE: ${report.sourceLabel.toUpperCase()}${cutoff ? `  •  CUT OFF: ${cutoff}` : ""}`,
+        periodLabel: report.periodLabel,
+        scope: "WITEL YOGYA JATENG SELATAN",
+        title: report.label.toUpperCase(),
+      } : undefined}
+      cols={cols}
+      rows={table.rows}
+      theme={LTS_REPORT_THEME}
+      total={table.total}
+    />
   );
 }
 
@@ -1861,8 +1855,8 @@ export function LtsDashboard({ permissions = fullAccessPermissions }: { permissi
                     );
                   })}
                 </div>
-                <ReportDataTable showChurnGap={screenColumns.churnGap} showRankCaps={screenColumns.rankCaps} table={activeReport.witel} />
-                <ReportDataTable showChurnGap={screenColumns.churnGap} showRankCaps={screenColumns.rankCaps} table={activeReport.hotda} />
+                <ReportDataTable report={activeReport} showChurnGap={screenColumns.churnGap} showRankCaps={screenColumns.rankCaps} table={activeReport.witel} />
+                <ReportDataTable report={activeReport} showChurnGap={screenColumns.churnGap} showRankCaps={screenColumns.rankCaps} table={activeReport.hotda} />
               </>
             ) : (
               <section className={`${glassPanel} p-8 text-center`}>

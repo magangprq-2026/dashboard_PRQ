@@ -45,7 +45,8 @@ import { DashboardMetricCard, type DashboardMetricTone } from "@/features/shared
 import { MasterUnlockModal } from "@/features/shared/dashboard/master-unlock-modal";
 import { DashboardPeriodFilter, defaultPeriodFilter, type DashboardPeriodFilterState } from "@/features/shared/dashboard/period-filter";
 import { DashboardStatusPill } from "@/features/shared/dashboard/status-pill";
-import { rankColor, rankPillStyle, rankTotal } from "@/features/shared/dashboard/rank-color";
+import { ReportCard, achTone as reportAchTone, dayKind as reportDayKind, parsePeriodLabel as parseReportPeriodLabel, rankTone as reportRankTone, signTone as reportSignTone, type CellStyle as ReportCellStyle, type ReportTheme, type TableCol as ReportCol } from "@/features/shared/dashboard/report-table";
+import { rankColor, rankTotal } from "@/features/shared/dashboard/rank-color";
 import {
   computeReport,
   initialMasterRows,
@@ -1843,178 +1844,102 @@ function summaryHeadersFor(previousMonthLabel: string) {
   ];
 }
 
-function ReportDataRow({
-  latestDay,
-  previousMonthLabel,
-  row,
-  total = false,
-  rankCountAch = 0,
-  rankCountYtd = 0,
-}: {
-  latestDay: number;
-  previousMonthLabel: string;
-  row: ReportRow;
-  total?: boolean;
-  rankCountAch?: number;
-  rankCountYtd?: number;
-}) {
-  const summaryHeaders = summaryHeadersFor(previousMonthLabel);
-  const baseClass = total
-    ? "bg-slate-900 font-semibold text-white"
-    : "odd:bg-white even:bg-slate-50/70 text-slate-800 hover:bg-rose-50/40";
-  const summaryValues = [
-    formatNumber(row.mtd),
-    formatPercent(row.targetAch),
-    formatNumber(row.rankAch),
-    formatNumber(row.shortageFm),
-    formatNumber(row.realMtdPrev),
-    formatPercent(row.growthMtd),
-    formatNumber(row.realFmPrev),
-    formatPercent(row.growthFm),
-    formatNumber(row.realYtd),
-    formatPercent(row.achYtd),
-    formatPercent(row.growthYtd),
-    formatNumber(row.rankYtd),
-    formatNumber(row.shortageYtd),
-  ];
-  const summaryMeta = [
-    "actual",
-    `achievement-${achievementTone(row.targetAch)}`,
-    "rank",
-    row.shortageFm < 0 ? "shortage-low" : "shortage-good",
-    "previous",
-    "growth",
-    "previous",
-    "growth",
-    "actual",
-    `achievement-${achievementTone(row.achYtd)}`,
-    "growth",
-    "rank",
-    row.shortageYtd < 0 ? "shortage-low" : "shortage-good",
-  ];
+const HSI_REPORT_THEME: ReportTheme = {
+  bannerStops: ["#071426", "#0b2a55", "#1d4ed8"],
+  canvasBg: "#f3f7fd",
+  highlight: "#7dd3fc",
+  ink: "#071426",
+  line: "#dbe4f0",
+  muted: "#475569",
+  text: "#0f172a",
+  zebra: "#f7faff",
+};
 
-  return (
-    <tr className={baseClass}>
-      <th className={`sticky left-0 z-10 w-[170px] min-w-[170px] max-w-[170px] border-b border-r border-slate-200 px-2 py-1.5 text-left ${total ? "bg-slate-900 text-white" : "bg-inherit"}`}>
-        {row.label}
-      </th>
-      <td className={`w-[76px] min-w-[76px] max-w-[76px] border-b border-r border-slate-200 px-1.5 py-1.5 text-right font-medium ${total ? "bg-slate-800 text-white" : "bg-indigo-50/70 text-indigo-950"}`}>{formatNumber(row.targetFm)}</td>
-      <td className={`w-[76px] min-w-[76px] max-w-[76px] border-b border-r border-slate-200 px-1.5 py-1.5 text-right font-medium ${total ? "bg-slate-800 text-white" : "bg-indigo-50/70 text-indigo-950"}`}>{formatNumber(row.targetYtd)}</td>
-      {row.days.map((value, index) => (
-        <td
-          key={index}
-          className={`w-8 min-w-8 max-w-8 border-b border-r border-slate-100 px-1 py-1.5 text-right ${
-            total
-              ? "bg-slate-900 text-white"
-              : index + 1 > latestDay
-                ? "bg-slate-50 text-slate-300"
-                : "bg-white text-slate-800"
-          }`}
-        >
-          {formatNumber(value)}
-        </td>
-      ))}
-      {summaryValues.map((value, index) => (
-        <td key={summaryHeaders[index]} className={`w-[80px] min-w-[80px] max-w-[80px] border-b border-r border-slate-200 px-1.5 py-1.5 text-right ${summaryCellClass(summaryMeta[index])}`}>
-          {summaryMeta[index] === "rank" && value && !total ? (
-            <span
-              className="inline-block min-w-[26px] rounded-full bg-slate-900 px-2 py-0.5 text-center text-[11px] font-bold text-white"
-              style={rankPillStyle(index === 2 ? row.rankAch : row.rankYtd, index === 2 ? rankCountAch : rankCountYtd)}
-            >
-              {value}
-            </span>
-          ) : (
-            value
-          )}
-        </td>
-      ))}
-    </tr>
-  );
-}
-
-function summaryCellClass(kind: string) {
-  if (kind === "actual") return "bg-teal-50/80 font-semibold text-teal-950";
-  if (kind === "previous") return "bg-slate-50 text-slate-700";
-  if (kind === "rank") return "bg-slate-50";
-  if (kind === "shortage-low") return "bg-rose-50/80 font-semibold text-rose-800";
-  if (kind === "shortage-good") return "bg-emerald-50/80 font-semibold text-emerald-800";
-  if (kind === "achievement-good") return "bg-emerald-50/80 font-semibold text-emerald-800";
-  if (kind === "achievement-near") return "bg-amber-50/80 font-semibold text-amber-800";
-  if (kind === "achievement-low") return "bg-rose-50/80 font-semibold text-rose-800";
-  return "bg-white text-slate-800";
-}
-
+// Gaya sama dengan gambar PNG (features/telegram/report-images/hsi-image.ts); di web semua tanggal tetap ditampilkan.
 function ReportTableView({
   latestDay,
+  note,
   periodLabel,
   previousMonthLabel,
+  showBanner = false,
   table,
 }: {
   latestDay: number;
+  note?: string;
   periodLabel: string;
   previousMonthLabel: string;
+  showBanner?: boolean;
   table: ReportTable;
 }) {
+  const dash = "–";
   const dayCount = table.rows[0]?.days.length ?? 30;
-  const summaryHeaders = summaryHeadersFor(previousMonthLabel);
-  const rankCountAch = rankTotal(table.rows.map((row) => row.rankAch));
-  const rankCountYtd = rankTotal(table.rows.map((row) => row.rankYtd));
+  const count = table.rows.length;
+  const period = parseReportPeriodLabel(periodLabel);
+  const labelHeader = table.total.label === "Total" ? "WITEL" : "TELDA";
+
+  const num = (value: number | null | undefined): ReportCellStyle => ({ text: value === null || value === undefined ? dash : formatNumber(value) });
+  const pct = (value: number | null | undefined, tone: ReturnType<typeof reportSignTone> = reportSignTone(value)): ReportCellStyle => {
+    if (value === null || value === undefined || Number.isNaN(value)) return { text: dash };
+    return { bold: true, color: tone?.color, fill: tone?.fill, text: formatPercent(value) };
+  };
+  const rank = (value: number | null): ReportCellStyle => {
+    const tone = reportRankTone(value, count);
+    return { bold: true, color: tone?.color, fill: tone?.fill, text: value === null ? dash : formatNumber(value) };
+  };
+  const shortage = (value: number): ReportCellStyle => {
+    const tone = reportSignTone(value);
+    return { bold: true, color: tone?.color, fill: tone?.fill, text: formatNumber(value) };
+  };
+
+  const dayCols: ReportCol<ReportRow>[] = [];
+  for (let day = 1; day <= dayCount; day += 1) {
+    const weekend = reportDayKind(period, day) === "weekend";
+    const future = day > latestDay;
+    dayCols.push({
+      cell: (row) => (future ? { color: "#cbd5e1", fill: "#f8fafc", text: num(row.days[day - 1]).text } : num(row.days[day - 1])),
+      fill: weekend ? "#e11d48" : "#0f766e",
+      group: `TANGGAL (${periodLabel})`,
+      head: String(day),
+      key: `day-${day}`,
+      subFill: weekend ? "#ffe4e6" : "#ccfbf1",
+      subText: weekend ? "#9f1239" : "#134e4a",
+      width: 44,
+    });
+  }
+  const base = { fill: "#0f2a4d", subFill: "#e3ecfa", subText: "#1e3a8a" };
+  const prev = (value: number): ReportCellStyle => ({ color: "#334155", fill: "#f1f5f9", text: formatNumber(value) });
+  const cols: ReportCol<ReportRow>[] = [
+    { align: "left", cell: (row) => ({ bold: true, text: row.label.toUpperCase() }), fill: HSI_REPORT_THEME.ink, head: labelHeader, width: 200 },
+    { cell: (row) => ({ bold: true, color: "#1e3a8a", fill: "#eaf1ff", text: formatNumber(row.targetFm) }), fill: "#1d4ed8", head: "TARGET FM", width: 86 },
+    { cell: (row) => ({ bold: true, color: "#1e3a8a", fill: "#eaf1ff", text: formatNumber(row.targetYtd) }), fill: "#1d4ed8", head: "TARGET YTD", width: 90 },
+    ...dayCols,
+    { cell: (row) => ({ bold: true, color: "#422006", fill: "#fef3c7", text: formatNumber(row.mtd) }), fill: "#fbbf24", head: "MTD", sub: "TOTAL", subFill: "#fde68a", subText: "#422006", text: "#422006", width: 80 },
+    { ...base, cell: (row) => pct(row.targetAch, reportAchTone(row.targetAch)), head: "TARGET ACH", sub: "MTD", width: 92 },
+    { ...base, cell: (row) => rank(row.rankAch), head: "RANK ACH", sub: "MTD", width: 78 },
+    { ...base, cell: (row) => shortage(row.shortageFm), head: "SHORTAGE TO TARGET FM", sub: "MTD", width: 104 },
+    { ...base, cell: (row) => prev(row.realMtdPrev), head: `REAL MTD ${previousMonthLabel}`, sub: "MTD", width: 96 },
+    { ...base, cell: (row) => pct(row.growthMtd), head: "GR MTD", sub: "%", width: 82 },
+    { ...base, cell: (row) => prev(row.realFmPrev), head: `REAL FM ${previousMonthLabel}`, sub: "FM", width: 96 },
+    { ...base, cell: (row) => pct(row.growthFm), head: "GR FM", sub: "%", width: 82 },
+    { ...base, cell: (row) => ({ bold: true, color: "#0f2a4d", fill: "#e3ecfa", text: formatNumber(row.realYtd) }), head: `REAL YTD ${period?.year ?? ""}`.trim(), sub: "YTD", width: 92 },
+    { ...base, cell: (row) => pct(row.achYtd, reportAchTone(row.achYtd)), head: "ACH YTD", sub: "%", width: 86 },
+    { ...base, cell: (row) => pct(row.growthYtd), head: "GR YTD", sub: "%", width: 82 },
+    { ...base, cell: (row) => rank(row.rankYtd), head: "RANK YTD", sub: "YTD", width: 78 },
+    { ...base, cell: (row) => shortage(row.shortageYtd), head: "SHORTAGE TO TARGET YTD", sub: "YTD", width: 104 },
+  ];
   return (
-    <section className={`${panelClass} overflow-hidden`}>
-      <div className="border-b border-slate-200 bg-[linear-gradient(110deg,#f8fafc_0%,#eff6ff_58%,#ecfeff_100%)] px-5 py-5 text-center text-slate-900">
-        <div className="mx-auto flex max-w-3xl flex-col items-center gap-2">
-          <p className="text-[11px] font-bold uppercase tracking-[0.18em] text-cyan-800">Main Table</p>
-          <h2 className="text-xl font-bold tracking-tight text-slate-900">{table.title}</h2>
-          <p className="text-sm font-medium text-slate-600">{table.subtitle}</p>
-          <span className="rounded-full border border-cyan-200 bg-white px-3 py-1 text-xs font-bold text-cyan-900 shadow-sm">
-            {periodLabel} | Data s.d. Tgl {latestDay}
-          </span>
-        </div>
-      </div>
-      <div className="max-h-[72vh] overflow-auto">
-        <table className="min-w-[2350px] border-separate border-spacing-0 text-[11px]">
-          <thead>
-            <tr>
-              <th rowSpan={2} className="sticky left-0 top-0 z-30 w-[170px] min-w-[170px] max-w-[170px] border-b border-r border-slate-700 bg-slate-950 px-2 py-2 text-center font-semibold text-white shadow-[8px_0_18px_-18px_rgba(15,23,42,0.8)]">
-                {table.total.label === "Total" ? "WITEL" : "BRANCH"}
-              </th>
-              <th rowSpan={2} className="sticky top-0 z-20 w-[76px] min-w-[76px] max-w-[76px] border-b border-r border-indigo-700 bg-indigo-800 px-1.5 py-2 text-center font-semibold leading-tight text-white">
-                TARGET FM
-              </th>
-              <th rowSpan={2} className="sticky top-0 z-20 w-[76px] min-w-[76px] max-w-[76px] border-b border-r border-indigo-700 bg-indigo-800 px-1.5 py-2 text-center font-semibold leading-tight text-white">
-                TARGET YTD
-              </th>
-              <th colSpan={dayCount} className="sticky top-0 z-20 border-b border-r border-teal-700 bg-teal-800 px-2 py-2 text-center font-semibold text-white">
-                TANGGAL
-              </th>
-              {summaryHeaders.map((header) => (
-                <th key={header} rowSpan={2} className="sticky top-0 z-20 w-[80px] min-w-[80px] max-w-[80px] whitespace-normal border-b border-r border-slate-700 bg-slate-900 px-1.5 py-2 text-center text-[9px] font-semibold leading-[1.12] text-white">
-                  {header}
-                </th>
-              ))}
-            </tr>
-            <tr>
-              {Array.from({ length: dayCount }, (_, index) => (
-                <th
-                  key={index}
-                  className={`sticky top-[34px] z-20 w-8 min-w-8 max-w-8 border-b border-r border-slate-200 px-1 py-1.5 text-center text-[10px] font-semibold ${
-                    index + 1 > latestDay ? "bg-slate-100 text-slate-400" : "bg-teal-50 text-teal-900"
-                  }`}
-                >
-                  {index + 1}
-                </th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {table.rows.map((row) => (
-              <ReportDataRow key={row.label} row={row} latestDay={latestDay} previousMonthLabel={previousMonthLabel} rankCountAch={rankCountAch} rankCountYtd={rankCountYtd} />
-            ))}
-            <ReportDataRow row={table.total} latestDay={latestDay} previousMonthLabel={previousMonthLabel} total />
-          </tbody>
-        </table>
-      </div>
-    </section>
+    <ReportCard
+      banner={showBanner ? {
+        note: note ?? `TANGGAL 1-${latestDay}`,
+        periodLabel,
+        scope: "WITEL YOGYA JATENG SELATAN",
+        title: "PS HARIAN HSI",
+      } : undefined}
+      cols={cols}
+      rows={table.rows}
+      theme={HSI_REPORT_THEME}
+      total={table.total}
+    />
   );
 }
 
@@ -2385,7 +2310,7 @@ function ReportPage({ report, variant }: { report: ComputedReport; variant: "sem
           PNG belum berhasil dibuat. Coba tekan Download Report sekali lagi.
         </div>
       )}
-      <ReportTableView table={witelTable} latestDay={latestDay} periodLabel={report.periodLabel} previousMonthLabel={report.previousMonthLabel} />
+      <ReportTableView showBanner note={`${isStf ? "TARGET STF" : "TARGET RKAP"}  •  DATA S.D. TANGGAL ${latestDay}`} table={witelTable} latestDay={latestDay} periodLabel={report.periodLabel} previousMonthLabel={report.previousMonthLabel} />
       <ReportTableView table={branchTable} latestDay={latestDay} periodLabel={report.periodLabel} previousMonthLabel={report.previousMonthLabel} />
     </div>
   );
