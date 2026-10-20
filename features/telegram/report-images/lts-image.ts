@@ -1,10 +1,25 @@
-// Gambar report LTS (PNG) untuk bot Telegram. Isi fungsi diambil dari createLtsReportPng di
-// features/lts/frontend/dashboard/lts-dashboard.tsx agar tampilannya sama dengan tombol "Download PNG" di web.
+// Gambar report LTS (PNG) untuk bot Telegram. Memakai table-kit bersama dengan warna dashboard LTS (ungu tua)
+// dan kolom yang sama dengan tombol "Download PNG" di web.
 import type { LtsComputedReport, LtsReportRow, LtsReportTable } from "@/features/lts/domain/reporting/reporting";
-import { formatNumber, newCanvas, toPngBytes, type ReportImage } from "./canvas";
+import { formatNumber, type ReportImage } from "./canvas";
+import {
+  GOOD, LOW, rankTone, renderReportPng, tableWidth,
+  type CellStyle, type ReportTheme, type TableCol, type TableSpec,
+} from "./table-kit";
 
 type LtsColumnOptions = { churnGap: boolean; rankCaps: boolean };
 const hiddenLtsColumns: LtsColumnOptions = { churnGap: false, rankCaps: false };
+
+const LTS_THEME: ReportTheme = {
+  bannerStops: ["#07040f", "#24103f", "#5b2a9a"],
+  canvasBg: "#f7f4fb",
+  highlight: "#fcd34d",
+  ink: "#24103f",
+  line: "#e2d9f0",
+  muted: "#5b4b78",
+  text: "#1f1233",
+  zebra: "#faf7ff",
+};
 
 // Persen LTS ditampilkan seperti Excel: 190,32% (nilai rasio dikali 100).
 function formatPercent(value: number | null | undefined) {
@@ -12,253 +27,85 @@ function formatPercent(value: number | null | undefined) {
   return `${new Intl.NumberFormat("id-ID", { maximumFractionDigits: 2, minimumFractionDigits: 2 }).format(value * 100)}%`;
 }
 
-function formatSavedAt(value: string | null | undefined) {
-  if (!value) return "Belum pernah diupload";
-  return new Intl.DateTimeFormat("id-ID", { dateStyle: "medium", timeStyle: "short", timeZone: "Asia/Jakarta" })
-    .format(new Date(value))
-    .replace(/\./g, ":");
+const dash = "–";
+
+function ltsColumns(table: LtsReportTable, options: LtsColumnOptions): TableCol<LtsReportRow>[] {
+  const count = table.rows.length;
+  const rank = (key: "ct0Rank" | "capsRank" | "scoreRank" | "capsRankOnly") => (row: LtsReportRow): CellStyle => {
+    const value = row[key];
+    const tone = rankTone(value, count);
+    return { bold: true, color: tone?.color, fill: tone?.fill, text: value === null ? dash : formatNumber(value) };
+  };
+  const tinted = (fill: string, color: string, text: string, bold = false): CellStyle => ({ bold, color, fill, text });
+
+  const ct0 = { fill: "#3730a3", subFill: "#eef2ff", subText: "#3730a3", group: "Bobot 50% CT0" };
+  const caps = { fill: "#0e7490", subFill: "#ecfeff", subText: "#0e7490", group: "Bobot 50% CAPS" };
+  const score = { fill: "#5b21b6", subFill: "#f5f1ff", subText: "#5b21b6", group: "Score" };
+  const churn = { fill: "#047857", subFill: "#ecfdf5", subText: "#047857", group: "CAPS 27/8" };
+
+  const cols: TableCol<LtsReportRow>[] = [
+    { align: "left", cell: (row) => ({ bold: true, text: row.label.toUpperCase() }), fill: LTS_THEME.ink, head: table.scope === "witel" ? "WITEL" : "BRANCH", width: 225 },
+  ];
+  if (table.scope !== "witel") {
+    cols.push({ align: "left", cell: (row) => ({ text: row.coordinator ?? "" }), fill: "#1a0d2f", head: "KOORDINATOR", width: 250 });
+  }
+  cols.push(
+    { cell: (row) => tinted("#f3edff", "#321653", formatNumber(row.sales), true), fill: "#43206a", head: "SALES", width: 84 },
+    { ...ct0, cell: (row) => tinted("#eef2ff", "#312e81", formatNumber(row.ct0)), head: "CT0", width: 84 },
+    { ...ct0, cell: (row) => tinted("#e0e7ff", "#3730a3", formatPercent(row.ct0Ratio), true), head: "CT0/SALES", width: 104 },
+    { ...ct0, cell: rank("ct0Rank"), head: "RANK", width: 70 },
+    { ...caps, cell: (row) => tinted("#ecfeff", "#164e63", formatNumber(row.caps)), head: "CAPS", width: 84 },
+    { ...caps, cell: (row) => tinted("#cffafe", "#0e7490", formatPercent(row.capsRatio), true), head: "CAPS/SALES", width: 108 },
+    { ...caps, cell: rank("capsRank"), head: "RANK", width: 70 },
+    { ...score, cell: (row) => tinted("#f5f1ff", "#5b21b6", formatPercent(row.score), true), head: "SCORE", width: 100 },
+    { ...score, cell: rank("scoreRank"), head: "RANK", width: 70 },
+  );
+  if (table.scope === "witel" && options.rankCaps) {
+    cols.push({ cell: rank("capsRankOnly"), fill: "#92400e", head: "RANK LTS CAPS", width: 104 });
+  }
+  if (options.churnGap) {
+    cols.push(
+      { ...churn, cell: (row) => tinted("#fff7ed", "#92400e", formatNumber(row.churn)), head: "CHURN", width: 90 },
+      {
+        ...churn,
+        cell: (row) => (row.gap < 0 ? { bold: true, color: LOW.color, fill: LOW.fill, text: formatNumber(row.gap) } : { bold: true, color: GOOD.color, fill: GOOD.fill, text: formatNumber(row.gap) }),
+        head: "GAP",
+        width: 84,
+      },
+    );
+  }
+  return cols;
+}
+
+/** Skalakan lebar kolom agar tabel WITEL dan BRANCH sama lebar (seperti di web). */
+function scaleTo<R>(cols: TableCol<R>[], target: number) {
+  const factor = target / tableWidth(cols);
+  return cols.map((col) => ({ ...col, width: col.width * factor }));
 }
 
 export function buildLtsImage(report: LtsComputedReport, timestamp: Date, columnOptions: LtsColumnOptions = hiddenLtsColumns): ReportImage {
-  const exportTableWidth = 1320;
-  const columns = [
-    { key: "label", label: "WILAYAH", width: 178 },
-    { key: "coordinator", label: "KOORDINATOR", width: 190 },
-    { key: "sales", label: "SALES", width: 76 },
-    { key: "ct0", label: "CT0", width: 76 },
-    { key: "ct0Ratio", label: "CT0/SALES", width: 88 },
-    { key: "ct0Rank", label: "RANK", width: 62 },
-    { key: "caps", label: "CAPS", width: 76 },
-    { key: "capsRatio", label: "CAPS/SALES", width: 92 },
-    { key: "capsRank", label: "RANK", width: 62 },
-    { key: "score", label: "SCORE", width: 76 },
-    { key: "scoreRank", label: "RANK", width: 62 },
-    { key: "capsRankOnly", label: "RANK LTS CAPS", width: 94 },
-    { key: "churn", label: "CHURN", width: 86 },
-    { key: "gap", label: "GAP", width: 76 },
+  const witelCols = ltsColumns(report.witel, columnOptions);
+  const hotdaCols = ltsColumns(report.hotda, columnOptions);
+  const target = Math.max(tableWidth(witelCols), tableWidth(hotdaCols));
+  const tables: TableSpec<LtsReportRow>[] = [
+    { cols: scaleTo(witelCols, target), rows: report.witel.rows, total: report.witel.total },
+    { cols: scaleTo(hotdaCols, target), rows: report.hotda.rows, total: report.hotda.total },
   ];
-  const width = Math.max(1400, exportTableWidth + 80);
-  const rowHeight = 30;
-  const groupHeaderHeight = 38;
-  const subHeaderHeight = 36;
-  const tableTitleHeight = 92;
-  const headerHeight = 112;
-  const tableHeaderHeight = groupHeaderHeight + subHeaderHeight;
-  const height = headerHeight + tableTitleHeight * 2 + tableHeaderHeight * 2 + ([...report.witel.rows, report.witel.total, ...report.hotda.rows, report.hotda.total].length) * rowHeight + 92;
-  const scale = 2;
-  const { canvas, ctx } = newCanvas(width, height, scale);
-  ctx.fillStyle = "#f8f5fb";
-  ctx.fillRect(0, 0, width, height);
-  ctx.fillStyle = "#090612";
-  ctx.fillRect(0, 0, width, headerHeight);
-  ctx.fillStyle = "#ffffff";
-  ctx.font = "700 28px Arial";
-  ctx.fillText(report.label, 40, 46);
-  ctx.font = "600 13px Arial";
-  ctx.fillStyle = "#d8d3e3";
-  ctx.fillText(`${report.periodLabel} | Source: ${report.sourceLabel} | ${report.cutoffLabel}`, 40, 75);
-  ctx.fillStyle = "#a89ec0";
-  ctx.fillText(`Rendered ${formatSavedAt(timestamp.toISOString())} WIB`, 40, 94);
-
-  function drawCell(x: number, y: number, w: number, h: number, fill: string, stroke = "#e7e2ed") {
-    ctx.fillStyle = fill;
-    ctx.fillRect(x, y, w, h);
-    ctx.strokeStyle = stroke;
-    ctx.strokeRect(x, y, w, h);
-  }
-
-  function drawText(text: string, x: number, y: number, w: number, align: CanvasTextAlign, fill: string, baseline: CanvasTextBaseline = "middle") {
-    ctx.save();
-    ctx.beginPath();
-    ctx.rect(x, y - 18, w, 36);
-    ctx.clip();
-    ctx.textAlign = align;
-    ctx.textBaseline = baseline;
-    ctx.fillStyle = fill;
-    ctx.fillText(text, align === "left" ? x + 7 : align === "right" ? x + w - 7 : x + w / 2, y);
-    ctx.restore();
-  }
-
-  function drawPill(text: string, x: number, y: number, color: string) {
-    if (!text) return;
-    const pillWidth = Math.max(34, ctx.measureText(text).width + 18);
-    const pillHeight = 22;
-    const left = x - pillWidth / 2;
-    const top = y - pillHeight / 2;
-    ctx.fillStyle = color;
-    ctx.beginPath();
-    ctx.roundRect(left, top, pillWidth, pillHeight, 11);
-    ctx.fill();
-    ctx.fillStyle = "#ffffff";
-    ctx.textAlign = "center";
-    ctx.textBaseline = "middle";
-    ctx.fillText(text, x, y);
-  }
-
-  function textValue(row: LtsReportRow, key: string) {
-    if (key === "label") return row.label;
-    if (key === "coordinator") return row.coordinator ?? "";
-    if (key === "ct0Ratio" || key === "capsRatio" || key === "score") return formatPercent(Number(row[key as keyof LtsReportRow]));
-    if (key === "ct0Rank" || key === "capsRank" || key === "scoreRank" || key === "capsRankOnly") return formatNumber(row[key as keyof LtsReportRow] as number | null);
-    return formatNumber(row[key as keyof LtsReportRow] as number);
-  }
-
-  function exportColumnsForTable(table: LtsReportTable) {
-    const visibleColumns = columns.filter((column) => !(table.scope === "witel" && column.key === "coordinator") && !(table.scope === "hotda" && column.key === "capsRankOnly") && !(column.key === "capsRankOnly" && !columnOptions.rankCaps) && !((column.key === "churn" || column.key === "gap") && !columnOptions.churnGap));
-    const baseWidth = visibleColumns.reduce((sum, column) => sum + column.width, 0);
-    const scaleFactor = exportTableWidth / Math.max(baseWidth, 1);
-    return visibleColumns.map((column) => ({
-      ...column,
-      label: column.key === "label" ? (table.scope === "witel" ? "WITEL" : "BRANCH") : column.label,
-      width: column.width * scaleFactor,
-    }));
-  }
-
-  function drawTable(table: LtsReportTable, y: number) {
-    const exportColumns = exportColumnsForTable(table);
-    const columnPositions = new Map<string, { width: number; x: number }>();
-    let currentX = 40;
-    for (const column of exportColumns) {
-      columnPositions.set(column.key, { width: column.width, x: currentX });
-      currentX += column.width;
-    }
-    const groupWidth = (keys: string[]) => keys.reduce((sum, key) => sum + (columnPositions.get(key)?.width ?? 0), 0);
-    const groupX = (key: string) => columnPositions.get(key)?.x ?? 40;
-    const gradient = ctx.createLinearGradient(40, y, 40 + exportTableWidth, y);
-    gradient.addColorStop(0, "#07040f");
-    gradient.addColorStop(0.62, "#24103f");
-    gradient.addColorStop(1, "#43206a");
-    ctx.fillStyle = gradient;
-    ctx.fillRect(40, y, exportTableWidth, tableTitleHeight);
-    ctx.textAlign = "center";
-    ctx.font = "700 10px Arial";
-    ctx.fillStyle = "#c9b8ee";
-    ctx.fillText("MAIN TABLE", 40 + exportTableWidth / 2, y + 23);
-    ctx.font = "700 19px Arial";
-    ctx.fillStyle = "#ffffff";
-    ctx.fillText(table.title, 40 + exportTableWidth / 2, y + 50);
-    ctx.font = "600 12px Arial";
-    ctx.fillStyle = "#d8d3e3";
-    ctx.fillText(table.subtitle, 40 + exportTableWidth / 2, y + 70);
-    y += tableTitleHeight;
-
-    const drawHeader = (key: string, label: string, fill: string, height: number, yOffset = 0, textColor = "#ffffff") => {
-      const position = columnPositions.get(key);
-      if (!position) return;
-      drawCell(position.x, y + yOffset, position.width, height, fill, "#4b356d");
-      ctx.font = "700 11px Arial";
-      drawText(label, position.x, y + yOffset + height / 2, position.width, "center", textColor);
-    };
-    const drawHeaderGroup = (keys: string[], label: string, fill: string) => {
-      if (!columnPositions.has(keys[0])) return;
-      const x = groupX(keys[0]);
-      const w = groupWidth(keys);
-      drawCell(x, y, w, groupHeaderHeight, fill, "#4b356d");
-      ctx.font = "700 12px Arial";
-      drawText(label, x, y + groupHeaderHeight / 2, w, "center", "#ffffff");
-    };
-    drawHeader("label", table.scope === "witel" ? "WITEL" : "BRANCH", "#120824", tableHeaderHeight);
-    drawHeader("coordinator", "KOORDINATOR", "#1a0d2f", tableHeaderHeight);
-    drawHeader("sales", "Sales", "#43206a", tableHeaderHeight);
-    drawHeaderGroup(["ct0", "ct0Ratio", "ct0Rank"], "Bobot 50% CT0", "#3730a3");
-    drawHeaderGroup(["caps", "capsRatio", "capsRank"], "Bobot 50% CAPS", "#0e7490");
-    drawHeaderGroup(["score", "scoreRank"], "Score", "#5b21b6");
-    drawHeader("capsRankOnly", "Rank LTS CAPS", "#92400e", tableHeaderHeight);
-    drawHeaderGroup(["churn", "gap"], "CAPS 27/8", "#047857");
-
-    const subHeaderStyles: Record<string, { fill: string; text: string }> = {
-      caps: { fill: "#ecfeff", text: "#0e7490" },
-      capsRatio: { fill: "#ecfeff", text: "#0e7490" },
-      capsRank: { fill: "#ecfeff", text: "#0e7490" },
-      churn: { fill: "#fff7ed", text: "#92400e" },
-      ct0: { fill: "#eef2ff", text: "#3730a3" },
-      ct0Rank: { fill: "#eef2ff", text: "#3730a3" },
-      ct0Ratio: { fill: "#eef2ff", text: "#3730a3" },
-      gap: { fill: "#ecfdf5", text: "#047857" },
-      score: { fill: "#f5f1ff", text: "#5b21b6" },
-      scoreRank: { fill: "#f5f1ff", text: "#5b21b6" },
-    };
-    for (const column of exportColumns) {
-      if (["label", "coordinator", "sales", "capsRankOnly"].includes(column.key)) continue;
-      const style = subHeaderStyles[column.key] ?? { fill: "#ffffff", text: "#111827" };
-      drawCell(columnPositions.get(column.key)?.x ?? 40, y + groupHeaderHeight, column.width, subHeaderHeight, style.fill, "#dbe4f0");
-      ctx.font = "700 11px Arial";
-      drawText(column.label, columnPositions.get(column.key)?.x ?? 40, y + groupHeaderHeight + subHeaderHeight / 2, column.width, "center", style.text);
-    }
-    y += tableHeaderHeight;
-
-    [...table.rows, table.total].forEach((row, index, list) => {
-      const total = index === list.length - 1;
-      ctx.font = total ? "700 11px Arial" : "600 11px Arial";
-      for (const column of exportColumns) {
-        const position = columnPositions.get(column.key);
-        if (!position) continue;
-        const isNegative = column.key === "gap" && row.gap < 0;
-        const rowBackground = index % 2 === 0 ? "#ffffff" : "#f7f4ff";
-        const fill =
-          column.key === "label"
-            ? total ? "#0b0614" : rowBackground
-            : column.key === "coordinator"
-              ? total ? "#160d24" : rowBackground
-              : column.key === "sales"
-                ? total ? "#160d24" : "#f3edff"
-                : column.key === "ct0" || column.key === "ct0Rank"
-                  ? "#eef2ff"
-                  : column.key === "ct0Ratio"
-                    ? "#e0e7ff"
-                    : column.key === "caps" || column.key === "capsRank"
-                      ? "#ecfeff"
-                      : column.key === "capsRatio"
-                        ? "#cffafe"
-                        : column.key === "score"
-                          ? "#f5f1ff"
-                          : column.key === "scoreRank"
-                            ? "#ede9fe"
-                            : column.key === "capsRankOnly"
-                              ? "#fffbeb"
-                              : column.key === "churn"
-                                ? "#fff7ed"
-                                : isNegative
-                                  ? "#fff1f2"
-                                  : "#ecfdf5";
-        drawCell(position.x, y, column.width, rowHeight, fill);
-        const value = textValue(row, column.key);
-        if (["ct0Rank", "capsRank", "scoreRank", "capsRankOnly"].includes(column.key) && value && !total) {
-          const pillColor = column.key === "ct0Rank" ? "#312e81" : column.key === "capsRank" ? "#164e63" : column.key === "capsRankOnly" ? "#92400e" : "#2e1065";
-          drawPill(value, position.x + column.width / 2, y + rowHeight / 2, pillColor);
-          continue;
-        }
-        const textColor =
-          total && (column.key === "label" || column.key === "coordinator" || column.key === "sales")
-            ? "#ffffff"
-            : isNegative
-              ? "#be123c"
-              : column.key === "sales"
-                ? "#321653"
-                : column.key === "ct0Ratio"
-                  ? "#3730a3"
-                  : column.key === "capsRatio"
-                    ? "#0e7490"
-                    : column.key === "score"
-                      ? "#5b21b6"
-                      : column.key === "churn"
-                        ? "#92400e"
-                        : column.key === "gap"
-                          ? "#047857"
-                          : "#111827";
-        const align = column.key === "label" || column.key === "coordinator" ? "left" : "right";
-        drawText(value, position.x, y + rowHeight / 2, column.width, align, textColor);
-      }
-      y += rowHeight;
-    });
-    ctx.textAlign = "left";
-    return y + 22;
-  }
-
-  const afterWitel = drawTable(report.witel, headerHeight + 26);
-  drawTable(report.hotda, afterWitel);
+  const cutoff = report.cutoffLabel.replace(/^cut\s*off\s*:?\s*/i, "").toUpperCase();
+  const bytes = renderReportPng({
+    banner: {
+      note: `SOURCE: ${report.sourceLabel.toUpperCase()}${cutoff ? `  •  CUT OFF: ${cutoff}` : ""}`,
+      periodLabel: report.periodLabel,
+      scope: "WITEL YOGYA JATENG SELATAN",
+      title: report.label.toUpperCase(),
+    },
+    footer: report.cutoffLabel,
+    tables: tables,
+    theme: LTS_THEME,
+    timestamp,
+  });
   return {
-    bytes: toPngBytes(canvas),
+    bytes,
     caption: `${report.label}\n${report.periodLabel} | ${report.cutoffLabel}`,
     filename: `${report.label.replace(/\s+/g, " ")}.png`,
   };
