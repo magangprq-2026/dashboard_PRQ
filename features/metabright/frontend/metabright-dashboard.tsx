@@ -199,7 +199,7 @@ export function MetabrightDashboard({ permissions = NO_ACCESS }: { permissions?:
     const W = el.offsetWidth;
     try {
       const c = await html2canvas(el, {
-        backgroundColor: "#f7faff",
+        backgroundColor: "#ffffff",
         scale: mode === "data" ? 2 : 1.5,
         useCORS: true,
         width: W,

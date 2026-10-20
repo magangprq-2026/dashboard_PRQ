@@ -4,6 +4,11 @@ import type { Dataset, Row } from "@/features/metabright/domain/types";
 import { nf, pillStyle } from "@/features/metabright/domain/utils";
 import { formatJakartaDateTime, newCanvas, toPngBytes, type Ctx, type ReportImage } from "./canvas";
 
+// Warna logo MetaBright: ungu -> biru -> cyan (sama dengan background halaman /metabright).
+const BRAND_VIOLET = "#510dfc";
+const BRAND_BLUE = "#1a44fc";
+const BRAND_CYAN = "#0095fd";
+
 const PAD = 32;
 const HEADER = 112;
 const ROW_H = 32;
@@ -79,41 +84,52 @@ export function buildMetabrightImage(d: Dataset, period: string, timestamp = new
   const H = HEADER + INFO_H + HEAD_ROW_H + rows.length * ROW_H + 64;
   const { canvas, ctx } = newCanvas(W, H, 2);
 
-  // latar
-  ctx.fillStyle = "#f8fbff";
+  // latar putih polos; pemisah antar bagian berupa garis
+  ctx.fillStyle = "#ffffff";
   ctx.fillRect(0, 0, W, H);
+  ctx.strokeStyle = "#94a3b8";
+  ctx.lineWidth = 1;
+  ctx.strokeRect(0.5, 0.5, W - 1, H - 1);
 
   // header
-  const hg = ctx.createLinearGradient(0, 0, W, 0);
-  hg.addColorStop(0, "#0891b2");
-  hg.addColorStop(0.5, "#2563eb");
-  hg.addColorStop(1, "#6d28d9");
-  ctx.fillStyle = hg;
-  ctx.fillRect(0, 0, W, HEADER);
-  ctx.fillStyle = "rgba(255,255,255,0.14)";
-  rr(ctx, tableX, 26, 60, 60, 18);
-  ctx.fill();
   ctx.fillStyle = "#ffffff";
-  ctx.font = "700 22px Arial";
+  rr(ctx, tableX, 24, 64, 64, 16);
+  ctx.fill();
+  ctx.strokeStyle = "#cbd5e1";
+  rr(ctx, tableX + 0.5, 24.5, 63, 63, 16);
+  ctx.stroke();
+  const logoGrad = ctx.createLinearGradient(tableX, 0, tableX + 64, 0);
+  logoGrad.addColorStop(0, BRAND_VIOLET);
+  logoGrad.addColorStop(1, BRAND_CYAN);
+  ctx.fillStyle = logoGrad;
+  ctx.font = "800 26px Arial";
   ctx.textAlign = "center";
   ctx.textBaseline = "middle";
-  ctx.fillText("MB", tableX + 30, 57);
+  ctx.fillText("MB", tableX + 32, 57);
   ctx.textAlign = "left";
   ctx.textBaseline = "alphabetic";
-  ctx.fillStyle = "#bae6fd";
+  ctx.fillStyle = BRAND_BLUE;
   ctx.font = "700 12px Arial";
   ctx.fillText("PRIME • METABRIGHT", tableX + 82, 40);
-  ctx.fillStyle = "#ffffff";
+  ctx.fillStyle = "#071426";
   ctx.font = "700 30px Arial";
   ctx.fillText("Impactful Award Telda", tableX + 82, 74);
-  ctx.fillStyle = "#e0f2fe";
+  ctx.fillStyle = "#475569";
   ctx.font = "600 14px Arial";
   ctx.fillText(`${period}  |  ${rows.length} telda  |  ${indicators.length} indikator`, tableX + 82, 98);
   ctx.textAlign = "right";
-  ctx.fillStyle = "#bae6fd";
+  ctx.fillStyle = "#64748b";
   ctx.font = "600 13px Arial";
   ctx.fillText(`Rendered ${formatJakartaDateTime(timestamp, true)}`, tableX + tableW, 98);
   ctx.textAlign = "left";
+
+  ctx.strokeStyle = BRAND_BLUE;
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(tableX, HEADER - 4);
+  ctx.lineTo(tableX + tableW, HEADER - 4);
+  ctx.stroke();
+  ctx.lineWidth = 1;
 
   // keterangan + legenda warna
   let y = HEADER + 20;
@@ -133,9 +149,6 @@ export function buildMetabrightImage(d: Dataset, period: string, timestamp = new
   // kartu tabel
   const tableH = HEAD_ROW_H + rows.length * ROW_H;
   ctx.save();
-  ctx.shadowColor = "rgba(15,23,42,0.08)";
-  ctx.shadowBlur = 16;
-  ctx.shadowOffsetY = 5;
   ctx.fillStyle = "#ffffff";
   rr(ctx, tableX, y, tableW, tableH, 14);
   ctx.fill();
@@ -152,16 +165,19 @@ export function buildMetabrightImage(d: Dataset, period: string, timestamp = new
   const xTotal = xInd + indicators.length * COL_IND;
 
   // header tabel
-  ctx.fillStyle = "#eef3fa";
+  const headGrad = ctx.createLinearGradient(0, y, 0, y + HEAD_ROW_H);
+  headGrad.addColorStop(0, "#2563eb");
+  headGrad.addColorStop(1, "#1d4ed8");
+  ctx.fillStyle = headGrad;
   ctx.fillRect(tableX, y, tableW, HEAD_ROW_H);
-  ctx.fillStyle = "#334155";
+  ctx.fillStyle = "#ffffff";
   ctx.font = "700 12px Arial";
   ctx.textBaseline = "middle";
   ctx.textAlign = "center";
   ctx.fillText("Rank", xRank + COL_RANK / 2, y + HEAD_ROW_H / 2);
   ctx.textAlign = "left";
-  ctx.fillText("Witel", xWitel + 12, y + HEAD_ROW_H / 2);
-  ctx.fillText("Telda", xTelda + 12, y + HEAD_ROW_H / 2);
+  ctx.fillText("Witel", xWitel + 14, y + HEAD_ROW_H / 2);
+  ctx.fillText("Telda", xTelda + 14, y + HEAD_ROW_H / 2);
   indicators.forEach((ind, k) => {
     const cx = xInd + k * COL_IND + COL_IND / 2;
     ctx.textAlign = "center";
@@ -170,15 +186,15 @@ export function buildMetabrightImage(d: Dataset, period: string, timestamp = new
     const lineH = 14;
     const top = y + HEAD_ROW_H / 2 - ((lines.length - 1) * lineH) / 2;
     lines.forEach((line, i) => {
-      ctx.fillStyle = i === lines.length - 1 ? "#64748b" : "#334155";
+      ctx.fillStyle = i === lines.length - 1 ? "#bfdbfe" : "#ffffff";
       ctx.fillText(line, cx, top + i * lineH);
     });
   });
-  ctx.fillStyle = "#334155";
+  ctx.fillStyle = "#ffffff";
   ctx.font = "700 12px Arial";
   ctx.textAlign = "left";
   ctx.fillText("Total score", xTotal + 16, y + HEAD_ROW_H / 2);
-  ctx.strokeStyle = "#dbe5f1";
+  ctx.strokeStyle = "#93c5fd";
   ctx.lineWidth = 1;
   ctx.beginPath();
   ctx.moveTo(tableX, y + HEAD_ROW_H - 0.5);
@@ -193,7 +209,7 @@ export function buildMetabrightImage(d: Dataset, period: string, timestamp = new
       ctx.fillStyle = "#f8fbff";
       ctx.fillRect(tableX, ry, tableW, ROW_H);
     }
-    ctx.strokeStyle = "#eef2f7";
+    ctx.strokeStyle = "#cbd5e1";
     ctx.beginPath();
     ctx.moveTo(tableX, ry + ROW_H - 0.5);
     ctx.lineTo(tableX + tableW, ry + ROW_H - 0.5);
@@ -209,16 +225,16 @@ export function buildMetabrightImage(d: Dataset, period: string, timestamp = new
     ctx.font = "700 12px Arial";
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
-    ctx.fillText(String(r.rank), xRank + COL_RANK / 2, cy + 0.5);
+    ctx.fillText(String(r.rank), xRank + COL_RANK / 2, cy + 1);
 
     // witel & telda
     ctx.textAlign = "left";
     ctx.fillStyle = "#475569";
     ctx.font = "12.5px Arial";
-    ctx.fillText(fit(ctx, r.witel, COL_WITEL - 20), xWitel + 12, cy + 0.5);
+    ctx.fillText(fit(ctx, r.witel.toUpperCase(), COL_WITEL - 28), xWitel + 14, cy + 0.5);
     ctx.fillStyle = "#0f172a";
     ctx.font = "700 12.5px Arial";
-    ctx.fillText(fit(ctx, r.telda, COL_TELDA - 20), xTelda + 12, cy + 0.5);
+    ctx.fillText(fit(ctx, r.telda.toUpperCase(), COL_TELDA - 28), xTelda + 14, cy + 0.5);
 
     // skor per indikator
     r.v.forEach((v, k) => {
@@ -245,7 +261,7 @@ export function buildMetabrightImage(d: Dataset, period: string, timestamp = new
     ctx.fillText(nf(r.total), xTotal + COL_TOTAL - 12, cy + 0.5);
   });
   ctx.restore();
-  ctx.strokeStyle = "#e1eaf5";
+  ctx.strokeStyle = "#64748b";
   ctx.lineWidth = 1;
   rr(ctx, tableX + 0.5, y + 0.5, tableW - 1, tableH - 1, 14);
   ctx.stroke();
@@ -253,13 +269,18 @@ export function buildMetabrightImage(d: Dataset, period: string, timestamp = new
   // footer
   ctx.textBaseline = "alphabetic";
   ctx.textAlign = "left";
-  ctx.fillStyle = "#2563eb";
+  ctx.strokeStyle = "#cbd5e1";
+  ctx.beginPath();
+  ctx.moveTo(tableX, H - 44.5);
+  ctx.lineTo(tableX + tableW, H - 44.5);
+  ctx.stroke();
+  ctx.fillStyle = BRAND_BLUE;
   ctx.font = "700 12px Arial";
   ctx.fillText(`Dibuat ${formatJakartaDateTime(timestamp, false)} · Dashboard Impactful Award Telda`, tableX, H - 24);
 
   return {
     bytes: toPngBytes(canvas),
     caption: `Tabel Impactful Award Telda (MetaBright)\n${period} | ${rows.length} telda`,
-    filename: "Tabel Impactful Award.png",
+    filename: `Impactful_Award_Telda_${period.replace(/\s+/g, "_")}.png`,
   };
 }

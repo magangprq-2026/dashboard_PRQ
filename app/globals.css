@@ -153,11 +153,12 @@ body {
   min-height: 100vh;
   max-width: none;
   padding: 0 0 52px;
-  background-color: #070f2b;
+  background-color: #1a1190;
   background-image:
-    radial-gradient(circle at 90% 8%, rgba(56, 189, 248, 0.16), transparent 32%),
-    radial-gradient(circle at 8% 24%, rgba(124, 58, 237, 0.16), transparent 30%),
-    linear-gradient(135deg, #061426 0%, #0c1d4a 50%, #150f3a 100%);
+    radial-gradient(circle at 90% 8%, rgba(0, 149, 253, 0.38), transparent 36%),
+    radial-gradient(circle at 8% 24%, rgba(81, 13, 252, 0.42), transparent 34%),
+    linear-gradient(135deg, #3a0ad0 0%, #1a44fc 52%, #0077e0 100%);
+  background-attachment: fixed;
 }
 
 .metabright-page .mbody {
@@ -172,11 +173,11 @@ body {
   top: 0;
   z-index: 40;
   border-bottom: 1px solid rgba(125, 211, 252, 0.2);
-  background-color: rgba(7, 20, 38, 0.95);
+  background-color: rgba(42, 10, 158, 0.96);
   background-image:
-    radial-gradient(circle at 12% 0%, rgba(56, 189, 248, 0.2), transparent 28%),
-    radial-gradient(circle at 88% 0%, rgba(124, 58, 237, 0.2), transparent 30%),
-    linear-gradient(135deg, #061426 0%, #0c1d4a 54%, #120d35 100%);
+    radial-gradient(circle at 12% 0%, rgba(0, 149, 253, 0.32), transparent 30%),
+    radial-gradient(circle at 88% 0%, rgba(81, 13, 252, 0.35), transparent 32%),
+    linear-gradient(135deg, #2a0a9e 0%, #1233c4 54%, #0062c4 100%);
   box-shadow: 0 22px 48px -34px rgba(0, 0, 0, 0.92);
   backdrop-filter: blur(18px);
 }
@@ -418,7 +419,7 @@ body {
   inset: 0 0 auto 0;
   z-index: 1;
   height: 4px;
-  background: linear-gradient(90deg, #071426, var(--mb-blue), var(--mb-cyan), var(--mb-purple));
+  background: linear-gradient(90deg, var(--mb-purple), var(--mb-blue), var(--mb-cyan));
 }
 
 .metabright-page .hero::after {
@@ -686,8 +687,25 @@ body {
 .metabright-page #cap.capmode {
   max-width: none;
   padding: 4px;
-  background: linear-gradient(135deg, #ffffff 0%, #f7faff 45%, #edf5ff 100%);
+  background: #ffffff;
 }
+
+/* Hasil unduh PNG: latar putih polos, pemisah antar bagian hanya berupa garis */
+.metabright-page .capmode .cph { margin: 0 0 14px; border-bottom: 2px solid #1a44fc; }
+.metabright-page .capmode .card,
+.metabright-page .capmode .k,
+.metabright-page .capmode .hero {
+  background: #ffffff !important;
+  background-image: none !important;
+  border: 1px solid #94a3b8 !important;
+  box-shadow: none !important;
+  outline: none !important;
+}
+.metabright-page .capmode .card::before,
+.metabright-page .capmode .card::after,
+.metabright-page .capmode .hero::after { display: none; }
+.metabright-page .capmode .tw { border: 1px solid #94a3b8; }
+.metabright-page .capmode .cpf { margin-top: 14px; border-top: 1px solid #94a3b8; }
 
 .metabright-page .cph,
 .metabright-page .cpf { display: none; }
@@ -724,6 +742,14 @@ body {
 
 .metabright-page .capmode .scroll,
 .metabright-page .capmode .tw { max-height: none !important; overflow: visible !important; }
+
+/* Hasil unduh PNG: kolom sticky dibuat statis agar posisi Rank/Witel/Telda rapi */
+.metabright-page .capmode table.dt .c-rank,
+.metabright-page .capmode table.dt .c-witel,
+.metabright-page .capmode table.dt .c-telda,
+.metabright-page .capmode table.hm th:first-child,
+.metabright-page .capmode table.hm td:first-child { position: static !important; box-shadow: none !important; }
+.metabright-page .capmode table.dt .c-rank { width: 70px; text-align: center; }
 
 .metabright-page #vData { order: -1; }
 
@@ -947,10 +973,14 @@ body {
 .metabright-page .pill { display: inline-block; padding: 3px 9px; border-radius: 6px; font-weight: 800; }
 
 .metabright-page .rk {
-  display: inline-grid;
+  display: inline-block;
+  box-sizing: border-box;
   min-width: 26px;
   height: 26px;
-  place-items: center;
+  padding: 0 7px;
+  line-height: 26px;
+  text-align: center;
+  vertical-align: middle;
   border-radius: 999px;
   background: #eef2f7;
   color: #334155;
@@ -1485,7 +1515,7 @@ body {
   text-align: center;
 }
 
-/* Rank / Witel / Telda: semua rata tengah, nama tidak dipotong */
+/* Rank rata tengah; Witel & Telda rata kiri (di pinggir), nama tidak dipotong */
 .metabright-page table.dt .c-rank { width: 70px; min-width: 70px; max-width: 70px; }
 .metabright-page table.dt .c-witel { left: 70px; width: 210px; min-width: 210px; max-width: 210px; }
 .metabright-page table.dt .c-telda { left: 280px; width: 170px; min-width: 170px; max-width: 170px; }
@@ -1499,14 +1529,19 @@ body {
   padding-left: 10px;
   padding-right: 10px;
   overflow: visible;
-  text-align: center;
   text-overflow: clip;
   white-space: nowrap;
 }
+.metabright-page table.dt thead .c-rank,
+.metabright-page table.dt tbody .c-rank { text-align: center; }
+.metabright-page table.dt thead .c-witel,
+.metabright-page table.dt thead .c-telda,
+.metabright-page table.dt tbody .c-witel,
+.metabright-page table.dt tbody .c-telda { text-align: left; padding-left: 14px; }
 
-/* Peta Capaian: kolom Witel tengah, tidak terpotong */
+/* Peta Capaian: kolom Witel rata kiri, tidak terpotong */
 .metabright-page table.hm th:first-child,
-.metabright-page table.hm td:first-child { min-width: 210px; padding-left: 10px; padding-right: 10px; text-align: center; white-space: nowrap; }
+.metabright-page table.hm td:first-child { min-width: 210px; padding-left: 14px; padding-right: 10px; text-align: left; white-space: nowrap; }
 
 @media (max-width: 640px) {
   .metabright-page table.dt .c-telda { left: 70px; }
