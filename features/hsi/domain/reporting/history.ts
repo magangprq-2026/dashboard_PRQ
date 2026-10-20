@@ -98,11 +98,15 @@ export function recalcTotalFromRows(label: string, rows: ReportRow[], originalTo
   };
 }
 
-export function applyHistoryTable(table: ReportTable, history: ReportHistoryTable, excludedDay: number | null = null): ReportTable {
+export function applyHistoryTable(table: ReportTable, _history: ReportHistoryTable, excludedDay: number | null = null): ReportTable {
   let rows = table.rows.map((row) => {
-    const stored = normalizeHistoryDays(history[row.label], row.days.length);
+    // MASTER yang diunggah adalah sumber kebenaran untuk periode yang sedang dihitung.
+    // Nilai kosong berarti tidak ada order pada tanggal tersebut (sama seperti formula COUNTIFS
+    // di workbook yang menampilkan "" saat hasil hitung 0), bukan alasan untuk mengambil angka
+    // lama dari riwayat upload. Menggunakan history sebagai fallback membuat angka lama tetap
+    // muncul setelah data MASTER terbaru berubah sehingga dashboard berbeda dari file Excel.
     const days = row.days.map((value, index) =>
-      index + 1 === excludedDay ? null : hasActualValue(value) ? value : stored[index],
+      index + 1 === excludedDay ? null : hasActualValue(value) ? value : null,
     );
     return recalcRowFromDays(row, days);
   });
