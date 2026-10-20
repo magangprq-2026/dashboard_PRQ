@@ -2078,20 +2078,20 @@ function ReportTable({
         <table className="min-w-[2600px] border-separate border-spacing-0 text-[11px]">
           <thead>
             <tr>
-              <th rowSpan={2} className="sticky left-0 top-0 z-30 w-[170px] min-w-[170px] max-w-[170px] border-b border-r border-[#5b3418] bg-[#140b06] px-2 py-2 text-center font-semibold text-white shadow-[8px_0_18px_-18px_rgba(44,24,12,0.9)]">
+              <th rowSpan={2} className="sticky left-0 top-0 z-30 w-[170px] min-w-[170px] max-w-[170px] border-b border-r border-[#174a85] bg-[#082f6b] px-2 py-2 text-center font-semibold text-white shadow-[8px_0_18px_-18px_rgba(44,24,12,0.9)]">
                 WILAYAH
               </th>
-              <th rowSpan={2} className="sticky top-0 z-20 w-[76px] min-w-[76px] max-w-[76px] border-b border-r border-[#a16207] bg-[#7c3f16] px-1.5 py-2 text-center font-semibold leading-tight text-white">
+              <th rowSpan={2} className="sticky top-0 z-20 w-[76px] min-w-[76px] max-w-[76px] border-b border-r border-[#1d5da8] bg-[#1456a0] px-1.5 py-2 text-center font-semibold leading-tight text-white">
                 TARGET FM
               </th>
-              <th rowSpan={2} className="sticky top-0 z-20 w-[76px] min-w-[76px] max-w-[76px] border-b border-r border-[#a16207] bg-[#7c3f16] px-1.5 py-2 text-center font-semibold leading-tight text-white">
+              <th rowSpan={2} className="sticky top-0 z-20 w-[76px] min-w-[76px] max-w-[76px] border-b border-r border-[#1d5da8] bg-[#1456a0] px-1.5 py-2 text-center font-semibold leading-tight text-white">
                 TARGET YTD
               </th>
-              <th colSpan={dayCount} className="sticky top-0 z-20 border-b border-r border-[#a16207] bg-[#8a5a16] px-2 py-2 text-center font-semibold text-white">
+              <th colSpan={dayCount} className="sticky top-0 z-20 border-b border-r border-[#1d5da8] bg-[#1d65b8] px-2 py-2 text-center font-semibold text-white">
                 TANGGAL
               </th>
               {summaryHeaders.map((header) => (
-                <th key={header} rowSpan={2} className="sticky top-0 z-20 w-[80px] min-w-[80px] max-w-[80px] whitespace-normal border-b border-r border-[#5b3418] bg-[#21140c] px-1.5 py-2 text-center text-[9px] font-semibold leading-[1.12] text-white">
+                <th key={header} rowSpan={2} className="sticky top-0 z-20 w-[80px] min-w-[80px] max-w-[80px] whitespace-normal border-b border-r border-[#174a85] bg-[#0b3978] px-1.5 py-2 text-center text-[9px] font-semibold leading-[1.12] text-white">
                   {header}
                 </th>
               ))}
@@ -2101,7 +2101,7 @@ function ReportTable({
                 <th
                   key={index}
                   className={`sticky top-[34px] z-20 w-8 min-w-8 max-w-8 border-b border-r border-slate-200 px-1 py-1.5 text-center text-[10px] font-semibold ${
-                    index + 1 > latestDay ? "bg-stone-100 text-stone-400" : "bg-orange-50 text-[#7c2d12]"
+                    index + 1 > latestDay ? "bg-stone-100 text-stone-400" : "bg-[#dbeafe] text-[#123d70]"
                   }`}
                 >
                   {index + 1}

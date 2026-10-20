@@ -1377,20 +1377,20 @@ function ReportDataTable({ table, showChurnGap, showRankCaps }: { table: LtsRepo
         <table className="w-full min-w-[1320px] border-separate border-spacing-0 text-[11px] text-slate-800">
           <thead>
             <tr>
-              <th rowSpan={2} className="sticky left-0 top-0 z-30 w-[180px] min-w-[180px] border-b border-r border-violet-700/60 bg-[#120824] px-2 py-2 text-center font-semibold text-white">
+              <th rowSpan={2} className="sticky left-0 top-0 z-30 w-[180px] min-w-[180px] border-b border-r border-violet-700/60 bg-[#082f6b] px-2 py-2 text-center font-semibold text-white">
                 {table.scope === "witel" ? "WITEL" : "BRANCH"}
               </th>
               {showCoordinator && (
-                <th rowSpan={2} className="sticky top-0 z-20 w-[190px] min-w-[190px] border-b border-r border-violet-700/60 bg-[#1a0d2f] px-2 py-2 text-center font-semibold text-white">
+                <th rowSpan={2} className="sticky top-0 z-20 w-[190px] min-w-[190px] border-b border-r border-blue-700 bg-[#0b3978] px-2 py-2 text-center font-semibold text-white">
                   KOORDINATOR
                 </th>
               )}
-              <th rowSpan={2} className="sticky top-0 z-20 w-[84px] border-b border-r border-violet-700/60 bg-[#43206a] px-2 py-2 text-center font-semibold text-white">Sales</th>
-              <th colSpan={3} className="sticky top-0 z-20 border-b border-r border-indigo-900/35 bg-[#3730a3] px-2 py-2 text-center font-semibold text-white">Bobot 50% CT0</th>
-              <th colSpan={3} className="sticky top-0 z-20 border-b border-r border-cyan-900/35 bg-[#0e7490] px-2 py-2 text-center font-semibold text-white">Bobot 50% CAPS</th>
-              <th colSpan={2} className="sticky top-0 z-20 border-b border-r border-violet-900/40 bg-[#5b21b6] px-2 py-2 text-center font-semibold text-white">Score</th>
-              {!showCoordinator && showRankCaps && <th rowSpan={2} className="sticky top-0 z-20 w-[92px] border-b border-r border-amber-900/35 bg-[#92400e] px-2 py-2 text-center font-semibold text-white">Rank LTS CAPS</th>}
-              {showChurnGap && <th colSpan={2} className="sticky top-0 z-20 border-b border-r border-emerald-900/35 bg-[#047857] px-2 py-2 text-center font-semibold text-white">CAPS 27/8</th>}
+              <th rowSpan={2} className="sticky top-0 z-20 w-[84px] border-b border-r border-blue-700 bg-[#1456a0] px-2 py-2 text-center font-semibold text-white">Sales</th>
+              <th colSpan={3} className="sticky top-0 z-20 border-b border-r border-blue-700 bg-[#1d65b8] px-2 py-2 text-center font-semibold text-white">Bobot 50% CT0</th>
+              <th colSpan={3} className="sticky top-0 z-20 border-b border-r border-blue-700 bg-[#1d65b8] px-2 py-2 text-center font-semibold text-white">Bobot 50% CAPS</th>
+              <th colSpan={2} className="sticky top-0 z-20 border-b border-r border-blue-700 bg-[#0b3978] px-2 py-2 text-center font-semibold text-white">Score</th>
+              {!showCoordinator && showRankCaps && <th rowSpan={2} className="sticky top-0 z-20 w-[92px] border-b border-r border-blue-700 bg-[#1456a0] px-2 py-2 text-center font-semibold text-white">Rank LTS CAPS</th>}
+              {showChurnGap && <th colSpan={2} className="sticky top-0 z-20 border-b border-r border-blue-700 bg-[#0b3978] px-2 py-2 text-center font-semibold text-white">CAPS 27/8</th>}
             </tr>
             <tr>
               {subHeaders.map((header, headerIndex) => (
@@ -1403,12 +1403,12 @@ function ReportDataTable({ table, showChurnGap, showRankCaps }: { table: LtsRepo
           <tbody>
             {allRows.map((row, index) => {
               const total = index === allRows.length - 1;
-              const rowBackground = index % 2 === 0 ? "bg-white" : "bg-[#faf7ff]";
+              const rowBackground = index % 2 === 0 ? "bg-white" : "bg-[#f5f9ff]";
               return (
-                <tr key={`${row.label}-${total ? "total" : "row"}`} className={total ? "bg-[#0b0614] font-bold text-white" : `${rowBackground} text-slate-800 hover:bg-[#f1eaff]`}>
-                  <th className={`sticky left-0 z-10 border-b border-r border-violet-100/80 px-3 py-2 text-left ${total ? "bg-[#0b0614] text-white" : `${rowBackground} text-slate-800`}`}>{row.label}</th>
-                  {showCoordinator && <td className={`border-b border-r border-violet-100/80 px-3 py-2 ${total ? "bg-[#160d24] text-white" : `${rowBackground} text-slate-700`}`}>{row.coordinator ?? ""}</td>}
-                  <td className={`border-b border-r border-violet-100/80 px-2 py-2 text-right ${total ? "bg-[#160d24] text-white" : "bg-[#f3edff] font-semibold text-[#321653]"}`}>{formatNumber(row.sales)}</td>
+                <tr key={`${row.label}-${total ? "total" : "row"}`} className={total ? "bg-[#082f6b] font-bold text-white" : `${rowBackground} text-slate-800 hover:bg-[#eaf3ff]`}>
+                  <th className={`sticky left-0 z-10 border-b border-r border-violet-100/80 px-3 py-2 text-left ${total ? "bg-[#082f6b] text-white" : `${rowBackground} text-slate-800`}`}>{row.label}</th>
+                  {showCoordinator && <td className={`border-b border-r border-violet-100/80 px-3 py-2 ${total ? "bg-[#10427f] text-white" : `${rowBackground} text-slate-700`}`}>{row.coordinator ?? ""}</td>}
+                  <td className={`border-b border-r border-violet-100/80 px-2 py-2 text-right ${total ? "bg-[#10427f] text-white" : "bg-[#eaf2ff] font-semibold text-[#123d70]"}`}>{formatNumber(row.sales)}</td>
                   <td className="border-b border-r border-indigo-100 bg-indigo-50/45 px-2 py-2 text-right">{formatNumber(row.ct0)}</td>
                   <td className="border-b border-r border-indigo-100 bg-indigo-50/80 px-2 py-2 text-right font-semibold text-indigo-800">{formatPercent(row.ct0Ratio)}</td>
                   <td className="border-b border-r border-indigo-100 bg-indigo-50/45 px-2 py-2 text-center">{row.ct0Rank && !total ? <span className="inline-flex min-w-8 justify-center rounded-full bg-indigo-900 px-2 py-0.5 font-bold text-white shadow-sm" style={rankStepPillStyle(row.ct0Rank, ct0RankCount)}>{row.ct0Rank}</span> : row.ct0Rank ? <span className="font-bold">{row.ct0Rank}</span> : ""}</td>
