@@ -260,6 +260,6 @@ export function buildLtsImage(report: LtsComputedReport, timestamp: Date, column
   return {
     bytes: toPngBytes(canvas),
     caption: `${report.label}\n${report.periodLabel} | ${report.cutoffLabel}`,
-    filename: `${report.label.replace(/\s+/g, "-")}.png`,
+    filename: `${report.label.replace(/\s+/g, " ")}.png`,
   };
 }

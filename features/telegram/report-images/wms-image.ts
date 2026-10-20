@@ -1,7 +1,7 @@
 // Gambar report WMS (PNG) untuk bot Telegram. Isi fungsi diambil dari createWmsReportPng di
 // features/wms/frontend/dashboard/wms-dashboard.tsx agar tampilannya sama dengan tombol "Download PNG" di web.
 import type { WmsComputedReport, WmsReportRow } from "@/features/wms/domain/reporting/reporting";
-import { achievementTone, formatJakartaDateTime, formatNumber, formatPercent, jakartaStamp, newCanvas, toPngBytes, type ReportImage } from "./canvas";
+import { achievementTone, formatJakartaDateTime, formatNumber, formatPercent, newCanvas, toPngBytes, type ReportImage } from "./canvas";
 
 export function buildWmsImage(report: WmsComputedReport, timestamp: Date): ReportImage {
   const witelRows = [...report.witel.rows, report.witel.total];
@@ -171,6 +171,6 @@ export function buildWmsImage(report: WmsComputedReport, timestamp: Date): Repor
   return {
     bytes: toPngBytes(canvas),
     caption: `Report WMS Target RKAP\n${report.periodLabel} | Data ${report.cutoffLabel}`,
-    filename: `WMS-Report-${report.periodLabel.replace(/\s+/g, "-")}-${jakartaStamp(timestamp)}.png`,
+    filename: "Report WMS Target RKAP.png",
   };
 }

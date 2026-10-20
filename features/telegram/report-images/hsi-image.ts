@@ -2,7 +2,7 @@
 // features/hsi/frontend/dashboard/hsi-dashboard.tsx agar tampilannya sama dengan tombol "Download PNG" di web.
 import { computeReport, type ComputedReport, type ReportRow, type ReportTable } from "@/features/hsi/domain/reporting/reporting";
 import {
-  achievementTone, formatJakartaDateTime, formatNumber, formatPercent, jakartaStamp, newCanvas, toPngBytes,
+  achievementTone, formatJakartaDateTime, formatNumber, formatPercent, newCanvas, toPngBytes,
   type Ctx, type ReportImage,
 } from "./canvas";
 
@@ -476,7 +476,6 @@ export function buildHsiImages(
   // Sama seperti web: snapshot tersimpan bila ada, jika tidak hitung dari MASTER lalu terapkan riwayat harian.
   const report: ComputedReport = snapshot ?? applyReportHistory(computeReport(rows as never, savedAt, periodKey), history);
   const timestamp = new Date();
-  const stamp = jakartaStamp(timestamp);
   const make = (variant: "sementara" | "stf"): ReportImage => {
     const stf = variant === "stf";
     const witel = stf ? report.targetStf.witel : report.witel;
@@ -485,7 +484,7 @@ export function buildHsiImages(
     return {
       bytes: createReportPng(witel, branch, latestDay, timestamp, variant, report.periodLabel, report.previousMonthLabel),
       caption: `${stf ? "Report HSI Target STF" : "Report HSI Target RKAP"}\nPeriode: ${report.periodLabel} | Data s.d. Tgl ${latestDay}`,
-      filename: `${stf ? "HSI-Target-STF-Report" : "HSI-Report"}-${stamp}.png`,
+      filename: `${stf ? "Report HSI Target STF" : "Report HSI Target RKAP"}.png`,
     };
   };
   return [make("sementara"), make("stf")];

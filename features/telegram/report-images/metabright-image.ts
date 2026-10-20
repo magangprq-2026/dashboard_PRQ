@@ -2,7 +2,7 @@
 // Susunan, urutan, dan warna sel mengikuti tab "Tabel Data" di halaman /metabright (DataTable).
 import type { Dataset, Row } from "@/features/metabright/domain/types";
 import { nf, pillStyle } from "@/features/metabright/domain/utils";
-import { formatJakartaDateTime, jakartaStamp, newCanvas, toPngBytes, type Ctx, type ReportImage } from "./canvas";
+import { formatJakartaDateTime, newCanvas, toPngBytes, type Ctx, type ReportImage } from "./canvas";
 
 const PAD = 32;
 const HEADER = 112;
@@ -260,6 +260,6 @@ export function buildMetabrightImage(d: Dataset, period: string, timestamp = new
   return {
     bytes: toPngBytes(canvas),
     caption: `Tabel Impactful Award Telda (MetaBright)\n${period} | ${rows.length} telda`,
-    filename: `MetaBright-Tabel-Impactful-Award-Telda-${jakartaStamp(timestamp)}.png`,
+    filename: "Tabel Impactful Award.png",
   };
 }
