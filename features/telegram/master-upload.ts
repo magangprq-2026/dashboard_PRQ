@@ -97,7 +97,7 @@ function isBinaryWorkbook(buffer: Buffer) {
   return zip || ole;
 }
 
-function delimitedRows(buffer: Buffer): unknown[][] | null {
+export function delimitedRows(buffer: Buffer): unknown[][] | null {
   if (isBinaryWorkbook(buffer)) return null;
   const text = buffer.toString("utf8").replace(/^\uFEFF/, "");
   if (!text.slice(0, 2000).includes("#")) return null;
