@@ -155,6 +155,8 @@ const MONTH_NAMES_ID = [
   "DESEMBER",
 ] as const;
 
+const DIVIDER = "━━━━━━━━━━━━━━━━━━";
+
 function telegramConfig() {
   return {
     botToken: process.env.TELEGRAM_BOT_TOKEN ?? "",
@@ -187,9 +189,36 @@ function portalUrlFromOrigin(origin: string) {
   return configuredAppUrl() ?? origin.replace(/\/$/, "");
 }
 
+// Perintah boleh diketik dengan atau tanpa "/" dan huruf besar/kecil, mis. "start", "/Start", "Menu", "last update".
+const COMMAND_ALIASES: Record<string, string> = {
+  bantuan: "/help",
+  download: "/download",
+  halo: "/start",
+  hai: "/start",
+  hello: "/start",
+  help: "/help",
+  hi: "/start",
+  id: "/myid",
+  laporan: "/report",
+  lastupdate: "/lastupdate",
+  menu: "/start",
+  mulai: "/start",
+  myid: "/myid",
+  portal: "/portal",
+  report: "/report",
+  start: "/start",
+  status: "/status",
+  unduh: "/download",
+  update: "/lastupdate",
+  upload: "/upload",
+};
+
 function normalizeTelegramCommand(text: string) {
-  const command = text.split(/\s+/)[0]?.toLowerCase() ?? "";
-  return command.split("@")[0] ?? command;
+  const whole = text.trim().toLowerCase().replace(/^\//, "").replace(/[\s_\-]+/g, "").replace(/[.!?,]+$/, "");
+  if (COMMAND_ALIASES[whole]) return COMMAND_ALIASES[whole];
+  const first = (text.trim().split(/\s+/)[0] ?? "").toLowerCase().replace(/[.!?,]+$/, "");
+  const name = (first.startsWith("/") ? first.slice(1) : first).split("@")[0] ?? "";
+  return COMMAND_ALIASES[name] ?? (first.startsWith("/") ? `/${name}` : first);
 }
 
 function formatJakartaTimestamp(value: string | null | undefined) {
@@ -288,11 +317,17 @@ function mainMenuText(name?: string | null) {
     "Selamat datang di <b>PRIME Bot</b>",
     "<i>PRQ Reporting, Integration, Monitoring &amp; Evaluation</i>",
     "",
-    "Pantau performa dan update dashboard langsung dari Telegram:",
-    "🏠 HSI  •  📡 WMS  •  📶 LTS  •  ✨ MetaBright",
+    DIVIDER,
+    "<b>Modul</b>",
+    "🏠 HSI   •   📡 WMS   •   📶 LTS   •   ✨ MetaBright",
     "",
-    "━━━━━━━━━━━━━━",
-    "Pilih menu di bawah 👇",
+    "<b>Layanan</b>",
+    "📊 Status dan waktu update data",
+    "📈 Ringkasan performa tiap modul",
+    "📥 Unduh report (Excel / PNG)",
+    "📤 Upload data MASTER",
+    DIVIDER,
+    "Silakan pilih menu di bawah 👇",
   ].join("\n");
 }
 
@@ -445,35 +480,34 @@ async function primeStatusText() {
     );
     const lastUpdate = await latestDataUpdate();
     const lines = [
-      "📊 <b>PRIME Dashboard Status</b>",
-      "",
-      ...statuses.flatMap(({ available, product }) => [
-        `<b>${productLabel(product)}</b>`,
-        available ? "✅ Data tersedia" : "⚠️ Belum ada data",
-        "",
-      ]),
-      "━━━━━━━━━━━━━━",
-      "🗄 <b>Database</b>",
-      "✅ Connected",
+      "📊 <b>Status Dashboard PRIME</b>",
+      DIVIDER,
+      ...statuses.map(({ available, product }) => `<b>${productLabel(product)}</b>  —  ${available ? "✅ Data tersedia" : "⚠️ Belum ada data"}`),
+      DIVIDER,
+      "🗄 <b>Database</b>  —  ✅ Terhubung",
     ];
 
     if (lastUpdate) {
-      lines.push("", "🕒 <b>Update terakhir</b>", escapeHtml(lastUpdate));
+      lines.push(`🕒 <b>Update terakhir</b>  —  ${escapeHtml(lastUpdate)}`);
     }
 
     return lines.join("\n");
   } catch {
-    return [
-      "⚠️ <b>Data belum dapat dimuat</b>",
-      "",
-      "PRIME sedang mengalami kendala membaca data.",
-      "Silakan coba kembali beberapa saat lagi.",
-    ].join("\n");
+    return dataUnavailableText();
   }
 }
 
+function dataUnavailableText() {
+  return [
+    "⚠️ <b>Data belum dapat dimuat</b>",
+    "",
+    "PRIME sedang mengalami kendala saat membaca data.",
+    "Silakan coba lagi beberapa saat lagi.",
+  ].join("\n");
+}
+
 function reportMenuText() {
-  return ["📈 <b>PRIME Performance Report</b>", "", "Pilih modul yang ingin Anda lihat:"].join("\n");
+  return ["📈 <b>Report Performa PRIME</b>", DIVIDER, "Pilih modul yang ingin dilihat:"].join("\n");
 }
 
 function reportMenuKeyboard(): TelegramInlineKeyboardMarkup {
@@ -773,39 +807,31 @@ async function buildProductReport(product: ReportProduct) {
 function productReportText(report: ProductReport) {
   if (!report.available) {
     return [
-      `<b>${productLabel(report.product)}</b>`,
-      "",
-      "⚠️ Data belum tersedia untuk saat ini.",
-      "",
+      `${productIcon(report.product)} <b>${escapeHtml(report.product)} PERFORMANCE</b>`,
+      DIVIDER,
+      "⚠️ <b>Data belum tersedia</b>",
       "Silakan cek kembali setelah data dashboard diperbarui.",
-      report.lastUpdate ? ["", "🕒 <b>Last update</b>", escapeHtml(report.lastUpdate)].join("\n") : "",
+      report.lastUpdate ? `\n🕒 <b>Update terakhir</b>  —  ${escapeHtml(report.lastUpdate)}` : "",
     ]
-      .filter(Boolean)
+      .filter((line) => line !== "")
       .join("\n");
   }
 
   const lines = [`${productIcon(report.product)} <b>${escapeHtml(report.product)} PERFORMANCE</b>`];
-
-  if (report.periodLabel) {
-    lines.push(escapeHtml(report.periodLabel));
-  }
+  if (report.periodLabel) lines.push(`📅 ${escapeHtml(report.periodLabel)}`);
 
   if (report.metrics.length) {
-    lines.push("", "━━━━━━━━━━━━━━", "");
+    lines.push(DIVIDER);
     for (const metric of report.metrics) {
-      lines.push(`${metricIcon(metric.label)} <b>${escapeHtml(metric.label)}</b>`, escapeHtml(metric.value), "");
+      lines.push(`${metricIcon(metric.label)} ${escapeHtml(metric.label)}:  <b>${escapeHtml(metric.value)}</b>`);
     }
   }
 
-  if (report.lastUpdate) {
-    lines.push("━━━━━━━━━━━━━━", "", "🕒 <b>Last update</b>", escapeHtml(report.lastUpdate));
-  }
+  lines.push(DIVIDER);
+  if (report.lastUpdate) lines.push(`🕒 <b>Update terakhir</b>  —  ${escapeHtml(report.lastUpdate)}`);
+  if (report.note) lines.push(`ℹ️ <i>${escapeHtml(report.note)}</i>`);
 
-  if (report.note) {
-    lines.push("", escapeHtml(report.note));
-  }
-
-  return lines.join("\n").trimEnd();
+  return lines.join("\n");
 }
 
 function metricIcon(label: string) {
@@ -827,53 +853,56 @@ async function lastUpdateText() {
       })),
     );
 
-    const lines = ["🕒 <b>PRIME Last Update</b>", ""];
+    const lines = ["🕒 <b>Update Terakhir Data PRIME</b>", DIVIDER];
     for (const item of updates) {
-      lines.push(`<b>${productLabel(item.product)}</b>`, item.updatedAt ?? "⚠️ Belum ada data", "");
+      lines.push(`<b>${productLabel(item.product)}</b>`, item.updatedAt ? escapeHtml(item.updatedAt) : "⚠️ Belum ada data", "");
     }
 
     return lines.join("\n").trimEnd();
   } catch {
-    return [
-      "⚠️ <b>Data belum dapat dimuat</b>",
-      "",
-      "PRIME sedang mengalami kendala membaca data.",
-      "Silakan coba kembali beberapa saat lagi.",
-    ].join("\n");
+    return dataUnavailableText();
   }
 }
 
 function helpText() {
   return [
     "ℹ️ <b>Bantuan PRIME Bot</b>",
+    DIVIDER,
+    "Gunakan tombol menu untuk mengakses semua fitur. Perintah juga bisa diketik <b>dengan atau tanpa “/”</b>, misalnya <code>start</code> atau <code>/start</code>.",
     "",
-    "Anda dapat menggunakan tombol menu untuk mengakses seluruh fitur PRIME.",
-    "",
-    "Jika ingin menggunakan command:",
-    "/status",
-    "/report",
-    "/lastupdate",
-    "/upload — cara upload data MASTER",
-    "/download — unduh report (Excel atau gambar PNG)",
-    "/portal",
-    "/myid",
-    "Lihat Telegram User ID Anda",
+    "<b>Daftar perintah</b>",
+    "▫️ <code>start</code> — buka menu utama",
+    "▫️ <code>status</code> — status data tiap modul",
+    "▫️ <code>report</code> — ringkasan performa",
+    "▫️ <code>lastupdate</code> — waktu update terakhir",
+    "▫️ <code>download</code> — unduh report (Excel / PNG)",
+    "▫️ <code>upload</code> — panduan upload data MASTER",
+    "▫️ <code>portal</code> — buka PRIME Portal",
+    "▫️ <code>myid</code> — lihat Telegram User ID Anda",
   ].join("\n");
 }
 
 function portalText() {
-  return ["🌐 <b>PRIME Portal</b>", "", "Buka dashboard PRIME melalui tombol di bawah."].join("\n");
+  return ["🌐 <b>PRIME Portal</b>", DIVIDER, "Buka dashboard PRIME melalui tombol di bawah."].join("\n");
 }
 
 function myIdText(userId: string | null) {
-  return ["🪪 <b>Telegram User ID</b>", "", userId ? escapeHtml(userId) : "ID tidak tersedia pada pesan ini."].join("\n");
+  return [
+    "🪪 <b>Telegram User ID</b>",
+    DIVIDER,
+    userId ? `<code>${escapeHtml(userId)}</code>` : "ID tidak tersedia pada pesan ini.",
+    "",
+    "<i>Berikan ID ini kepada admin bila Anda perlu didaftarkan sebagai pengunggah data.</i>",
+  ].join("\n");
 }
 
 function unknownCommandText() {
   return [
-    "Menu belum dikenali.",
+    "🤔 <b>Perintah belum dikenali</b>",
     "",
-    "Pilih menu yang ingin dibuka.",
+    "Ketik <code>start</code> untuk membuka menu utama atau <code>help</code> untuk melihat daftar perintah.",
+    "",
+    "Atau pilih menu di bawah 👇",
   ].join("\n");
 }
 
@@ -977,18 +1006,23 @@ function isReportProduct(value: string): value is ReportProduct {
 function uploadHelpText() {
   return [
     "📤 <b>Upload Data MASTER</b>",
+    DIVIDER,
+    "Kirim file <b>.xlsx / .xls / .csv</b> ke chat ini sebagai <i>dokumen</i> (ikon 📎 → File). Maksimal 20 MB, dengan format kolom sama seperti upload MASTER di web.",
     "",
-    "Kirim file <b>.xlsx / .xls / .csv</b> langsung ke chat ini sebagai <i>dokumen</i> (pakai ikon 📎 → File).",
+    "🏠 <b>HSI</b> dan 📡 <b>WMS</b>",
+    "Modul dikenali otomatis dari isi file. Agar pasti, tulis <b>HSI</b> atau <b>WMS</b> di caption.",
     "",
-    "Modul dikenali otomatis dari header kolom. Agar pasti, tulis <b>HSI</b> atau <b>WMS</b> di caption (atau di nama file).",
+    "📶 <b>LTS</b> — wajib 3 file",
+    "▫️ <b>ps</b> → Sales",
+    "▫️ <b>nal</b> → CAPS",
+    "▫️ <b>reg</b> → CT0",
+    `Kirim ketiganya dalam satu rangkaian (boleh sekaligus, jeda antar file maks. ${LTS_BATCH_WINDOW_MINUTES} menit). Selama belum lengkap, bot menunggu file yang tersisa. Report dikirim otomatis setelah ketiganya diterima.`,
     "",
-    "<b>MetaBright</b>: kirim file <b>Impactful Award Telda</b> (.xls / .xlsx), mis. <i>Impactful Award Telda - 202610.xls</i>. Periode diambil dari nama file; data periode yang sama diperbarui.",
+    "✨ <b>MetaBright</b>",
+    "Kirim file <b>Impactful Award Telda</b> (.xls / .xlsx), mis. <i>Impactful Award Telda - 202610.xls</i>. Periode diambil dari nama file; data periode yang sama akan diperbarui.",
     "",
-    `<b>LTS</b>: wajib 3 file — <b>ps</b> (Sales), <b>nal</b> (CAPS), <b>reg</b> (CT0). Kirim ketiganya dalam satu rangkaian (boleh sekaligus, selisih maksimal ${LTS_BATCH_WINDOW_MINUTES} menit). Bila baru satu atau dua file, bot akan menunggu sisanya; report LTS dikirim otomatis setelah ketiganya lengkap.`,
-    "",
-    "Setelah selesai, bot menyimpan data ke dashboard dan mengirim report (gambar PNG) yang sudah diperbarui.",
-    "",
-    "Format kolom harus sama dengan upload MASTER di web. Maks. 20 MB.",
+    DIVIDER,
+    "Setelah selesai, bot menyimpan data ke dashboard dan mengirim report (PNG) terbaru.",
   ].join("\n");
 }
 
@@ -997,7 +1031,7 @@ function downloadModuleName(product: ReportProductKey) {
 }
 
 function downloadMenuText() {
-  return "📥 <b>Unduh Report</b>\n\nPilih modul:";
+  return ["📥 <b>Unduh Report</b>", DIVIDER, "Pilih modul:"].join("\n");
 }
 
 function downloadMenuKeyboard(): TelegramInlineKeyboardMarkup {
@@ -1054,13 +1088,13 @@ function afterUploadKeyboard(): TelegramInlineKeyboardMarkup {
 
 function uploadWaitingKeyboard(): TelegramInlineKeyboardMarkup {
   return {
-    inline_keyboard: [[{ callback_data: "menu:upload", text: "📤 Cara Upload" }], homeRow],
+    inline_keyboard: [[{ callback_data: "menu:upload", text: "📤 Panduan Upload" }], homeRow],
   };
 }
 
 function uploadErrorKeyboard(): TelegramInlineKeyboardMarkup {
   return {
-    inline_keyboard: [[{ callback_data: "menu:upload", text: "📤 Cara Upload" }], homeRow],
+    inline_keyboard: [[{ callback_data: "menu:upload", text: "📤 Panduan Upload" }], homeRow],
   };
 }
 
@@ -1071,7 +1105,7 @@ function notAllowedKeyboard(): TelegramInlineKeyboardMarkup {
 }
 
 function downloadFormatText(product: ReportProductKey) {
-  return [`📥 <b>Unduh Report ${downloadModuleName(product)}</b>`, "", "Pilih format file:"].join("\n");
+  return [`📥 <b>Unduh Report ${downloadModuleName(product)}</b>`, DIVIDER, "Pilih format file:"].join("\n");
 }
 
 function downloadFormatKeyboard(product: ReportProductKey): TelegramInlineKeyboardMarkup {
@@ -1094,9 +1128,10 @@ function isDownloadProduct(value: string): value is ReportProductKey {
 function notAllowedText() {
   return [
     "⛔ <b>Akses upload ditolak</b>",
-    "",
+    DIVIDER,
     "Akun Telegram Anda belum terdaftar sebagai pengunggah data.",
-    "Kirim User ID Anda (lihat /myid) ke admin untuk didaftarkan.",
+    "",
+    "Kirim <b>User ID</b> Anda (lihat menu 🪪 My ID) kepada admin untuk didaftarkan.",
   ].join("\n");
 }
 
@@ -1141,11 +1176,11 @@ async function handleDocumentUpload(botToken: string, chatId: number, message: T
 
   const fileName = document.file_name ?? "upload.xlsx";
   if (!/\.(xlsx|xlsm|xls|csv)$/i.test(fileName)) {
-    await sendTelegramMessage(botToken, chatId, "⚠️ Format file harus <b>.xlsx, .xls, atau .csv</b>.", { replyMarkup: uploadErrorKeyboard() });
+    await sendTelegramMessage(botToken, chatId, "⚠️ <b>Format file tidak didukung</b>\n\nGunakan file <b>.xlsx</b>, <b>.xls</b>, atau <b>.csv</b>.", { replyMarkup: uploadErrorKeyboard() });
     return;
   }
 
-  const working = await sendTelegramMessage(botToken, chatId, `⏳ Memproses <b>${escapeHtml(fileName)}</b>…`);
+  const working = await sendTelegramMessage(botToken, chatId, `⏳ <b>Memproses file…</b>\n<i>${escapeHtml(fileName)}</i>`);
   const workingId = working.ok ? working.messageId : undefined;
   try {
     const buffer = await downloadTelegramFile(botToken, document.file_id);
@@ -1154,33 +1189,37 @@ async function handleDocumentUpload(botToken: string, chatId: number, message: T
       const dataset = parseLtsDataset(ltsKey, fileName, buffer);
       await importLtsDataset(dataset);
       const progress = await registerLtsUpload(dataset);
+      const received = LTS_DATASET_KEYS.filter((k) => progress.present[k]).length;
       const line = LTS_DATASET_KEYS.map((k) => `${progress.present[k] ? "✅" : "⬜"} ${ltsDatasetLabel(k)}`).join("\n");
-      const head = `✅ <b>${ltsDatasetLabel(ltsKey)}</b> tersimpan: ${escapeHtml(progress.periodLabel)} (${dataset.rowCount.toLocaleString("id-ID")} baris)`;
+      const head = [
+        `✅ <b>${ltsDatasetLabel(ltsKey)}</b> berhasil disimpan`,
+        `📅 ${escapeHtml(progress.periodLabel)}  •  ${dataset.rowCount.toLocaleString("id-ID")} baris`,
+      ].join("\n");
+      const checklist = [`📶 <b>Kelengkapan data LTS</b>  (${received}/${LTS_DATASET_KEYS.length})`, line].join("\n");
       if (!progress.complete) {
         // Belum lengkap: beri tahu file mana yang masih ditunggu. Report baru dikirim setelah ketiganya masuk.
-        const remaining = progress.missing.length;
         const waiting = progress.missing.map((k) => `<b>${ltsDatasetLabel(k)}</b>`).join(" dan ");
         await sendTelegramMessage(
           botToken,
           chatId,
           [
             head,
-            "",
-            line,
-            "",
-            `⏳ <b>Menunggu ${remaining} file lagi</b>: ${waiting}.`,
-            `Report LTS dikirim otomatis setelah ketiga file (ps, nal, reg) diterima, jeda antar file maksimal ${LTS_BATCH_WINDOW_MINUTES} menit.`,
+            DIVIDER,
+            checklist,
+            DIVIDER,
+            `⏳ <b>Menunggu ${progress.missing.length} file lagi:</b> ${waiting}`,
+            `<i>Report LTS dikirim otomatis setelah ketiga file (ps, nal, reg) diterima. Jeda antar file maks. ${LTS_BATCH_WINDOW_MINUTES} menit.</i>`,
           ].join("\n"),
           { replyMarkup: uploadWaitingKeyboard() },
         );
       } else if (await claimLtsReport()) {
-        const sent = await sendReportImages(botToken, chatId, "LTS", `${head}\n\n${line}\n\nData LTS lengkap.\n`, afterUploadKeyboard());
+        const sent = await sendReportImages(botToken, chatId, "LTS", `${head}\n${DIVIDER}\n${checklist}\n${DIVIDER}\n🎉 <b>Data LTS lengkap</b>\n`, afterUploadKeyboard());
         if (sent.failed > 0) {
-          await sendTelegramMessage(botToken, chatId, "✅ Data LTS tersimpan, tetapi gambar report gagal dikirim. Coba unduh lewat menu.", { replyMarkup: afterUploadKeyboard() });
+          await sendTelegramMessage(botToken, chatId, "⚠️ <b>Data LTS tersimpan, tetapi gambar report gagal dikirim.</b>\n\nSilakan unduh lewat menu Unduh Report.", { replyMarkup: afterUploadKeyboard() });
         }
       } else {
         // Ketiga file sudah lengkap, tetapi report dikirim oleh proses lain (file dikirim bersamaan).
-        await sendTelegramMessage(botToken, chatId, `${head}\n\n${line}\n\nData LTS lengkap. Report dikirim otomatis.`, { replyMarkup: afterUploadKeyboard() });
+        await sendTelegramMessage(botToken, chatId, `${head}\n${DIVIDER}\n${checklist}\n${DIVIDER}\n🎉 <b>Data LTS lengkap.</b> Report dikirim otomatis.`, { replyMarkup: afterUploadKeyboard() });
       }
       await deleteTelegramMessage(botToken, chatId, workingId);
       return;
@@ -1201,12 +1240,12 @@ async function handleDocumentUpload(botToken: string, chatId: number, message: T
         botToken,
         chatId,
         "METABRIGHT",
-        `✅ <b>Upload MetaBright berhasil</b>: ${escapeHtml(label)} (${dataset.rows.length.toLocaleString("id-ID")} telda, ${dataset.indicators.length} indikator)${note}\n`,
+        `✅ <b>Upload MetaBright berhasil</b>\n📅 ${escapeHtml(label)}  •  ${dataset.rows.length.toLocaleString("id-ID")} telda, ${dataset.indicators.length} indikator${note}\n`,
         afterUploadKeyboard(),
       );
       await deleteTelegramMessage(botToken, chatId, workingId);
       if (sent.failed > 0) {
-        await sendTelegramMessage(botToken, chatId, `✅ Data MetaBright ${escapeHtml(label)} tersimpan, tetapi gambar report gagal dikirim. Coba unduh lewat menu.`, { replyMarkup: afterUploadKeyboard() });
+        await sendTelegramMessage(botToken, chatId, `⚠️ <b>Data MetaBright ${escapeHtml(label)} tersimpan, tetapi gambar report gagal dikirim.</b>\n\nSilakan unduh lewat menu Unduh Report.`, { replyMarkup: afterUploadKeyboard() });
       }
       return;
     }
@@ -1215,7 +1254,7 @@ async function handleDocumentUpload(botToken: string, chatId: number, message: T
       await sendTelegramMessage(
         botToken,
         chatId,
-        "⚠️ Modul tidak dikenali. Kirim ulang file dengan caption <b>HSI</b>, <b>WMS</b>, atau <b>MetaBright</b>. Untuk LTS, pastikan file ps / nal / reg dengan kolom sesuai MASTER LTS di web.",
+        ["⚠️ <b>Modul tidak dikenali</b>", "", "Kirim ulang file dengan caption <b>HSI</b>, <b>WMS</b>, atau <b>MetaBright</b>.", "Untuk LTS, kirim file <b>ps</b> / <b>nal</b> / <b>reg</b> dengan kolom sesuai MASTER LTS di web."].join("\n"),
         { replyMarkup: uploadErrorKeyboard() },
       );
       return;
@@ -1223,38 +1262,38 @@ async function handleDocumentUpload(botToken: string, chatId: number, message: T
     const rows = parseMasterRows(product, buffer);
     const summary = await importMaster(product, rows);
     const periods = summary.periods.map((p) => `${escapeHtml(p.label)} (${p.rows.toLocaleString("id-ID")} baris)`).join(", ");
-    const sent = await sendReportImages(botToken, chatId, product, `✅ <b>Upload ${product} berhasil</b>: ${periods}\n`, afterUploadKeyboard());
+    const sent = await sendReportImages(botToken, chatId, product, `✅ <b>Upload ${product} berhasil</b>\n📅 ${periods}\n`, afterUploadKeyboard());
     await deleteTelegramMessage(botToken, chatId, workingId);
     if (sent.failed > 0) {
       await sendTelegramMessage(
         botToken,
         chatId,
-        `✅ Data ${product} tersimpan (${periods}), tetapi gambar report gagal dikirim. Coba unduh lewat menu.`,
+        `⚠️ <b>Data ${product} tersimpan (${periods}), tetapi gambar report gagal dikirim.</b>\n\nSilakan unduh lewat menu Unduh Report.`,
         { replyMarkup: afterUploadKeyboard() },
       );
     }
   } catch (error) {
     await deleteTelegramMessage(botToken, chatId, workingId);
     const reason = error instanceof Error ? error.message : "Terjadi kesalahan.";
-    await sendTelegramMessage(botToken, chatId, `❌ <b>Upload gagal</b>\n${escapeHtml(reason)}`, { replyMarkup: uploadErrorKeyboard() });
+    await sendTelegramMessage(botToken, chatId, `❌ <b>Upload gagal</b>\n\n${escapeHtml(reason)}`, { replyMarkup: uploadErrorKeyboard() });
   }
 }
 
 async function handleDownload(botToken: string, chatId: number, product: ReportProductKey, format: "excel" | "image") {
-  const working = await sendTelegramMessage(botToken, chatId, `⏳ Menyiapkan report <b>${downloadModuleName(product)}</b>…`);
+  const working = await sendTelegramMessage(botToken, chatId, `⏳ <b>Menyiapkan report ${downloadModuleName(product)}…</b>`);
   const workingId = working.ok ? working.messageId : undefined;
   const retry = downloadRetryKeyboard(product, format);
   try {
     if (format === "image") {
       const sent = await sendReportImages(botToken, chatId, product, "", afterDownloadKeyboard(product));
-      if (sent.failed > 0) await sendTelegramMessage(botToken, chatId, "❌ Gambar report gagal dikirim. Coba lagi sebentar.", { replyMarkup: retry });
+      if (sent.failed > 0) await sendTelegramMessage(botToken, chatId, "❌ <b>Gambar report gagal dikirim</b>\n\nSilakan coba lagi sebentar.", { replyMarkup: retry });
     } else {
       const sent = await sendReportExcel(botToken, chatId, product, afterDownloadKeyboard(product));
-      if (!sent.ok) await sendTelegramMessage(botToken, chatId, "❌ File report gagal dikirim. Coba lagi sebentar.", { replyMarkup: retry });
+      if (!sent.ok) await sendTelegramMessage(botToken, chatId, "❌ <b>File report gagal dikirim</b>\n\nSilakan coba lagi sebentar.", { replyMarkup: retry });
     }
   } catch (error) {
     const reason = error instanceof Error ? error.message : "Terjadi kesalahan.";
-    await sendTelegramMessage(botToken, chatId, `❌ <b>Report ${downloadModuleName(product)} belum bisa dibuat</b>\n${escapeHtml(reason)}`, { replyMarkup: retry });
+    await sendTelegramMessage(botToken, chatId, `❌ <b>Report ${downloadModuleName(product)} belum bisa dibuat</b>\n\n${escapeHtml(reason)}`, { replyMarkup: retry });
   } finally {
     await deleteTelegramMessage(botToken, chatId, workingId);
   }
@@ -1353,10 +1392,10 @@ async function handleCallbackQuery(botToken: string, callbackQuery: TelegramCall
     });
   } catch {
     const text = [
-      `⚠️ <b>${escapeHtml(productValue)} Report belum dapat dimuat</b>`,
+      `⚠️ <b>Report ${escapeHtml(productValue)} belum dapat dimuat</b>`,
       "",
-      "PRIME sedang mengalami kendala membaca data.",
-      "Silakan coba kembali beberapa saat lagi.",
+      "PRIME sedang mengalami kendala saat membaca data.",
+      "Silakan coba lagi beberapa saat lagi.",
     ].join("\n");
     await sendOrEditTelegramMessage(botToken, chatId, messageId, text, {
       replyMarkup: reportActionKeyboard(productValue, baseUrl),
