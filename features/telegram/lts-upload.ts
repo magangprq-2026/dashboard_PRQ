@@ -53,29 +53,25 @@ function hintFromName(fileName: string, caption?: string): LtsDatasetKey | null 
 }
 
 // File MASTER WMS memakai kolom yang sama persis dengan file PS (Sales) LTS: keduanya ekspor Tableau dengan 117+ kolom
-// yang sama, sehingga header saja tidak bisa membedakannya. Bedanya ada di isi: file WMS hanya berisi produk WMS,
-// sedangkan PS LTS memuat HSI (BASIC/BISNIS) juga.
-const EXPLICIT_PS_HINT = /(^|[^a-z])(ps|sales)([^a-z]|$)|t_ps|sales_master/;
+// yang sama, sehingga header saja tidak bisa membedakannya. Bedanya ada di ISI: file WMS hanya berisi produk WMS,
+// sedangkan PS LTS memuat HSI (BASIC/BISNIS) juga. Karena itu isi data yang menentukan, bukan nama file
+// (nama file bisa saja diganti pengguna, mis. WMESS.csv -> T_PS_....csv).
 const WMS_NAME_HINT = /wm+e?s+/; // wms, wmes, wmess, ...
 
 /**
  * File yang header-nya cocok dengan Sales LTS, tetapi sebenarnya MASTER WMS. Urutan keputusan:
- *   1. Nama file/caption jelas menyebut ps/sales -> LTS (Sales).
- *   2. Nama file/caption menyebut wms -> WMS.
- *   3. Tanpa petunjuk nama: bila kolom PRODUK terisi dan tidak ada satu pun baris HSI -> WMS; selain itu LTS.
+ *   1. Kolom PRODUK terisi dan TIDAK ada satu pun baris HSI -> WMS (apa pun nama file/caption-nya).
+ *   2. Kolom PRODUK terisi dan ada baris HSI -> LTS (Sales).
+ *   3. Kolom PRODUK tidak ada/kosong: nama file/caption menyebut wms -> WMS; selain itu LTS.
  */
 function isWmsMasterFile(fileName: string, caption: string | undefined, buffer: Buffer): boolean {
   if (!hasWmsMasterHeader(buffer)) return false;
-  const hint = `${caption ?? ""} ${fileName}`.toLowerCase();
-  if (EXPLICIT_PS_HINT.test(hint)) return false;
-  if (WMS_NAME_HINT.test(hint)) return true;
-  const produk = columnValues(buffer, "PRODUK");
-  if (!produk) return false;
-  const filled = produk.filter((v) => v !== "");
-  return filled.length > 0 && !filled.some((v) => /HSI/i.test(v));
+  const produk = (columnValues(buffer, "PRODUK") ?? []).filter((v) => v !== "");
+  if (produk.length > 0) return !produk.some((v) => /HSI/i.test(v));
+  return WMS_NAME_HINT.test(`${caption ?? ""} ${fileName}`.toLowerCase());
 }
 
-/** Header kolom menang atas caption/nama file (mis. caption "WMS" pada file PS), kecuali file MASTER WMS yang berformat sama dengan PS. Null = bukan data LTS. */
+/** Header kolom menang atas caption/nama file , kecuali file MASTER WMS (tanpa baris HSI) yang berformat sama dengan PS. Null = bukan data LTS. */
 export function detectLtsDataset(fileName: string, caption: string | undefined, buffer: Buffer): LtsDatasetKey | null {
   let matches: LtsDatasetKey[] = [];
   try {

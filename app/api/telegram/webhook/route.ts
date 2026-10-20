@@ -156,6 +156,8 @@ const MONTH_NAMES_ID = [
 ] as const;
 
 const DIVIDER = "━━━━━━━━━━━━━━━━━━";
+// Garis pemisah dengan jarak di atas dan bawahnya.
+const SECTION = `\n${DIVIDER}\n`;
 
 function telegramConfig() {
   return {
@@ -314,19 +316,25 @@ function mainMenuText(name?: string | null) {
   const greeting = name ? `👋 <b>Halo, ${escapeHtml(name)}!</b>` : "👋 <b>Halo!</b>";
   return [
     greeting,
+    "",
     "Selamat datang di <b>PRIME Bot</b>",
     "<i>PRQ Reporting, Integration, Monitoring &amp; Evaluation</i>",
-    "",
-    DIVIDER,
+    SECTION,
     "<b>Modul</b>",
+    "",
     "🏠 HSI   •   📡 WMS   •   📶 LTS   •   ✨ MetaBright",
     "",
+    "",
     "<b>Layanan</b>",
+    "",
     "📊 Status dan waktu update data",
+    "",
     "📈 Ringkasan performa tiap modul",
+    "",
     "📥 Unduh report (Excel / PNG)",
+    "",
     "📤 Upload data MASTER",
-    DIVIDER,
+    SECTION,
     "Silakan pilih menu di bawah 👇",
   ].join("\n");
 }
@@ -481,14 +489,20 @@ async function primeStatusText() {
     const lastUpdate = await latestDataUpdate();
     const lines = [
       "📊 <b>Status Dashboard PRIME</b>",
+      SECTION,
+      ...statuses.flatMap(({ available, product }) => [
+        `<b>${productLabel(product)}</b>`,
+        available ? "✅ Data tersedia" : "⚠️ Belum ada data",
+        "",
+      ]),
       DIVIDER,
-      ...statuses.map(({ available, product }) => `<b>${productLabel(product)}</b>  —  ${available ? "✅ Data tersedia" : "⚠️ Belum ada data"}`),
-      DIVIDER,
-      "🗄 <b>Database</b>  —  ✅ Terhubung",
+      "",
+      "🗄 <b>Database</b>",
+      "✅ Terhubung",
     ];
 
     if (lastUpdate) {
-      lines.push(`🕒 <b>Update terakhir</b>  —  ${escapeHtml(lastUpdate)}`);
+      lines.push("", "🕒 <b>Update terakhir</b>", escapeHtml(lastUpdate));
     }
 
     return lines.join("\n");
@@ -507,7 +521,7 @@ function dataUnavailableText() {
 }
 
 function reportMenuText() {
-  return ["📈 <b>Report Performa PRIME</b>", DIVIDER, "Pilih modul yang ingin dilihat:"].join("\n");
+  return ["📈 <b>Report Performa PRIME</b>", SECTION, "Pilih modul yang ingin dilihat:"].join("\n");
 }
 
 function reportMenuKeyboard(): TelegramInlineKeyboardMarkup {
@@ -808,30 +822,33 @@ function productReportText(report: ProductReport) {
   if (!report.available) {
     return [
       `${productIcon(report.product)} <b>${escapeHtml(report.product)} PERFORMANCE</b>`,
-      DIVIDER,
+      SECTION,
       "⚠️ <b>Data belum tersedia</b>",
+      "",
       "Silakan cek kembali setelah data dashboard diperbarui.",
-      report.lastUpdate ? `\n🕒 <b>Update terakhir</b>  —  ${escapeHtml(report.lastUpdate)}` : "",
+      report.lastUpdate ? `\n🕒 <b>Update terakhir</b>\n${escapeHtml(report.lastUpdate)}` : "",
     ]
-      .filter((line) => line !== "")
-      .join("\n");
+      .filter((line, index, all) => line !== "" || all[index - 1] !== "")
+      .join("\n")
+      .trimEnd();
   }
 
   const lines = [`${productIcon(report.product)} <b>${escapeHtml(report.product)} PERFORMANCE</b>`];
-  if (report.periodLabel) lines.push(`📅 ${escapeHtml(report.periodLabel)}`);
+  if (report.periodLabel) lines.push("", `📅 ${escapeHtml(report.periodLabel)}`);
 
   if (report.metrics.length) {
-    lines.push(DIVIDER);
-    for (const metric of report.metrics) {
+    lines.push(SECTION);
+    report.metrics.forEach((metric, index) => {
+      if (index > 0) lines.push("");
       lines.push(`${metricIcon(metric.label)} ${escapeHtml(metric.label)}:  <b>${escapeHtml(metric.value)}</b>`);
-    }
+    });
   }
 
-  lines.push(DIVIDER);
-  if (report.lastUpdate) lines.push(`🕒 <b>Update terakhir</b>  —  ${escapeHtml(report.lastUpdate)}`);
-  if (report.note) lines.push(`ℹ️ <i>${escapeHtml(report.note)}</i>`);
+  lines.push(SECTION);
+  if (report.lastUpdate) lines.push(`🕒 <b>Update terakhir</b>`, escapeHtml(report.lastUpdate));
+  if (report.note) lines.push("", `ℹ️ <i>${escapeHtml(report.note)}</i>`);
 
-  return lines.join("\n");
+  return lines.join("\n").trimEnd();
 }
 
 function metricIcon(label: string) {
@@ -841,7 +858,7 @@ function metricIcon(label: string) {
   if (normalized.includes("top") || normalized.includes("best")) return "🏆";
   if (normalized.includes("target")) return "📌";
   if (normalized.includes("realisasi") || normalized.includes("sales") || normalized.includes("ct0") || normalized.includes("caps")) return "📈";
-  return "•";
+  return "🔹";
 }
 
 async function lastUpdateText() {
@@ -853,7 +870,7 @@ async function lastUpdateText() {
       })),
     );
 
-    const lines = ["🕒 <b>Update Terakhir Data PRIME</b>", DIVIDER];
+    const lines = ["🕒 <b>Update Terakhir Data PRIME</b>", SECTION];
     for (const item of updates) {
       lines.push(`<b>${productLabel(item.product)}</b>`, item.updatedAt ? escapeHtml(item.updatedAt) : "⚠️ Belum ada data", "");
     }
@@ -867,29 +884,37 @@ async function lastUpdateText() {
 function helpText() {
   return [
     "ℹ️ <b>Bantuan PRIME Bot</b>",
-    DIVIDER,
+    SECTION,
     "Gunakan tombol menu untuk mengakses semua fitur. Perintah juga bisa diketik <b>dengan atau tanpa “/”</b>, misalnya <code>start</code> atau <code>/start</code>.",
-    "",
+    SECTION,
     "<b>Daftar perintah</b>",
+    "",
     "▫️ <code>start</code> — buka menu utama",
+    "",
     "▫️ <code>status</code> — status data tiap modul",
+    "",
     "▫️ <code>report</code> — ringkasan performa",
+    "",
     "▫️ <code>lastupdate</code> — waktu update terakhir",
+    "",
     "▫️ <code>download</code> — unduh report (Excel / PNG)",
+    "",
     "▫️ <code>upload</code> — panduan upload data MASTER",
+    "",
     "▫️ <code>portal</code> — buka PRIME Portal",
+    "",
     "▫️ <code>myid</code> — lihat Telegram User ID Anda",
   ].join("\n");
 }
 
 function portalText() {
-  return ["🌐 <b>PRIME Portal</b>", DIVIDER, "Buka dashboard PRIME melalui tombol di bawah."].join("\n");
+  return ["🌐 <b>PRIME Portal</b>", SECTION, "Buka dashboard PRIME melalui tombol di bawah."].join("\n");
 }
 
 function myIdText(userId: string | null) {
   return [
     "🪪 <b>Telegram User ID</b>",
-    DIVIDER,
+    SECTION,
     userId ? `<code>${escapeHtml(userId)}</code>` : "ID tidak tersedia pada pesan ini.",
     "",
     "<i>Berikan ID ini kepada admin bila Anda perlu didaftarkan sebagai pengunggah data.</i>",
@@ -1006,22 +1031,29 @@ function isReportProduct(value: string): value is ReportProduct {
 function uploadHelpText() {
   return [
     "📤 <b>Upload Data MASTER</b>",
-    DIVIDER,
-    "Kirim file <b>.xlsx / .xls / .csv</b> ke chat ini sebagai <i>dokumen</i> (ikon 📎 → File). Maksimal 20 MB, dengan format kolom sama seperti upload MASTER di web.",
+    SECTION,
+    "Kirim file <b>.xlsx / .xls / .csv</b> ke chat ini sebagai <i>dokumen</i> (ikon 📎 → File).",
     "",
+    "Maksimal 20 MB, dengan format kolom sama seperti upload MASTER di web.",
+    SECTION,
     "🏠 <b>HSI</b> dan 📡 <b>WMS</b>",
+    "",
     "Modul dikenali otomatis dari isi file. Agar pasti, tulis <b>HSI</b> atau <b>WMS</b> di caption.",
     "",
-    "📶 <b>LTS</b> — wajib 3 file",
+    "",
+    "📶 <b>LTS</b>  —  wajib 3 file",
+    "",
     "▫️ <b>ps</b> → Sales",
     "▫️ <b>nal</b> → CAPS",
     "▫️ <b>reg</b> → CT0",
+    "",
     `Kirim ketiganya dalam satu rangkaian (boleh sekaligus, jeda antar file maks. ${LTS_BATCH_WINDOW_MINUTES} menit). Selama belum lengkap, bot menunggu file yang tersisa. Report dikirim otomatis setelah ketiganya diterima.`,
     "",
-    "✨ <b>MetaBright</b>",
-    "Kirim file <b>Impactful Award Telda</b> (.xls / .xlsx), mis. <i>Impactful Award Telda - 202610.xls</i>. Periode diambil dari nama file; data periode yang sama akan diperbarui.",
     "",
-    DIVIDER,
+    "✨ <b>MetaBright</b>",
+    "",
+    "Kirim file <b>Impactful Award Telda</b> (.xls / .xlsx), mis. <i>Impactful Award Telda - 202610.xls</i>. Periode diambil dari nama file; data periode yang sama akan diperbarui.",
+    SECTION,
     "Setelah selesai, bot menyimpan data ke dashboard dan mengirim report (PNG) terbaru.",
   ].join("\n");
 }
@@ -1031,7 +1063,7 @@ function downloadModuleName(product: ReportProductKey) {
 }
 
 function downloadMenuText() {
-  return ["📥 <b>Unduh Report</b>", DIVIDER, "Pilih modul:"].join("\n");
+  return ["📥 <b>Unduh Report</b>", SECTION, "Pilih modul:"].join("\n");
 }
 
 function downloadMenuKeyboard(): TelegramInlineKeyboardMarkup {
@@ -1105,7 +1137,7 @@ function notAllowedKeyboard(): TelegramInlineKeyboardMarkup {
 }
 
 function downloadFormatText(product: ReportProductKey) {
-  return [`📥 <b>Unduh Report ${downloadModuleName(product)}</b>`, DIVIDER, "Pilih format file:"].join("\n");
+  return [`📥 <b>Unduh Report ${downloadModuleName(product)}</b>`, SECTION, "Pilih format file:"].join("\n");
 }
 
 function downloadFormatKeyboard(product: ReportProductKey): TelegramInlineKeyboardMarkup {
@@ -1128,7 +1160,7 @@ function isDownloadProduct(value: string): value is ReportProductKey {
 function notAllowedText() {
   return [
     "⛔ <b>Akses upload ditolak</b>",
-    DIVIDER,
+    SECTION,
     "Akun Telegram Anda belum terdaftar sebagai pengunggah data.",
     "",
     "Kirim <b>User ID</b> Anda (lihat menu 🪪 My ID) kepada admin untuk didaftarkan.",
@@ -1190,12 +1222,18 @@ async function handleDocumentUpload(botToken: string, chatId: number, message: T
       await importLtsDataset(dataset);
       const progress = await registerLtsUpload(dataset);
       const received = LTS_DATASET_KEYS.filter((k) => progress.present[k]).length;
-      const line = LTS_DATASET_KEYS.map((k) => `${progress.present[k] ? "✅" : "⬜"} ${ltsDatasetLabel(k)}`).join("\n");
+      const checklist = [
+        `📶 <b>Kelengkapan data LTS</b>  (${received}/${LTS_DATASET_KEYS.length})`,
+        "",
+        ...LTS_DATASET_KEYS.flatMap((k) => [`${progress.present[k] ? "✅" : "⬜"} ${ltsDatasetLabel(k)}`, ""]),
+      ]
+        .join("\n")
+        .trimEnd();
       const head = [
         `✅ <b>${ltsDatasetLabel(ltsKey)}</b> berhasil disimpan`,
+        "",
         `📅 ${escapeHtml(progress.periodLabel)}  •  ${dataset.rowCount.toLocaleString("id-ID")} baris`,
       ].join("\n");
-      const checklist = [`📶 <b>Kelengkapan data LTS</b>  (${received}/${LTS_DATASET_KEYS.length})`, line].join("\n");
       if (!progress.complete) {
         // Belum lengkap: beri tahu file mana yang masih ditunggu. Report baru dikirim setelah ketiganya masuk.
         const waiting = progress.missing.map((k) => `<b>${ltsDatasetLabel(k)}</b>`).join(" dan ");
@@ -1204,22 +1242,25 @@ async function handleDocumentUpload(botToken: string, chatId: number, message: T
           chatId,
           [
             head,
-            DIVIDER,
+            SECTION,
             checklist,
-            DIVIDER,
-            `⏳ <b>Menunggu ${progress.missing.length} file lagi:</b> ${waiting}`,
+            SECTION,
+            `⏳ <b>Menunggu ${progress.missing.length} file lagi</b>`,
+            "",
+            waiting,
+            "",
             `<i>Report LTS dikirim otomatis setelah ketiga file (ps, nal, reg) diterima. Jeda antar file maks. ${LTS_BATCH_WINDOW_MINUTES} menit.</i>`,
           ].join("\n"),
           { replyMarkup: uploadWaitingKeyboard() },
         );
       } else if (await claimLtsReport()) {
-        const sent = await sendReportImages(botToken, chatId, "LTS", `${head}\n${DIVIDER}\n${checklist}\n${DIVIDER}\n🎉 <b>Data LTS lengkap</b>\n`, afterUploadKeyboard());
+        const sent = await sendReportImages(botToken, chatId, "LTS", `${head}\n${SECTION}\n${checklist}\n${SECTION}\n🎉 <b>Data LTS lengkap</b>\n\n`, afterUploadKeyboard());
         if (sent.failed > 0) {
           await sendTelegramMessage(botToken, chatId, "⚠️ <b>Data LTS tersimpan, tetapi gambar report gagal dikirim.</b>\n\nSilakan unduh lewat menu Unduh Report.", { replyMarkup: afterUploadKeyboard() });
         }
       } else {
         // Ketiga file sudah lengkap, tetapi report dikirim oleh proses lain (file dikirim bersamaan).
-        await sendTelegramMessage(botToken, chatId, `${head}\n${DIVIDER}\n${checklist}\n${DIVIDER}\n🎉 <b>Data LTS lengkap.</b> Report dikirim otomatis.`, { replyMarkup: afterUploadKeyboard() });
+        await sendTelegramMessage(botToken, chatId, `${head}\n${SECTION}\n${checklist}\n${SECTION}\n🎉 <b>Data LTS lengkap.</b> Report dikirim otomatis.`, { replyMarkup: afterUploadKeyboard() });
       }
       await deleteTelegramMessage(botToken, chatId, workingId);
       return;
@@ -1240,7 +1281,7 @@ async function handleDocumentUpload(botToken: string, chatId: number, message: T
         botToken,
         chatId,
         "METABRIGHT",
-        `✅ <b>Upload MetaBright berhasil</b>\n📅 ${escapeHtml(label)}  •  ${dataset.rows.length.toLocaleString("id-ID")} telda, ${dataset.indicators.length} indikator${note}\n`,
+        `✅ <b>Upload MetaBright berhasil</b>\n\n📅 ${escapeHtml(label)}  •  ${dataset.rows.length.toLocaleString("id-ID")} telda, ${dataset.indicators.length} indikator${note}\n\n`,
         afterUploadKeyboard(),
       );
       await deleteTelegramMessage(botToken, chatId, workingId);
@@ -1262,7 +1303,7 @@ async function handleDocumentUpload(botToken: string, chatId: number, message: T
     const rows = parseMasterRows(product, buffer);
     const summary = await importMaster(product, rows);
     const periods = summary.periods.map((p) => `${escapeHtml(p.label)} (${p.rows.toLocaleString("id-ID")} baris)`).join(", ");
-    const sent = await sendReportImages(botToken, chatId, product, `✅ <b>Upload ${product} berhasil</b>\n📅 ${periods}\n`, afterUploadKeyboard());
+    const sent = await sendReportImages(botToken, chatId, product, `✅ <b>Upload ${product} berhasil</b>\n\n📅 ${periods}\n\n`, afterUploadKeyboard());
     await deleteTelegramMessage(botToken, chatId, workingId);
     if (sent.failed > 0) {
       await sendTelegramMessage(
