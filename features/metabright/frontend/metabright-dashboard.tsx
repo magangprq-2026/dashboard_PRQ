@@ -1,5 +1,7 @@
 "use client";
 
+import { ArrowLeft } from "lucide-react";
+import Image from "next/image";
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { Dataset, Tab } from "@/features/metabright/domain/types";
@@ -253,40 +255,45 @@ export function MetabrightDashboard({ permissions = NO_ACCESS }: { permissions?:
     <main className="metabright-page wrap">
       {/* Header */}
       <header className="top">
-        <Link className="back-home" href="/portal">
-          <span aria-hidden="true">←</span>
-          Back to Home
-        </Link>
-        <div className="brand">
-          <div className="logo">MB</div>
-          <div>
-            <p className="eyebrow">PRIME • METABRIGHT</p>
-            <h2>MetaBright</h2>
-            <p>{d ? `${d.rows.length} telda · ${d.indicators.length} indikator` : "Belum ada data"}</p>
+        <div className="top-in">
+          <div className="brand">
+            <div className="logo">
+              <Image alt="MetaBright" height={44} priority src="/module-covers/metabright-logo-clean.png" width={134} />
+            </div>
+            <div>
+              <h2>Reporting MetaBright</h2>
+              <p>{d ? `${d.rows.length} telda · ${d.indicators.length} indikator` : "Belum ada data"}</p>
+            </div>
           </div>
+          <nav aria-label="Pilih tampilan">
+            <Link className="back-home" href="/portal">
+              <ArrowLeft className="h-4 w-4" aria-hidden="true" />
+              Portal
+            </Link>
+            <span className="nav-sep" aria-hidden="true" />
+            <div className="seg">
+              <button className={"tabbtn" + (tab === "data" ? " on" : "")} onClick={() => setTab("data")}>
+                <Icon name="data" />Tabel Data
+              </button>
+              <button className={"tabbtn" + (tab === "viz" ? " on" : "")} onClick={() => setTab("viz")}>
+                <Icon name="bars" />Visualisasi
+              </button>
+            </div>
+            <span className="nav-sep" aria-hidden="true" />
+            <button className="nav-dl" onClick={() => (d ? setDlOpen(true) : flash("Belum ada data untuk diunduh.", "err"))}>
+              <Icon name="download" />Unduh
+            </button>
+          </nav>
         </div>
-        <nav aria-label="Pilih tampilan">
-          <div className="seg">
-            <button className={"tabbtn" + (tab === "data" ? " on" : "")} onClick={() => setTab("data")}>
-              <Icon name="data" />Tabel Data
-            </button>
-            <button className={"tabbtn" + (tab === "viz" ? " on" : "")} onClick={() => setTab("viz")}>
-              <Icon name="bars" />Visualisasi
-            </button>
-          </div>
-          <div className="dl">
-            <button className="btn gh" onClick={() => (d ? setDlOpen(true) : flash("Belum ada data untuk diunduh.", "err"))}>
-              <Icon name="download" />Unduh data / visualisasi
-            </button>
-          </div>
-        </nav>
       </header>
 
+      <div className="mbody">
       {/* Hero + filter */}
       <section className="card hero">
         <div className="in">
           <div className="head">
             <div className="ttl">
+              <p className="hero-eyebrow"><Icon name="target" />PRIME • METABRIGHT</p>
               <h1>Impactful Award Telda<span className="pp">{cur ?? ""}</span></h1>
               <p className="hsub">Monitoring performa dan pencapaian Telda berdasarkan indikator MetaBright.</p>
               {d && ind && (
@@ -500,6 +507,8 @@ export function MetabrightDashboard({ permissions = NO_ACCESS }: { permissions?:
         <div className="cpf">
           Dibuat {new Date().toLocaleDateString("id-ID", { day: "numeric", month: "long", year: "numeric" })} · Dashboard Impactful Award Telda
         </div>
+      </div>
+
       </div>
 
       <MasterUnlockModal
