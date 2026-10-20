@@ -213,7 +213,7 @@ export function ReportTable<R>({ cols, rows, theme, total, maxHeight = "72vh" }:
   while (index < cols.length) {
     const col = cols[index];
     const sticky = index === 0;
-    const stickyLeft: CSSProperties = sticky ? { left: 0, zIndex: 30 } : { zIndex: 20 };
+    const stickyLeft: CSSProperties = sticky ? { boxShadow: "6px 0 10px -6px rgba(0,0,0,0.45)", left: 0, zIndex: 30 } : { zIndex: 20 };
     if (col.group) {
       let span = 1;
       while (cols[index + span]?.group === col.group) span += 1;
@@ -270,7 +270,7 @@ export function ReportTable<R>({ cols, rows, theme, total, maxHeight = "72vh" }:
       className="overflow-auto"
       style={{ background: theme.canvasBg, fontFamily: FONT, maxHeight }}
     >
-      <div style={{ border: `1.5px solid ${theme.ink}`, borderRadius: 10, margin: "26px auto", overflow: "hidden", width: "fit-content", maxWidth: "none" }}>
+      <div style={{ border: `1.5px solid ${theme.ink}`, borderRadius: 10, margin: "26px auto", overflow: "clip", width: "fit-content", maxWidth: "none" }}>
         <table style={{ borderCollapse: "separate", borderSpacing: 0, tableLayout: "fixed", width }}>
           <colgroup>
             {cols.map((col, i) => (
@@ -308,7 +308,7 @@ export function ReportTable<R>({ cols, rows, theme, total, maxHeight = "72vh" }:
                           textOverflow: "ellipsis",
                           verticalAlign: "middle",
                           whiteSpace: "nowrap",
-                          ...(colIndex === 0 ? { left: 0, paddingLeft: 12, position: "sticky", zIndex: 10 } : {}),
+                          ...(colIndex === 0 ? { boxShadow: "6px 0 10px -6px rgba(0,0,0,0.3)", left: 0, paddingLeft: 12, position: "sticky", zIndex: 10 } : {}),
                         }}
                       >
                         {style.text}
