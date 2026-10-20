@@ -18,7 +18,7 @@ import {
   detectLtsDataset,
   importLtsDataset,
   ltsDatasetLabel,
-  ltsProgress,
+  registerLtsUpload,
   LTS_BATCH_WINDOW_MINUTES,
   LTS_DATASET_KEYS,
   parseLtsDataset,
@@ -1153,7 +1153,7 @@ async function handleDocumentUpload(botToken: string, chatId: number, message: T
     if (ltsKey) {
       const dataset = parseLtsDataset(ltsKey, fileName, buffer);
       await importLtsDataset(dataset);
-      const progress = await ltsProgress(dataset.periodKey, dataset.uploadedAt);
+      const progress = await registerLtsUpload(dataset);
       const line = LTS_DATASET_KEYS.map((k) => `${progress.present[k] ? "✅" : "⬜"} ${ltsDatasetLabel(k)}`).join("\n");
       const head = `✅ <b>${ltsDatasetLabel(ltsKey)}</b> tersimpan: ${escapeHtml(progress.periodLabel)} (${dataset.rowCount.toLocaleString("id-ID")} baris)`;
       if (!progress.complete) {
@@ -1169,11 +1169,11 @@ async function handleDocumentUpload(botToken: string, chatId: number, message: T
             line,
             "",
             `⏳ <b>Menunggu ${remaining} file lagi</b>: ${waiting}.`,
-            `Report LTS dikirim otomatis setelah ketiga file (ps, nal, reg) diterima, maksimal selisih ${LTS_BATCH_WINDOW_MINUTES} menit.`,
+            `Report LTS dikirim otomatis setelah ketiga file (ps, nal, reg) diterima, jeda antar file maksimal ${LTS_BATCH_WINDOW_MINUTES} menit.`,
           ].join("\n"),
           { replyMarkup: uploadWaitingKeyboard() },
         );
-      } else if (progress.batchKey && (await claimLtsReport(progress.batchKey))) {
+      } else if (await claimLtsReport()) {
         const sent = await sendReportImages(botToken, chatId, "LTS", `${head}\n\n${line}\n\nData LTS lengkap.\n`, afterUploadKeyboard());
         if (sent.failed > 0) {
           await sendTelegramMessage(botToken, chatId, "✅ Data LTS tersimpan, tetapi gambar report gagal dikirim. Coba unduh lewat menu.", { replyMarkup: afterUploadKeyboard() });

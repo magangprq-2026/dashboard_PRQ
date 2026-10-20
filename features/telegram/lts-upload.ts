@@ -2,7 +2,7 @@
 // Logika baca/validasi sama dengan upload MASTER LTS di website.
 import { neon } from "@neondatabase/serverless";
 import * as XLSX from "xlsx";
-import { dbConfig, dbGet } from "@/features/shared/backend/database/db";
+import { dbConfig } from "@/features/shared/backend/database/db";
 import {
   ltsDatasetDefinitions,
   periodKeyFromLtsRows,
@@ -131,13 +131,20 @@ export async function importLtsDataset(dataset: LtsUploadedDataset) {
   }
 }
 
-// Ketiga file LTS (ps, nal, reg) harus dikirim dalam satu rangkaian upload. Data lama di database (mis. dari upload
-// web atau kiriman kemarin) TIDAK dihitung sebagai "sudah lengkap": file hanya dianggap bagian dari rangkaian ini bila
-// waktu upload-nya berdekatan (default 30 menit, bisa diubah lewat env LTS_BATCH_WINDOW_MINUTES).
+// Ketiga file LTS (ps, nal, reg) harus dikirim dalam satu rangkaian upload.
+// Kelengkapan TIDAK dihitung dari data yang sudah ada di database (data lama dari upload web, kiriman kemarin, atau
+// percobaan sebelumnya tidak boleh membuat satu file dianggap "lengkap"). Sebagai gantinya, setiap file yang masuk
+// dicatat ke "rangkaian" (payload.ltsBatch) dan report hanya dikirim ketika ketiga file ada di rangkaian yang SAMA.
+//
+// Rangkaian baru dimulai (hanya berisi file yang baru masuk) bila salah satu terjadi:
+//   - belum ada rangkaian, atau rangkaian sebelumnya sudah dikirim report-nya;
+//   - jenis file yang sama dikirim lagi (mis. PS dikirim dua kali);
+//   - periodenya berbeda;
+//   - jeda sejak file terakhir lebih dari LTS_BATCH_WINDOW_MINUTES (default 30 menit).
 export const LTS_BATCH_WINDOW_MINUTES = Math.max(1, Number(process.env.LTS_BATCH_WINDOW_MINUTES) || 30);
 
 export type LtsProgress = {
-  /** Kunci unik rangkaian upload yang lengkap (dipakai agar report hanya dikirim sekali). Null bila belum lengkap. */
+  /** Kunci unik rangkaian yang lengkap (agar report hanya dikirim sekali). Null bila belum lengkap. */
   batchKey: string | null;
   complete: boolean;
   missing: LtsDatasetKey[];
@@ -146,30 +153,17 @@ export type LtsProgress = {
   present: Record<LtsDatasetKey, boolean>;
 };
 
-type LtsArchive = Partial<Record<string, Record<string, { uploadedAt?: unknown } | undefined> | undefined>>;
+type LtsBatch = { periodKey?: unknown; received?: Record<string, unknown> | null; startedAt?: unknown };
 
-/** Murni (tanpa database): hitung kelengkapan rangkaian upload relatif terhadap waktu upload file yang baru masuk. */
-export function computeLtsProgress(
-  archive: LtsArchive,
-  periodKey: string,
-  referenceIso: string,
-  windowMs = LTS_BATCH_WINDOW_MINUTES * 60_000,
-): LtsProgress {
-  const parsedReference = Date.parse(referenceIso);
-  const reference = Number.isNaN(parsedReference) ? Date.now() : parsedReference;
-  const stamps = {} as Record<LtsDatasetKey, string | null>;
+/** Murni (tanpa database): ubah isi rangkaian menjadi status kelengkapan. */
+export function progressFromLtsBatch(batch: LtsBatch | null | undefined, periodKey: string): LtsProgress {
+  const received = batch?.received && typeof batch.received === "object" ? batch.received : {};
   const present = {} as Record<LtsDatasetKey, boolean>;
-  for (const key of LTS_DATASET_KEYS) {
-    const uploadedAt = archive[key]?.[periodKey]?.uploadedAt;
-    const time = typeof uploadedAt === "string" ? Date.parse(uploadedAt) : Number.NaN;
-    const inBatch = !Number.isNaN(time) && Math.abs(reference - time) <= windowMs;
-    present[key] = inBatch;
-    stamps[key] = inBatch ? (uploadedAt as string) : null;
-  }
+  for (const key of LTS_DATASET_KEYS) present[key] = typeof received[key] === "string";
   const missing = LTS_DATASET_KEYS.filter((key) => !present[key]);
   const complete = missing.length === 0;
   return {
-    batchKey: complete ? `${periodKey}|${LTS_DATASET_KEYS.map((key) => stamps[key]).join("|")}` : null,
+    batchKey: complete ? `${periodKey}|${String(batch?.startedAt ?? "")}|${LTS_DATASET_KEYS.map((key) => String(received[key])).join("|")}` : null,
     complete,
     missing,
     periodKey,
@@ -178,34 +172,59 @@ export function computeLtsProgress(
   };
 }
 
-/** Status rangkaian upload Sales/CAPS/CT0 untuk periode tertentu (dibaca dari database). */
-export async function ltsProgress(periodKey: string, referenceIso: string): Promise<LtsProgress> {
-  const result = await dbGet<{ payload?: { datasetArchive?: LtsArchive } }[]>(
-    process.env.DASHBOARD_STATE_TABLE || "dashboard_state",
-    "select=payload&key=eq.lts&limit=1",
-  );
-  const archive = result.data?.[0]?.payload?.datasetArchive ?? {};
-  return computeLtsProgress(archive, periodKey, referenceIso);
+/**
+ * Catat file yang baru disimpan ke rangkaian upload (SATU statement SQL atomik, row terkunci selama update, jadi 3 file
+ * yang diproses paralel tidak saling menimpa dan hanya proses terakhir yang melihat rangkaian lengkap).
+ * Harus dipanggil SETELAH importLtsDataset (baris "lts" sudah ada).
+ */
+export async function registerLtsUpload(dataset: LtsUploadedDataset): Promise<LtsProgress> {
+  const config = dbConfig();
+  if (!config) throw new Error("Database belum dikonfigurasi (DATABASE_URL).");
+  const table = config.table;
+  if (!/^[a-z_][a-z0-9_]*$/.test(table)) throw new Error("Nama tabel database tidak valid.");
+  const sql = neon(config.url);
+  const batch = `payload->'ltsBatch'`;
+  const text =
+    `update public."${table}" set updated_at = now(), payload = jsonb_set(coalesce(payload, '{}'::jsonb), '{ltsBatch}', ` +
+    `case when jsonb_typeof(${batch}) is distinct from 'object' ` +
+    `or ${batch}->>'periodKey' is distinct from $1::text ` +
+    `or coalesce(${batch}->>'reported', '') = 'true' ` +
+    `or jsonb_exists(${batch}->'received', $2::text) ` +
+    `or ($3::timestamptz - coalesce((${batch}->>'lastAt')::timestamptz, '-infinity'::timestamptz)) > make_interval(mins => $4::int) ` +
+    `then jsonb_build_object('periodKey', $1::text, 'startedAt', $3::text, 'lastAt', $3::text, 'reported', false, 'received', jsonb_build_object($2::text, $3::text)) ` +
+    `else jsonb_set(jsonb_set(${batch}, array['received', $2::text], to_jsonb($3::text)), '{lastAt}', to_jsonb($3::text)) end) ` +
+    `where key = 'lts' returning ${batch} as batch`;
+  let rows: unknown[];
+  try {
+    const result = (await sql.query(text, [dataset.periodKey, dataset.datasetKey, new Date().toISOString(), LTS_BATCH_WINDOW_MINUTES])) as unknown;
+    rows = Array.isArray(result) ? result : ((result as { rows?: unknown[] }).rows ?? []);
+  } catch {
+    throw new Error("Gagal mencatat rangkaian upload LTS.");
+  }
+  const row = rows[0] as { batch?: LtsBatch | null } | undefined;
+  if (!row) throw new Error("Gagal mencatat rangkaian upload LTS.");
+  return progressFromLtsBatch(row.batch, dataset.periodKey);
 }
 
 /**
- * Klaim pengiriman report untuk satu rangkaian upload. Tiga file yang dikirim bersamaan diproses paralel, dan lebih
- * dari satu proses bisa melihat data "lengkap" pada saat yang sama. UPDATE bersyarat ini atomik: hanya satu proses
- * yang mendapat true (dan boleh mengirim report), sisanya false.
+ * Klaim pengiriman report untuk rangkaian yang sudah lengkap. UPDATE bersyarat ini atomik: hanya satu proses yang
+ * mendapat true (dan boleh mengirim report), dan rangkaian ditandai "reported" sehingga file berikutnya memulai
+ * rangkaian baru.
  */
-export async function claimLtsReport(batchKey: string): Promise<boolean> {
+export async function claimLtsReport(): Promise<boolean> {
   const config = dbConfig();
-  if (!config || !/^[a-z_][a-z0-9_]*$/.test(config.table)) return true;
+  if (!config || !/^[a-z_][a-z0-9_]*$/.test(config.table)) return false;
   const sql = neon(config.url);
   const text =
-    `update public."${config.table}" set payload = jsonb_set(coalesce(payload, '{}'::jsonb), '{ltsReportClaim}', to_jsonb($1::text)) ` +
-    `where key = 'lts' and coalesce(payload->>'ltsReportClaim', '') <> $1 returning key`;
+    `update public."${config.table}" set payload = jsonb_set(payload, '{ltsBatch,reported}', 'true'::jsonb) ` +
+    `where key = 'lts' and jsonb_typeof(payload->'ltsBatch') = 'object' ` +
+    `and coalesce(payload->'ltsBatch'->>'reported', '') <> 'true' ` +
+    `and jsonb_exists_all(payload->'ltsBatch'->'received', array['sales','caps','ct0']) returning key`;
   try {
-    const result = (await sql.query(text, [batchKey])) as unknown;
+    const result = (await sql.query(text)) as unknown;
     const rows = Array.isArray(result) ? result : ((result as { rows?: unknown[] }).rows ?? []);
     return rows.length > 0;
   } catch {
-    // Gagal mengklaim: lebih baik report terkirim (mungkin dobel) daripada tidak terkirim sama sekali.
-    return true;
+    return false;
   }
 }
