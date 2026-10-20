@@ -32,6 +32,7 @@ function wmsColumns(
   startDay: number,
   latestDay: number,
   periodLabel: string,
+  previousMonthLabel: string,
 ): TableCol<WmsReportRow>[] {
   const period = parsePeriodLabel(periodLabel);
   const dayCols: TableCol<WmsReportRow>[] = [];
@@ -48,6 +49,7 @@ function wmsColumns(
     });
   }
   const base = { fill: "#3b2414", subFill: "#f3e7d8", subText: "#5b3418" };
+  const prev = (value: number): CellStyle => ({ color: "#5b4636", fill: "#f5efe6", text: formatNumber(value) });
   const rank = (value: number | null): CellStyle => {
     const tone = rankTone(value, count);
     return { bold: true, color: tone?.color, fill: tone?.fill, text: value === null ? dash : formatNumber(value) };
@@ -71,13 +73,18 @@ function wmsColumns(
       text: "#3a1d04",
       width: 80,
     },
-    { ...base, cell: (row) => pct(row.ach, achTone(row.ach)), head: "ACH", sub: "MTD", width: 84 },
-    { ...base, cell: (row) => rank(row.rank), head: "RANK", sub: "MTD", width: 70 },
-    { ...base, cell: (row) => shortage(row.shortageFm), head: "SHORTAGE FM", sub: "MTD", width: 100 },
-    { ...base, cell: (row) => ({ bold: true, color: "#5b3418", fill: "#f3e7d8", text: formatNumber(row.realYtd) }), head: "REAL YTD", sub: "YTD", width: 92 },
+    { ...base, cell: (row) => pct(row.ach, achTone(row.ach)), head: "TARGET ACH", sub: "MTD", width: 92 },
+    { ...base, cell: (row) => rank(row.rank), head: "RANK ACH", sub: "MTD", width: 78 },
+    { ...base, cell: (row) => shortage(row.shortageFm), head: "SHORTAGE TO TARGET FM", sub: "MTD", width: 104 },
+    { ...base, cell: (row) => prev(row.realMtdPrev), head: `REAL MTD ${previousMonthLabel}`, sub: "MTD", width: 96 },
+    { ...base, cell: (row) => pct(row.growthMtd), head: "GR MTD", sub: "%", width: 82 },
+    { ...base, cell: (row) => prev(row.realFmPrev), head: `REAL FM ${previousMonthLabel}`, sub: "FM", width: 96 },
+    { ...base, cell: (row) => pct(row.growthFm), head: "GR FM", sub: "%", width: 82 },
+    { ...base, cell: (row) => ({ bold: true, color: "#5b3418", fill: "#f3e7d8", text: formatNumber(row.realYtd) }), head: `REAL YTD ${period?.year ?? ""}`.trim(), sub: "YTD", width: 92 },
     { ...base, cell: (row) => pct(row.achYtd, achTone(row.achYtd)), head: "ACH YTD", sub: "%", width: 88 },
+    { ...base, cell: (row) => pct(row.growthYtd), head: "GR YTD", sub: "%", width: 82 },
     { ...base, cell: (row) => rank(row.rankYtd), head: "RANK YTD", sub: "YTD", width: 78 },
-    { ...base, cell: (row) => shortage(row.shortageYtd), head: "SHORTAGE YTD", sub: "YTD", width: 104 },
+    { ...base, cell: (row) => shortage(row.shortageYtd), head: "SHORTAGE TO TARGET YTD", sub: "YTD", width: 104 },
   ];
 }
 
@@ -85,7 +92,7 @@ export function buildWmsImage(report: WmsComputedReport, timestamp: Date): Repor
   const latestDay = report.cutoffDay;
   const startDay = Math.max(1, latestDay - 6);
   const spec = (labelHeader: string, table: { rows: WmsReportRow[]; total: WmsReportRow }): TableSpec<WmsReportRow> => ({
-    cols: wmsColumns(table.rows.length, labelHeader, startDay, latestDay, report.periodLabel),
+    cols: wmsColumns(table.rows.length, labelHeader, startDay, latestDay, report.periodLabel, report.previousMonthLabel),
     rows: table.rows,
     total: table.total,
   });

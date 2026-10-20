@@ -386,7 +386,6 @@ async function createWmsReportPng(report: WmsComputedReport, timestamp: Date) {
   const startDay = Math.max(1, latestDay - 6);
   const table = (labelHeader: string, source: { rows: WmsReportRow[]; total: WmsReportRow }) => ({
     cols: wmsReportColumns({
-      compact: true,
       dayCount: latestDay,
       endDay: latestDay,
       labelHeader,
@@ -1871,8 +1870,6 @@ const WMS_REPORT_THEME: ReportTheme = {
 };
 
 type WmsColumnInput = {
-  /** true = kolom ringkas seperti gambar PNG/Telegram (tanpa kolom pembanding bulan lalu). */
-  compact: boolean;
   dayCount: number;
   endDay: number;
   labelHeader: string;
@@ -1883,11 +1880,11 @@ type WmsColumnInput = {
   startDay: number;
 };
 
-// Kolom report WMS. Dipakai tabel di layar (semua tanggal) dan PNG (7 hari terakhir, kolom ringkas),
+// Kolom report WMS (lengkap). Dipakai tabel di layar (semua tanggal) dan PNG (7 hari terakhir),
 // dengan gaya sama dengan features/telegram/report-images/wms-image.ts.
 function wmsReportColumns(input: WmsColumnInput): ReportCol<WmsReportRow>[] {
   const dash = "–";
-  const { compact, endDay, labelHeader, latestDay, periodLabel, previousMonthLabel, rankCount: count, startDay } = input;
+  const { endDay, labelHeader, latestDay, periodLabel, previousMonthLabel, rankCount: count, startDay } = input;
   const period = parseReportPeriodLabel(periodLabel);
   const num = (value: number | null | undefined): ReportCellStyle => ({ text: value === null || value === undefined ? dash : formatNumber(value) });
   const pct = (value: number | null | undefined, tone: ReturnType<typeof reportSignTone> = reportSignTone(value)): ReportCellStyle => {
@@ -1926,19 +1923,7 @@ function wmsReportColumns(input: WmsColumnInput): ReportCol<WmsReportRow>[] {
     ...dayCols,
     { cell: (row) => ({ bold: true, color: "#5b2d06", fill: "#fde9c8", text: formatNumber(row.mtd) }), fill: "#f59e0b", head: "MTD", sub: "TOTAL", subFill: "#fcd9a0", subText: "#5b2d06", text: "#3a1d04", width: 80 },
   ];
-  const ytdReal: ReportCol<WmsReportRow> = { ...base, cell: (row) => ({ bold: true, color: "#5b3418", fill: "#f3e7d8", text: formatNumber(row.realYtd) }), head: compact ? "REAL YTD" : `REAL YTD ${period?.year ?? ""}`.trim(), sub: "YTD", width: 92 };
-  if (compact) {
-    return [
-      ...head,
-      { ...base, cell: (row) => pct(row.ach, reportAchTone(row.ach)), head: "ACH", sub: "MTD", width: 84 },
-      { ...base, cell: (row) => rank(row.rank), head: "RANK", sub: "MTD", width: 70 },
-      { ...base, cell: (row) => shortage(row.shortageFm), head: "SHORTAGE FM", sub: "MTD", width: 100 },
-      ytdReal,
-      { ...base, cell: (row) => pct(row.achYtd, reportAchTone(row.achYtd)), head: "ACH YTD", sub: "%", width: 88 },
-      { ...base, cell: (row) => rank(row.rankYtd), head: "RANK YTD", sub: "YTD", width: 78 },
-      { ...base, cell: (row) => shortage(row.shortageYtd), head: "SHORTAGE YTD", sub: "YTD", width: 104 },
-    ];
-  }
+  const ytdReal: ReportCol<WmsReportRow> = { ...base, cell: (row) => ({ bold: true, color: "#5b3418", fill: "#f3e7d8", text: formatNumber(row.realYtd) }), head: `REAL YTD ${period?.year ?? ""}`.trim(), sub: "YTD", width: 92 };
   return [
     ...head,
     { ...base, cell: (row) => pct(row.ach, reportAchTone(row.ach)), head: "TARGET ACH", sub: "MTD", width: 92 },
@@ -1979,7 +1964,6 @@ function ReportTable({
   const dataRows = rows.filter((item) => !isWmsTotalRow(item));
   const totalRow = rows.find(isWmsTotalRow) ?? rows[rows.length - 1];
   const cols = wmsReportColumns({
-    compact: false,
     dayCount,
     endDay: dayCount,
     labelHeader: scopeLabel.toUpperCase().startsWith("TELDA") ? "TELDA" : scopeLabel,
