@@ -1,49 +1,32 @@
-// Gambar report MetaBright (Impactful Award Telda) untuk bot Telegram.
-// Warna & susunan mengikuti tab Visualisasi di halaman /metabright (KPI, peringkat, rata-rata witel, capaian indikator).
+// Gambar report MetaBright (Impactful Award Telda) untuk bot Telegram: tabel data skor per indikator.
+// Susunan, urutan, dan warna sel mengikuti tab "Tabel Data" di halaman /metabright (DataTable).
 import type { Dataset, Row } from "@/features/metabright/domain/types";
-import { COL, avg, nf } from "@/features/metabright/domain/utils";
+import { nf, pillStyle } from "@/features/metabright/domain/utils";
 import { formatJakartaDateTime, jakartaStamp, newCanvas, toPngBytes, type Ctx, type ReportImage } from "./canvas";
 
-const W = 1600;
-const PAD = 40;
-const INNER = W - PAD * 2;
+const PAD = 32;
+const HEADER = 112;
+const ROW_H = 32;
+const HEAD_ROW_H = 78;
+const COL_RANK = 64;
+const COL_WITEL = 212;
+const COL_TELDA = 160;
+const COL_IND = 88;
+const COL_TOTAL = 160;
+
+// Warna rank 1-5 (hijau -> oranye), selebihnya abu-abu. Sama dengan tabel di web.
+const TOP_RANK_STYLE: Record<number, { background: string; color: string }> = {
+  1: { background: "#01ad23", color: "#ffffff" },
+  2: { background: "#80c02b", color: "#ffffff" },
+  3: { background: "#ffd334", color: "#422006" },
+  4: { background: "#f79c31", color: "#ffffff" },
+  5: { background: "#ec6430", color: "#ffffff" },
+};
+const DEFAULT_RANK_STYLE = { background: "#e2e8f0", color: "#475569" };
 
 function rr(ctx: Ctx, x: number, y: number, w: number, h: number, r: number) {
   ctx.beginPath();
   ctx.roundRect(x, y, w, h, r);
-}
-
-function card(ctx: Ctx, x: number, y: number, w: number, h: number) {
-  ctx.save();
-  ctx.shadowColor = "rgba(15,23,42,0.08)";
-  ctx.shadowBlur = 18;
-  ctx.shadowOffsetY = 6;
-  ctx.fillStyle = "#ffffff";
-  rr(ctx, x, y, w, h, 18);
-  ctx.fill();
-  ctx.restore();
-  ctx.strokeStyle = "#e5edf7";
-  ctx.lineWidth = 1;
-  rr(ctx, x + 0.5, y + 0.5, w - 1, h - 1, 18);
-  ctx.stroke();
-}
-
-function sectionTitle(ctx: Ctx, title: string, sub: string, x: number, y: number) {
-  const g = ctx.createLinearGradient(0, y, 0, y + 20);
-  g.addColorStop(0, "#22d3ee");
-  g.addColorStop(0.5, "#3b82f6");
-  g.addColorStop(1, "#7c3aed");
-  ctx.fillStyle = g;
-  rr(ctx, x, y + 1, 5, 20, 3);
-  ctx.fill();
-  ctx.textAlign = "left";
-  ctx.textBaseline = "top";
-  ctx.fillStyle = "#0f172a";
-  ctx.font = "700 18px Arial";
-  ctx.fillText(title, x + 16, y);
-  ctx.fillStyle = "#64748b";
-  ctx.font = "13px Arial";
-  ctx.fillText(sub, x + 16, y + 25);
 }
 
 function fit(ctx: Ctx, text: string, maxWidth: number) {
@@ -53,40 +36,51 @@ function fit(ctx: Ctx, text: string, maxWidth: number) {
   return t + "…";
 }
 
-const pctColor = (p: number) => (p >= 80 ? "#059669" : p >= 50 ? "#f59e0b" : "#e11d48");
+// Bungkus teks menjadi beberapa baris (maksimum maxLines); baris terakhir dipotong dengan "…" bila masih kepanjangan.
+function wrap(ctx: Ctx, text: string, maxWidth: number, maxLines: number) {
+  const lines: string[] = [];
+  let current = "";
+  for (const word of text.split(/\s+/).filter(Boolean)) {
+    const next = current ? `${current} ${word}` : word;
+    if (ctx.measureText(next).width <= maxWidth || !current) current = next;
+    else {
+      lines.push(current);
+      current = word;
+    }
+  }
+  if (current) lines.push(current);
+  if (lines.length > maxLines) {
+    const kept = lines.slice(0, maxLines);
+    kept[maxLines - 1] = fit(ctx, lines.slice(maxLines - 1).join(" "), maxWidth);
+    return kept;
+  }
+  return lines.map((line) => fit(ctx, line, maxWidth));
+}
+
+function pill(ctx: Ctx, cx: number, cy: number, text: string, style: { background: string; color: string }, width = 58) {
+  ctx.fillStyle = style.background;
+  rr(ctx, cx - width / 2, cy - 11, width, 22, 11);
+  ctx.fill();
+  ctx.fillStyle = style.color;
+  ctx.font = "700 12px Arial";
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.fillText(text, cx, cy + 0.5);
+}
 
 export function buildMetabrightImage(d: Dataset, period: string, timestamp = new Date()): ReportImage {
-  const rows: Row[] = [...d.rows].sort((a, b) => b.total - a.total);
-  const ws = [...new Set(d.rows.map((r) => r.witel))].sort();
-  const wColor = (w: string) => COL[ws.indexOf(w) % COL.length];
+  const rows: Row[] = [...d.rows].sort((a, b) => a.rank - b.rank);
+  const indicators = d.indicators;
 
-  const half = Math.ceil(rows.length / 2);
-  const ROW_H = 30;
-  const rankH = 90 + half * ROW_H + 24 + 34;
-  const witelData = ws
-    .map((w) => {
-      const rs = d.rows.filter((r) => r.witel === w);
-      return { w, n: rs.length, v: avg(rs.map((r) => r.total)) };
-    })
-    .sort((a, b) => b.v - a.v);
-  const indData = d.indicators.map((x) => ({
-    name: x.name,
-    v: x.weight ? avg(d.rows.map((r) => (r.v[d.indicators.indexOf(x)][3] / x.weight) * 100)) : 0,
-  }));
-  const BAR_H = 30;
-  const lowerH = 96 + Math.max(witelData.length, indData.length) * BAR_H + 30;
-
-  const HEADER = 128;
-  const KPI_H = 112;
-  const H = HEADER + 28 + KPI_H + 24 + 150 + 24 + rankH + 24 + lowerH + 40;
+  const tableW = COL_RANK + COL_WITEL + COL_TELDA + indicators.length * COL_IND + COL_TOTAL;
+  const W = Math.max(tableW + PAD * 2, 1100);
+  const tableX = Math.round((W - tableW) / 2);
+  const INFO_H = 52;
+  const H = HEADER + INFO_H + HEAD_ROW_H + rows.length * ROW_H + 64;
   const { canvas, ctx } = newCanvas(W, H, 2);
 
   // latar
-  const bg = ctx.createLinearGradient(0, 0, W, H);
-  bg.addColorStop(0, "#ffffff");
-  bg.addColorStop(0.45, "#f7faff");
-  bg.addColorStop(1, "#edf5ff");
-  ctx.fillStyle = bg;
+  ctx.fillStyle = "#f8fbff";
   ctx.fillRect(0, 0, W, H);
 
   // header
@@ -97,204 +91,175 @@ export function buildMetabrightImage(d: Dataset, period: string, timestamp = new
   ctx.fillStyle = hg;
   ctx.fillRect(0, 0, W, HEADER);
   ctx.fillStyle = "rgba(255,255,255,0.14)";
-  rr(ctx, PAD, 30, 62, 62, 18);
+  rr(ctx, tableX, 26, 60, 60, 18);
   ctx.fill();
   ctx.fillStyle = "#ffffff";
   ctx.font = "700 22px Arial";
   ctx.textAlign = "center";
   ctx.textBaseline = "middle";
-  ctx.fillText("MB", PAD + 31, 61);
+  ctx.fillText("MB", tableX + 30, 57);
   ctx.textAlign = "left";
   ctx.textBaseline = "alphabetic";
   ctx.fillStyle = "#bae6fd";
   ctx.font = "700 12px Arial";
-  ctx.fillText("PRIME • METABRIGHT", PAD + 84, 44);
+  ctx.fillText("PRIME • METABRIGHT", tableX + 82, 40);
   ctx.fillStyle = "#ffffff";
-  ctx.font = "700 32px Arial";
-  ctx.fillText("Impactful Award Telda", PAD + 84, 80);
+  ctx.font = "700 30px Arial";
+  ctx.fillText("Impactful Award Telda", tableX + 82, 74);
   ctx.fillStyle = "#e0f2fe";
   ctx.font = "600 14px Arial";
-  ctx.fillText(`${period}  |  ${d.rows.length} telda  |  ${d.indicators.length} indikator`, PAD + 84, 106);
+  ctx.fillText(`${period}  |  ${rows.length} telda  |  ${indicators.length} indikator`, tableX + 82, 98);
   ctx.textAlign = "right";
   ctx.fillStyle = "#bae6fd";
   ctx.font = "600 13px Arial";
-  ctx.fillText(`Rendered ${formatJakartaDateTime(timestamp, true)}`, W - PAD, 106);
+  ctx.fillText(`Rendered ${formatJakartaDateTime(timestamp, true)}`, tableX + tableW, 98);
   ctx.textAlign = "left";
 
-  // KPI
-  let y = HEADER + 28;
-  const hi = rows[0];
-  const lo = rows[rows.length - 1];
-  const kpis = [
-    { label: "TELDA DIANALISIS", value: String(rows.length), sub: `${ws.length} witel`, color: "#3b82f6" },
-    { label: "RATA-RATA TOTAL SCORE", value: nf(avg(rows.map((r) => r.total))), sub: `Rentang ${nf(lo.total)} – ${nf(hi.total)}`, color: "#22d3ee" },
-    { label: "SKOR TERTINGGI", value: nf(hi.total), sub: hi.telda, color: "#059669" },
-    { label: "SKOR TERENDAH", value: nf(lo.total), sub: lo.telda, color: "#e11d48" },
-    { label: "SELISIH SKOR", value: nf(hi.total - lo.total), sub: "poin tertinggi vs terendah", color: "#7c3aed" },
-  ];
-  const gap = 16;
-  const kw = (INNER - gap * 4) / 5;
-  kpis.forEach((k, i) => {
-    const x = PAD + i * (kw + gap);
-    card(ctx, x, y, kw, KPI_H);
-    ctx.fillStyle = k.color;
-    ctx.save();
-    rr(ctx, x, y, kw, KPI_H, 18);
-    ctx.clip();
-    ctx.fillRect(x, y, 6, KPI_H);
-    ctx.restore();
-    ctx.fillStyle = "#64748b";
-    ctx.font = "700 11px Arial";
-    ctx.fillText(k.label, x + 22, y + 28);
-    ctx.fillStyle = "#0f172a";
-    ctx.font = "700 36px Arial";
-    ctx.fillText(k.value, x + 22, y + 70);
-    ctx.fillStyle = "#64748b";
-    ctx.font = "12px Arial";
-    ctx.fillText(fit(ctx, k.sub, kw - 40), x + 22, y + 96);
-  });
-  y += KPI_H + 24;
+  // keterangan + legenda warna
+  let y = HEADER + 20;
+  ctx.fillStyle = "#475569";
+  ctx.font = "13px Arial";
+  ctx.textBaseline = "middle";
+  const info = `${rows.length} telda. Warna sel menunjukkan skor terhadap maksimum indikator:`;
+  ctx.fillText(info, tableX, y + 12);
+  let lx = tableX + ctx.measureText(info).width + 14;
+  for (const [label, p] of [["≥ 80%", 90], ["50–79%", 60], ["< 50%", 10]] as const) {
+    pill(ctx, lx + 36, y + 12, label, pillStyle(p), 72);
+    lx += 84;
+  }
+  ctx.textBaseline = "alphabetic";
+  y = HEADER + INFO_H;
 
-  // podium 3 teratas
-  card(ctx, PAD, y, INNER, 150);
-  sectionTitle(ctx, "Tiga telda teratas", "Berdasarkan total score, skor maksimum 110", PAD + 24, y + 20);
-  const medals = [
-    { fill: "#f59e0b", bg: "#fffbeb", label: "1" },
-    { fill: "#64748b", bg: "#f1f5f9", label: "2" },
-    { fill: "#7c3aed", bg: "#f5f3ff", label: "3" },
-  ];
-  const pw = (INNER - 48 - 32) / 3;
-  rows.slice(0, 3).forEach((r, i) => {
-    const x = PAD + 24 + i * (pw + 16);
-    const py = y + 68;
-    ctx.fillStyle = medals[i].bg;
-    rr(ctx, x, py, pw, 66, 14);
-    ctx.fill();
-    ctx.fillStyle = medals[i].fill;
+  // kartu tabel
+  const tableH = HEAD_ROW_H + rows.length * ROW_H;
+  ctx.save();
+  ctx.shadowColor = "rgba(15,23,42,0.08)";
+  ctx.shadowBlur = 16;
+  ctx.shadowOffsetY = 5;
+  ctx.fillStyle = "#ffffff";
+  rr(ctx, tableX, y, tableW, tableH, 14);
+  ctx.fill();
+  ctx.restore();
+  ctx.save();
+  rr(ctx, tableX, y, tableW, tableH, 14);
+  ctx.clip();
+
+  // kolom (posisi x tengah/awal)
+  const xRank = tableX;
+  const xWitel = xRank + COL_RANK;
+  const xTelda = xWitel + COL_WITEL;
+  const xInd = xTelda + COL_TELDA;
+  const xTotal = xInd + indicators.length * COL_IND;
+
+  // header tabel
+  ctx.fillStyle = "#eef3fa";
+  ctx.fillRect(tableX, y, tableW, HEAD_ROW_H);
+  ctx.fillStyle = "#334155";
+  ctx.font = "700 12px Arial";
+  ctx.textBaseline = "middle";
+  ctx.textAlign = "center";
+  ctx.fillText("Rank", xRank + COL_RANK / 2, y + HEAD_ROW_H / 2);
+  ctx.textAlign = "left";
+  ctx.fillText("Witel", xWitel + 12, y + HEAD_ROW_H / 2);
+  ctx.fillText("Telda", xTelda + 12, y + HEAD_ROW_H / 2);
+  indicators.forEach((ind, k) => {
+    const cx = xInd + k * COL_IND + COL_IND / 2;
+    ctx.textAlign = "center";
+    ctx.font = "700 11px Arial";
+    const lines = [...wrap(ctx, ind.name, COL_IND - 10, 3), `(${ind.weight})`];
+    const lineH = 14;
+    const top = y + HEAD_ROW_H / 2 - ((lines.length - 1) * lineH) / 2;
+    lines.forEach((line, i) => {
+      ctx.fillStyle = i === lines.length - 1 ? "#64748b" : "#334155";
+      ctx.fillText(line, cx, top + i * lineH);
+    });
+  });
+  ctx.fillStyle = "#334155";
+  ctx.font = "700 12px Arial";
+  ctx.textAlign = "left";
+  ctx.fillText("Total score", xTotal + 16, y + HEAD_ROW_H / 2);
+  ctx.strokeStyle = "#dbe5f1";
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(tableX, y + HEAD_ROW_H - 0.5);
+  ctx.lineTo(tableX + tableW, y + HEAD_ROW_H - 0.5);
+  ctx.stroke();
+
+  // baris data
+  rows.forEach((r, i) => {
+    const ry = y + HEAD_ROW_H + i * ROW_H;
+    const cy = ry + ROW_H / 2;
+    if (i % 2 === 1) {
+      ctx.fillStyle = "#f8fbff";
+      ctx.fillRect(tableX, ry, tableW, ROW_H);
+    }
+    ctx.strokeStyle = "#eef2f7";
     ctx.beginPath();
-    ctx.arc(x + 36, py + 33, 20, 0, Math.PI * 2);
+    ctx.moveTo(tableX, ry + ROW_H - 0.5);
+    ctx.lineTo(tableX + tableW, ry + ROW_H - 0.5);
+    ctx.stroke();
+
+    // rank
+    const rs = TOP_RANK_STYLE[r.rank] ?? DEFAULT_RANK_STYLE;
+    ctx.fillStyle = rs.background;
+    ctx.beginPath();
+    ctx.arc(xRank + COL_RANK / 2, cy, 12, 0, Math.PI * 2);
     ctx.fill();
-    ctx.fillStyle = "#ffffff";
-    ctx.font = "700 20px Arial";
+    ctx.fillStyle = rs.color;
+    ctx.font = "700 12px Arial";
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
-    ctx.fillText(medals[i].label, x + 36, py + 34);
+    ctx.fillText(String(r.rank), xRank + COL_RANK / 2, cy + 0.5);
+
+    // witel & telda
     ctx.textAlign = "left";
-    ctx.textBaseline = "alphabetic";
+    ctx.fillStyle = "#475569";
+    ctx.font = "12.5px Arial";
+    ctx.fillText(fit(ctx, r.witel, COL_WITEL - 20), xWitel + 12, cy + 0.5);
     ctx.fillStyle = "#0f172a";
-    ctx.font = "700 17px Arial";
-    ctx.fillText(fit(ctx, r.telda, pw - 170), x + 70, py + 29);
-    ctx.fillStyle = "#64748b";
-    ctx.font = "12px Arial";
-    ctx.fillText(fit(ctx, r.witel, pw - 170), x + 70, py + 50);
-    ctx.textAlign = "right";
-    ctx.fillStyle = "#020617";
-    ctx.font = "700 28px Arial";
-    ctx.fillText(nf(r.total), x + pw - 20, py + 42);
-    ctx.textAlign = "left";
-  });
-  y += 150 + 24;
+    ctx.font = "700 12.5px Arial";
+    ctx.fillText(fit(ctx, r.telda, COL_TELDA - 20), xTelda + 12, cy + 0.5);
 
-  // peringkat lengkap (2 kolom)
-  card(ctx, PAD, y, INNER, rankH);
-  sectionTitle(ctx, "Peringkat total score", "Semua telda · warna batang menunjukkan witel", PAD + 24, y + 20);
-  const colW = (INNER - 48 - 40) / 2;
-  const ry = y + 78;
-  [rows.slice(0, half), rows.slice(half)].forEach((list, c) => {
-    const cx = PAD + 24 + c * (colW + 40);
-    list.forEach((r, i) => {
-      const rowY = ry + i * ROW_H;
-      const rank = c * half + i + 1;
-      if (i % 2 === 0) {
-        ctx.fillStyle = "#f8fbff";
-        rr(ctx, cx - 6, rowY - 2, colW + 12, ROW_H - 2, 8);
-        ctx.fill();
-      }
-      ctx.fillStyle = rank === 1 ? "#fde68a" : rank === 2 ? "#e2e8f0" : rank === 3 ? "#fed7aa" : "#eef2f7";
-      ctx.beginPath();
-      ctx.arc(cx + 13, rowY + 12, 12, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.fillStyle = "#334155";
-      ctx.font = "700 11px Arial";
-      ctx.textAlign = "center";
-      ctx.textBaseline = "middle";
-      ctx.fillText(String(rank), cx + 13, rowY + 13);
-      ctx.textAlign = "left";
-      ctx.fillStyle = "#0f172a";
-      ctx.font = "700 12.5px Arial";
-      ctx.fillText(fit(ctx, r.telda, 150), cx + 34, rowY + 13);
-      const bx = cx + 196;
-      const bw = colW - 196 - 62;
-      ctx.fillStyle = "#e8eef6";
-      rr(ctx, bx, rowY + 6, bw, 12, 6);
-      ctx.fill();
-      ctx.fillStyle = wColor(r.witel);
-      rr(ctx, bx, rowY + 6, Math.max(8, (Math.min(r.total, 110) / 110) * bw), 12, 6);
-      ctx.fill();
-      ctx.fillStyle = "#0f172a";
-      ctx.font = "700 12.5px Arial";
-      ctx.textAlign = "right";
-      ctx.fillText(nf(r.total), cx + colW, rowY + 13);
-      ctx.textAlign = "left";
-      ctx.textBaseline = "alphabetic";
+    // skor per indikator
+    r.v.forEach((v, k) => {
+      const wt = indicators[k]?.weight || 1;
+      const p = Math.min(v[3] / (wt * 1.1), 1) * 100;
+      pill(ctx, xInd + k * COL_IND + COL_IND / 2, cy, nf(v[3]), pillStyle(p));
     });
-  });
-  // legenda witel
-  ctx.textBaseline = "middle";
-  ctx.font = "700 12px Arial";
-  let lx = PAD + 24;
-  const ly = y + rankH - 28;
-  ws.forEach((w) => {
-    ctx.fillStyle = wColor(w);
-    rr(ctx, lx, ly - 5, 10, 10, 3);
+
+    // total score + bar
+    const barX = xTotal + 16;
+    const barW = COL_TOTAL - 16 - 58;
+    ctx.fillStyle = "#e8eef6";
+    rr(ctx, barX, cy - 4, barW, 8, 4);
     ctx.fill();
-    ctx.fillStyle = "#64748b";
-    ctx.textAlign = "left";
-    ctx.fillText(w, lx + 16, ly);
-    lx += 16 + ctx.measureText(w).width + 22;
+    const bg = ctx.createLinearGradient(barX, 0, barX + barW, 0);
+    bg.addColorStop(0, "#22d3ee");
+    bg.addColorStop(1, "#3b82f6");
+    ctx.fillStyle = bg;
+    rr(ctx, barX, cy - 4, Math.max(6, (Math.min(r.total, 110) / 110) * barW), 8, 4);
+    ctx.fill();
+    ctx.fillStyle = "#0f172a";
+    ctx.font = "700 13px Arial";
+    ctx.textAlign = "right";
+    ctx.fillText(nf(r.total), xTotal + COL_TOTAL - 12, cy + 0.5);
   });
+  ctx.restore();
+  ctx.strokeStyle = "#e1eaf5";
+  ctx.lineWidth = 1;
+  rr(ctx, tableX + 0.5, y + 0.5, tableW - 1, tableH - 1, 14);
+  ctx.stroke();
+
+  // footer
   ctx.textBaseline = "alphabetic";
-  y += rankH + 24;
-
-  // rata-rata witel + capaian indikator
-  const lw = (INNER - 24) / 2;
-  card(ctx, PAD, y, lw, lowerH);
-  card(ctx, PAD + lw + 24, y, lw, lowerH);
-  sectionTitle(ctx, "Rata-rata total score per witel", "Skor maksimum 110 · jumlah telda di dalam kurung", PAD + 24, y + 20);
-  sectionTitle(ctx, "Capaian rata-rata per indikator", "Skor diperoleh terhadap bobot indikator (%)", PAD + lw + 48, y + 20);
-  const drawBars = (x0: number, items: { label: string; v: number; max: number; color: string; text: string }[]) => {
-    const labelW = 190;
-    const bw = lw - 48 - labelW - 70;
-    items.forEach((it, i) => {
-      const by = y + 84 + i * BAR_H;
-      ctx.textBaseline = "middle";
-      ctx.textAlign = "left";
-      ctx.fillStyle = "#334155";
-      ctx.font = "600 12px Arial";
-      ctx.fillText(fit(ctx, it.label, labelW - 10), x0, by + 11);
-      ctx.fillStyle = "#e8eef6";
-      rr(ctx, x0 + labelW, by + 3, bw, 16, 8);
-      ctx.fill();
-      ctx.fillStyle = it.color;
-      rr(ctx, x0 + labelW, by + 3, Math.max(8, (Math.min(it.v, it.max) / it.max) * bw), 16, 8);
-      ctx.fill();
-      ctx.fillStyle = "#0f172a";
-      ctx.font = "700 12px Arial";
-      ctx.fillText(it.text, x0 + labelW + bw + 10, by + 11);
-    });
-    ctx.textBaseline = "alphabetic";
-  };
-  drawBars(PAD + 24, witelData.map((x) => ({ label: `${x.w} (${x.n})`, v: x.v, max: 110, color: wColor(x.w), text: nf(x.v) })));
-  drawBars(PAD + lw + 48, indData.map((x) => ({ label: x.name, v: x.v, max: 110, color: pctColor(x.v), text: nf(x.v, 1) + "%" })));
-
+  ctx.textAlign = "left";
   ctx.fillStyle = "#2563eb";
   ctx.font = "700 12px Arial";
-  ctx.textAlign = "left";
-  ctx.fillText(`Dibuat ${formatJakartaDateTime(timestamp, false)} · Dashboard Impactful Award Telda`, PAD, H - 18);
+  ctx.fillText(`Dibuat ${formatJakartaDateTime(timestamp, false)} · Dashboard Impactful Award Telda`, tableX, H - 24);
 
   return {
     bytes: toPngBytes(canvas),
-    caption: `Impactful Award Telda (MetaBright)\n${period} | ${rows.length} telda`,
-    filename: `MetaBright-Impactful-Award-Telda-${jakartaStamp(timestamp)}.png`,
+    caption: `Tabel Impactful Award Telda (MetaBright)\n${period} | ${rows.length} telda`,
+    filename: `MetaBright-Tabel-Impactful-Award-Telda-${jakartaStamp(timestamp)}.png`,
   };
 }

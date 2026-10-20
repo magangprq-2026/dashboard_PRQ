@@ -1170,20 +1170,21 @@ function notAllowedText() {
 const reportDeps = { loadLtsDatasets: loadLtsDatasetsForReport };
 
 // Kirim report sebagai gambar PNG (sebagai dokumen agar resolusi penuh dan tabel tetap terbaca).
-// Tombol navigasi dipasang di gambar terakhir.
+// Informasi pengantar (mis. hasil upload) dikirim sebagai PESAN TERPISAH sebelum gambar, supaya caption gambar tetap
+// bersih. Tombol navigasi dipasang di gambar terakhir.
 async function sendReportImages(
   botToken: string,
   chatId: number,
   product: ReportProductKey,
-  prefix = "",
+  intro = "",
   replyMarkup?: TelegramInlineKeyboardMarkup,
 ) {
   const images = await buildReportImages(product, reportDeps);
+  if (intro.trim()) await sendTelegramMessage(botToken, chatId, intro.trim());
   let failed = 0;
   for (const [index, image] of images.entries()) {
-    const caption = [index === 0 ? prefix : "", `🖼️ <b>${escapeHtml(image.caption.split("\n")[0])}</b>`, ...image.caption.split("\n").slice(1).map(escapeHtml)]
-      .filter(Boolean)
-      .join("\n");
+    const [title, ...rest] = image.caption.split("\n");
+    const caption = [`🖼️ <b>${escapeHtml(title)}</b>`, ...rest.map(escapeHtml)].join("\n");
     const isLast = index === images.length - 1;
     const sent = await sendTelegramDocument(botToken, chatId, image.filename, image.bytes, caption, "image/png", isLast ? replyMarkup : undefined);
     if (!sent.ok) failed += 1;
