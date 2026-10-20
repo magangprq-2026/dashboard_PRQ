@@ -53,9 +53,24 @@ function normalizedHeader(row: unknown[] | undefined, headers: string[]) {
   return (row ?? []).slice(0, headers.length).map((c) => String(c ?? "").trim().toUpperCase());
 }
 
-function headerMatches(row: unknown[] | undefined, headers: string[]) {
+function exactHeaderMatches(row: unknown[] | undefined, headers: string[]) {
   const first = normalizedHeader(row, headers);
   return headers.every((h, i) => h.toUpperCase() === first[i]);
+}
+
+const normName = (value: unknown) => String(value ?? "").trim().replace(/\s+/g, " ").toUpperCase();
+
+// Sama seperti upload di web: bila semua kolom MASTER ada di baris header (urutan boleh berbeda, kolom ekstra boleh
+// ada, mis. "EKOSISTEM (Custom SQL Query)"), kolom dipetakan berdasarkan NAMA, bukan posisi. Nama kembar: yang terakhir.
+function headerIndexMap(row: unknown[] | undefined, headers: string[]): number[] | null {
+  const byName = new Map<string, number>();
+  (row ?? []).forEach((cell, index) => byName.set(normName(cell), index));
+  const indexes = headers.map((h) => byName.get(normName(h)));
+  return indexes.every((i) => i !== undefined) ? (indexes as number[]) : null;
+}
+
+function headerMatches(row: unknown[] | undefined, headers: string[]) {
+  return exactHeaderMatches(row, headers) || headerIndexMap(row, headers) !== null;
 }
 
 // Banyak file "MASTER" HSI berekstensi .xls/.csv sebenarnya teks dengan pemisah "#" (sama seperti upload di web).
@@ -121,6 +136,27 @@ function sheetRows(buffer: Buffer) {
   return { name, rows };
 }
 
+/** Header baris pertama file sama dengan format MASTER WMS (format ini juga dipakai file PS/Sales LTS). */
+export function hasWmsMasterHeader(buffer: Buffer): boolean {
+  try {
+    return headerMatches(sheetRows(buffer).rows[0], wmsHeaders);
+  } catch {
+    return false;
+  }
+}
+
+/** Nilai kolom tertentu (berdasarkan nama header, tanpa membedakan huruf besar/kecil) dari semua baris data. */
+export function columnValues(buffer: Buffer, columnName: string): string[] | null {
+  try {
+    const { rows } = sheetRows(buffer);
+    const index = (rows[0] ?? []).findIndex((c) => String(c ?? "").trim().toUpperCase() === columnName.toUpperCase());
+    if (index < 0) return null;
+    return rows.slice(1).map((row) => String(row[index] ?? "").trim());
+  } catch {
+    return null;
+  }
+}
+
 /** Tebak modul dari caption/nama file, lalu dari header kolom. */
 export function detectProduct(fileName: string, caption: string | undefined, buffer: Buffer): UploadProduct | null {
   const hint = `${caption ?? ""} ${fileName}`.toLowerCase();
@@ -140,12 +176,15 @@ export function detectProduct(fileName: string, caption: string | undefined, buf
 export function parseMasterRows(product: UploadProduct, buffer: Buffer): Row[] {
   const headers = HEADERS[product];
   const { name, rows } = sheetRows(buffer);
-  const dataRows = headerMatches(rows[0], headers) ? rows.slice(1) : rows;
+  const exact = exactHeaderMatches(rows[0], headers);
+  const map = exact ? null : headerIndexMap(rows[0], headers);
+  const hasHeader = exact || map !== null;
+  const dataRows = hasHeader ? rows.slice(1) : rows;
   const result = dataRows
-    .map((row) => Array.from({ length: headers.length }, (_, i) => cleanCell(row[i])))
+    .map((row) => Array.from({ length: headers.length }, (_, i) => cleanCell(row[map ? map[i] : i])))
     .filter((row) => row.some((cell) => cell !== null && String(cell).trim() !== ""));
   if (result.length === 0) throw new Error(`Sheet ${name} tidak berisi data MASTER.`);
-  if (!headerMatches(rows[0], headers) && (rows[0]?.length ?? 0) < headers.length - 5) {
+  if (!hasHeader && (rows[0]?.length ?? 0) < headers.length - 5) {
     throw new Error(`Kolom file tidak cocok dengan format MASTER ${product} (butuh ${headers.length} kolom).`);
   }
   return result;

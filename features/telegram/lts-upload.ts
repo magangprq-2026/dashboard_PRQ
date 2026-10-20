@@ -13,7 +13,7 @@ import {
   type LtsMasterRow,
   type LtsUploadedDataset,
 } from "@/features/lts/domain/reporting/reporting";
-import { delimitedRows } from "@/features/telegram/master-upload";
+import { columnValues, delimitedRows, hasWmsMasterHeader } from "@/features/telegram/master-upload";
 
 export const LTS_DATASET_KEYS: LtsDatasetKey[] = ["sales", "caps", "ct0"];
 
@@ -52,7 +52,30 @@ function hintFromName(fileName: string, caption?: string): LtsDatasetKey | null 
   return null;
 }
 
-/** Header kolom menang atas caption/nama file (mis. caption "WMS" pada file PS). Null = bukan data LTS. */
+// File MASTER WMS memakai kolom yang sama persis dengan file PS (Sales) LTS: keduanya ekspor Tableau dengan 117+ kolom
+// yang sama, sehingga header saja tidak bisa membedakannya. Bedanya ada di isi: file WMS hanya berisi produk WMS,
+// sedangkan PS LTS memuat HSI (BASIC/BISNIS) juga.
+const EXPLICIT_PS_HINT = /(^|[^a-z])(ps|sales)([^a-z]|$)|t_ps|sales_master/;
+const WMS_NAME_HINT = /wm+e?s+/; // wms, wmes, wmess, ...
+
+/**
+ * File yang header-nya cocok dengan Sales LTS, tetapi sebenarnya MASTER WMS. Urutan keputusan:
+ *   1. Nama file/caption jelas menyebut ps/sales -> LTS (Sales).
+ *   2. Nama file/caption menyebut wms -> WMS.
+ *   3. Tanpa petunjuk nama: bila kolom PRODUK terisi dan tidak ada satu pun baris HSI -> WMS; selain itu LTS.
+ */
+function isWmsMasterFile(fileName: string, caption: string | undefined, buffer: Buffer): boolean {
+  if (!hasWmsMasterHeader(buffer)) return false;
+  const hint = `${caption ?? ""} ${fileName}`.toLowerCase();
+  if (EXPLICIT_PS_HINT.test(hint)) return false;
+  if (WMS_NAME_HINT.test(hint)) return true;
+  const produk = columnValues(buffer, "PRODUK");
+  if (!produk) return false;
+  const filled = produk.filter((v) => v !== "");
+  return filled.length > 0 && !filled.some((v) => /HSI/i.test(v));
+}
+
+/** Header kolom menang atas caption/nama file (mis. caption "WMS" pada file PS), kecuali file MASTER WMS yang berformat sama dengan PS. Null = bukan data LTS. */
 export function detectLtsDataset(fileName: string, caption: string | undefined, buffer: Buffer): LtsDatasetKey | null {
   let matches: LtsDatasetKey[] = [];
   try {
@@ -61,6 +84,7 @@ export function detectLtsDataset(fileName: string, caption: string | undefined, 
   } catch {
     return hintFromName(fileName, caption);
   }
+  if (matches.includes("sales") && isWmsMasterFile(fileName, caption, buffer)) return null;
   if (matches.length === 1) return matches[0];
   const hint = hintFromName(fileName, caption);
   if (matches.length > 1) return hint && matches.includes(hint) ? hint : matches[0];
