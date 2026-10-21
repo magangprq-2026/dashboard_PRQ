@@ -332,7 +332,13 @@ function makeRows(rows: MasterRow[], periodKey: string, scope: ReportScope, now:
           ? toNumber(history.y2026[previousMonth - 1])
           : fromRows.reduce((sum, value) => sum + value, 0);
     }
-    const realMtdPrev = previousDays.slice(0, cutoffPrevious).reduce((sum, value) => sum + toNumber(value), 0);
+    // Bulan lalu sudah tutup penuh (laporan bulan yang sudah lewat): di workbook REAL!AH = REAL!AG
+    // (MTD bulan lalu = FM bulan lalu), walau baris harian bulan lalu tidak ada di arsip.
+    const previousMonthDays = daysInMonth(previousYear, previousMonth);
+    const realMtdPrev =
+      cutoffPrevious >= previousMonthDays
+        ? realFmPrev
+        : previousDays.slice(0, cutoffPrevious).reduce((sum, value) => sum + toNumber(value), 0);
 
     // REAL YTD = total bulan Jan..(bulan-1) + MTD bulan berjalan (REAL!AX = SUM(AL:AW)).
     let realYtd = mtd;
