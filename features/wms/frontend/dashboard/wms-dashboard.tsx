@@ -1049,7 +1049,7 @@ export function WmsDashboard({ permissions = fullAccessPermissions }: { permissi
       void loadDashboardStateFromServer()
         .then(({ configured, state }) => {
           if (state) {
-            const mergedArchive = shouldRefreshSeed ? { ...state.periodArchive, ...nextArchive } : { ...nextArchive, ...state.periodArchive };
+            const mergedArchive = { ...nextArchive, ...state.periodArchive }; // Server-saved uploads always override bundled seed and browser cache.
             applyPersistedState({ ...state, periodArchive: mergedArchive }, "Data server dimuat");
           } else if (!configured) {
             setAutoSaveStatus("Database server belum dikonfigurasi; data tersimpan di browser ini");
