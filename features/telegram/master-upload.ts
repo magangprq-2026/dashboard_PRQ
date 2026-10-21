@@ -358,10 +358,20 @@ function wmsSheet(rows: WmsReportRow[], total: WmsReportRow, dayCount: number) {
 
 export type ReportFile = { bytes: Uint8Array; filename: string; periodLabel: string; updatedAt: string | null };
 
+function latestSavedWmsPeriod(product: UploadProduct, archive: Json, selectedPeriod: unknown): string | undefined {
+  const keys = Object.keys(archive);
+  if (product !== "WMS") return typeof selectedPeriod === "string" ? selectedPeriod : keys.sort().at(-1);
+  // A selected empty period is common after the dashboard rolls into a new month.
+  // Prefer the newest period containing saved rows; never fall back to seed data.
+  const nonEmpty = keys.filter((key) => Array.isArray(asRecord(archive[key]).rows) && (asRecord(archive[key]).rows as unknown[]).length > 0);
+  if (typeof selectedPeriod === "string" && nonEmpty.includes(selectedPeriod)) return selectedPeriod;
+  return nonEmpty.sort().at(-1);
+}
+
 export async function buildReportFile(product: UploadProduct): Promise<ReportFile> {
   const state = await loadState(product);
   const archive = asRecord(state.periodArchive);
-  const selected = typeof state.selectedPeriodKey === "string" ? state.selectedPeriodKey : Object.keys(archive).sort().at(-1);
+  const selected = latestSavedWmsPeriod(product, archive, state.selectedPeriodKey);
   const entry = asRecord(selected ? archive[selected] : null);
   const rows = Array.isArray(entry.rows) ? (entry.rows as Row[]) : [];
   if (!selected || rows.length === 0) throw new Error(`Belum ada data ${product}. Upload file MASTER ${product} dulu.`);
@@ -397,7 +407,7 @@ export async function buildReportFile(product: UploadProduct): Promise<ReportFil
 export async function loadLatestRows(product: UploadProduct) {
   const state = await loadState(product);
   const archive = asRecord(state.periodArchive);
-  const selected = typeof state.selectedPeriodKey === "string" ? state.selectedPeriodKey : Object.keys(archive).sort().at(-1);
+  const selected = latestSavedWmsPeriod(product, archive, state.selectedPeriodKey);
   const entry = asRecord(selected ? archive[selected] : null);
   const rows = Array.isArray(entry.rows) ? (entry.rows as Row[]) : [];
   if (!selected || rows.length === 0) return null;
@@ -408,7 +418,7 @@ export async function loadLatestRows(product: UploadProduct) {
 export async function loadLatestEntry(product: UploadProduct) {
   const state = await loadState(product);
   const archive = asRecord(state.periodArchive);
-  const selected = typeof state.selectedPeriodKey === "string" ? state.selectedPeriodKey : Object.keys(archive).sort().at(-1);
+  const selected = latestSavedWmsPeriod(product, archive, state.selectedPeriodKey);
   const entry = asRecord(selected ? archive[selected] : null);
   const rows = Array.isArray(entry.rows) ? (entry.rows as Row[]) : [];
   if (!selected || rows.length === 0) return null;

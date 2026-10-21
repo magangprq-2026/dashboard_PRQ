@@ -154,7 +154,7 @@ function ltsSheet(rows: LtsReportRow[]) {
 export async function buildReportExcel(product: ReportProductKey, deps: ReportDeps): Promise<ExcelReport> {
   if (product === "HSI" || product === "WMS") {
     const file = await buildReportFile(product);
-    return { bytes: file.bytes, caption: `Report ${product}\nPeriode: ${file.periodLabel}`, filename: file.filename };
+    return { bytes: file.bytes, caption: `Report ${product}\nPeriode: ${file.periodLabel}${product === "WMS" ? `\nData tersimpan: ${file.updatedAt ?? "waktu tidak tersedia"}` : ""}`, filename: file.filename };
   }
 
   const wb = XLSX.utils.book_new();
