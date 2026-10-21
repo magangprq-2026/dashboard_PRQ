@@ -189,7 +189,7 @@ export function MetabrightDashboard({ permissions = NO_ACCESS }: { permissions?:
     // Tabel data: digambar langsung di canvas dengan kode yang sama seperti bot Telegram (hasil identik & rapi).
     if (mode === "data" && d) {
       const subset = w === "ALL" ? d.rows : d.rows.filter((r) => r.witel === w);
-      return renderMetabrightTablePng(d, subset, cur ?? DEFAULT_LABEL);
+      return renderMetabrightTablePng(d, subset, cur ?? DEFAULT_LABEL, w === "ALL" ? undefined : w);
     }
     setWitel(w);
     setCap(mode);

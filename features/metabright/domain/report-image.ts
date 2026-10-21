@@ -45,12 +45,12 @@ const TOP_RANK_STYLE: Record<number, { background: string; color: string }> = {
 };
 const DEFAULT_RANK_STYLE = { background: "#e2e8f0", color: "#475569" };
 
-function rr(ctx: Ctx, x: number, y: number, w: number, h: number, r: number) {
+export function rr(ctx: Ctx, x: number, y: number, w: number, h: number, r: number) {
   ctx.beginPath();
   ctx.roundRect(x, y, w, h, r);
 }
 
-function fit(ctx: Ctx, text: string, maxWidth: number) {
+export function fit(ctx: Ctx, text: string, maxWidth: number) {
   if (ctx.measureText(text).width <= maxWidth) return text;
   let t = text;
   while (t.length > 1 && ctx.measureText(t + "…").width > maxWidth) t = t.slice(0, -1);
@@ -58,7 +58,7 @@ function fit(ctx: Ctx, text: string, maxWidth: number) {
 }
 
 // Bungkus teks menjadi beberapa baris (maksimum maxLines); baris terakhir dipotong dengan "…" bila masih kepanjangan.
-function wrap(ctx: Ctx, text: string, maxWidth: number, maxLines: number) {
+export function wrap(ctx: Ctx, text: string, maxWidth: number, maxLines: number) {
   const lines: string[] = [];
   let current = "";
   for (const word of text.split(/\s+/).filter(Boolean)) {
@@ -78,7 +78,7 @@ function wrap(ctx: Ctx, text: string, maxWidth: number, maxLines: number) {
   return lines.map((line) => fit(ctx, line, maxWidth));
 }
 
-function pill(ctx: Ctx, cx: number, cy: number, text: string, style: { background: string; color: string }, width = 58) {
+export function pill(ctx: Ctx, cx: number, cy: number, text: string, style: { background: string; color: string }, width = 58) {
   ctx.fillStyle = style.background;
   rr(ctx, cx - width / 2, cy - 11, width, 22, 11);
   ctx.fill();
@@ -100,7 +100,7 @@ export function metabrightImageSize(rowCount: number, indicatorCount: number) {
 }
 
 /** Menggambar seluruh gambar ke ctx (sudah di-scale). rows sudah diurutkan berdasarkan rank. */
-export function drawMetabrightImage(ctx: Ctx, d: Dataset, rows: Row[], period: string, timestamp: Date) {
+export function drawMetabrightImage(ctx: Ctx, d: Dataset, rows: Row[], period: string, timestamp: Date, scopeLabel?: string) {
   const indicators = d.indicators;
   const tableW = COL_RANK + COL_WITEL + COL_TELDA + indicators.length * COL_IND + COL_TOTAL;
   const { W, H } = metabrightImageSize(rows.length, indicators.length);
@@ -138,7 +138,7 @@ export function drawMetabrightImage(ctx: Ctx, d: Dataset, rows: Row[], period: s
   ctx.fillText("Impactful Award Telda", tableX + 82, 74);
   ctx.fillStyle = "#475569";
   ctx.font = "600 14px Arial";
-  ctx.fillText(`${period}  |  ${rows.length} telda  |  ${indicators.length} indikator`, tableX + 82, 98);
+  ctx.fillText(`${period}  |  ${scopeLabel ? scopeLabel + "  |  " : ""}${rows.length} telda  |  ${indicators.length} indikator`, tableX + 82, 98);
   ctx.textAlign = "right";
   ctx.fillStyle = "#64748b";
   ctx.font = "600 13px Arial";

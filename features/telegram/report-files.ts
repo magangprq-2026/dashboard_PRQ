@@ -7,11 +7,12 @@ import defaultMetabright from "@/features/metabright/data/default.json";
 import { toAoa } from "@/features/metabright/domain/export";
 import { periodLabel as metabrightPeriodLabel } from "@/features/metabright/domain/utils";
 import type { Dataset } from "@/features/metabright/domain/types";
+import { slug as metabrightSlug } from "@/features/metabright/domain/utils";
 import { readMetabrightDashboardState } from "@/features/metabright/backend/dashboard-state/db-state";
 import { buildReportFile, loadLatestEntry } from "./master-upload";
 import { buildHsiImages, type ReportHistory } from "./report-images/hsi-image";
 import { buildLtsImage } from "./report-images/lts-image";
-import { buildMetabrightImage } from "./report-images/metabright-image";
+import { buildMetabrightImage, buildMetabrightVizImage } from "./report-images/metabright-image";
 import { buildWmsImage } from "./report-images/wms-image";
 import type { ReportImage } from "./report-images/canvas";
 
@@ -71,6 +72,48 @@ export async function buildReportImages(product: ReportProductKey, deps: ReportD
 
   const mb = await loadMetabrightReportData();
   return [buildMetabrightImage(mb.data, mb.label)];
+}
+
+// ---------- MetaBright: cakupan witel (sama seperti dialog Unduh di dashboard) ----------
+/** Daftar witel yang ada di data MetaBright aktif (urut abjad, sama dengan dashboard). */
+export async function listMetabrightWitels(): Promise<string[]> {
+  const mb = await loadMetabrightReportData();
+  return [...new Set(mb.data.rows.map((r) => r.witel))].sort();
+}
+
+export type MetabrightScope = "all" | { witel: string };
+export type MetabrightContent = "data" | "tabel" | "viz";
+
+function scopeOf(mb: MetabrightReportData, scope: MetabrightScope) {
+  if (scope === "all") return { data: mb.data, label: "Semua witel" };
+  const rows = mb.data.rows.filter((r) => r.witel === scope.witel);
+  if (rows.length === 0) throw new Error(`Data witel ${scope.witel} tidak ditemukan.`);
+  return { data: { ...mb.data, rows }, label: scope.witel };
+}
+
+/** Satu file MetaBright (Excel, tabel PNG, atau visualisasi PNG) untuk cakupan witel tertentu. */
+export async function buildMetabrightFiles(scope: MetabrightScope, contents: MetabrightContent[]): Promise<{ images: ReportImage[]; excel?: ExcelReport }> {
+  const mb = await loadMetabrightReportData();
+  const sc = scopeOf(mb, scope);
+  const timestamp = new Date();
+  const images: ReportImage[] = [];
+  let excel: ExcelReport | undefined;
+  if (contents.includes("data")) {
+    const wb = XLSX.utils.book_new();
+    const aoa = toAoa(sc.data.rows, sc.data);
+    const ws = XLSX.utils.aoa_to_sheet(aoa);
+    ws["!cols"] = aoa[0].map((_, i) => ({ wch: i < 2 ? 7 : i === 2 ? 22 : i === 3 ? 18 : i === aoa[0].length - 1 ? 12 : 17 }));
+    XLSX.utils.book_append_sheet(wb, ws, sc.label.replace(/[\\/?*[\]:]/g, " ").slice(0, 28));
+    const bytes = XLSX.write(wb, { bookType: "xlsx", type: "array" }) as ArrayBuffer;
+    excel = {
+      bytes: new Uint8Array(bytes),
+      caption: `Data Impactful Award Telda (MetaBright)\n${mb.label} | ${sc.label} | ${sc.data.rows.length} telda`,
+      filename: `Data_${metabrightSlug(sc.label)}_${metabrightSlug(mb.label)}.xlsx`,
+    };
+  }
+  if (contents.includes("tabel")) images.push(buildMetabrightImage(sc.data, mb.label, timestamp, scope === "all" ? undefined : sc.label));
+  if (contents.includes("viz")) images.push(buildMetabrightVizImage(sc.data, mb.label, sc.label, timestamp));
+  return { images, excel };
 }
 
 async function ltsReports(deps: ReportDeps): Promise<LtsComputedReport[]> {

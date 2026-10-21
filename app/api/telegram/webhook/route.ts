@@ -31,9 +31,13 @@ import {
 } from "@/features/telegram/metabright-upload";
 import { downloadTelegramFile, sendTelegramDocument } from "@/features/telegram/telegram-api";
 import {
+  buildMetabrightFiles,
   buildReportExcel,
   buildReportImages,
+  listMetabrightWitels,
   loadMetabrightReportData,
+  type MetabrightContent,
+  type MetabrightScope,
   REPORT_DOWNLOAD_PRODUCTS,
   type ReportProductKey,
 } from "@/features/telegram/report-files";
@@ -1153,6 +1157,88 @@ function downloadFormatKeyboard(product: ReportProductKey): TelegramInlineKeyboa
   };
 }
 
+// ---------- Unduh MetaBright: pilih cakupan witel + isi unduhan (sama seperti dialog Unduh di dashboard) ----------
+const MB_SCOPE_ALL = "all";
+const MB_CONTENT_LABEL: Record<MetabrightContent | "semua", string> = {
+  data: "Data (.xlsx)",
+  semua: "Semua isi",
+  tabel: "Tabel (.png)",
+  viz: "Visualisasi (.png)",
+};
+
+function metabrightScopeText() {
+  return ["📥 <b>Unduh Report MetaBright</b>", SECTION, "Pilih cakupan witel:"].join("\n");
+}
+
+function metabrightScopeKeyboard(): TelegramInlineKeyboardMarkup {
+  return {
+    inline_keyboard: [
+      [
+        { callback_data: `mbs:${MB_SCOPE_ALL}`, text: "🌐 Semua Witel" },
+        { callback_data: "mbp", text: "📍 Pilih Witel" },
+      ],
+      [{ callback_data: "menu:download", text: "⬅️ Pilih Modul Lain" }],
+      homeRow,
+    ],
+  };
+}
+
+function metabrightWitelText() {
+  return ["📍 <b>Pilih Witel</b>", SECTION, "Unduhan hanya berisi data witel yang dipilih:"].join("\n");
+}
+
+function metabrightWitelKeyboard(witels: string[]): TelegramInlineKeyboardMarkup {
+  const buttons = witels.map((w) => ({ callback_data: `mbs:${w}`, text: `📍 ${w}` }));
+  const rows: { callback_data: string; text: string }[][] = [];
+  for (let i = 0; i < buttons.length; i += 2) rows.push(buttons.slice(i, i + 2));
+  rows.push([{ callback_data: "dl:METABRIGHT", text: "⬅️ Kembali" }]);
+  rows.push(homeRow);
+  return { inline_keyboard: rows };
+}
+
+function metabrightContentText(scope: string) {
+  const label = scope === MB_SCOPE_ALL ? "Semua witel" : scope;
+  return ["📥 <b>Unduh Report MetaBright</b>", SECTION, `📍 Cakupan: <b>${escapeHtml(label)}</b>`, "", "Pilih isi unduhan:"].join("\n");
+}
+
+function metabrightContentKeyboard(scope: string): TelegramInlineKeyboardMarkup {
+  const b = (content: MetabrightContent | "semua", icon: string) => ({ callback_data: `mb:${content}:${scope}`, text: `${icon} ${MB_CONTENT_LABEL[content]}` });
+  return {
+    inline_keyboard: [
+      [b("data", "📊"), b("tabel", "🖼️")],
+      [b("viz", "📈"), b("semua", "📦")],
+      [{ callback_data: "dl:METABRIGHT", text: "⬅️ Ganti Cakupan Witel" }],
+      homeRow,
+    ],
+  };
+}
+
+function metabrightRetryKeyboard(content: string, scope: string): TelegramInlineKeyboardMarkup {
+  return {
+    inline_keyboard: [
+      [{ callback_data: `mb:${content}:${scope}`, text: "🔄 Coba Lagi" }],
+      [
+        { callback_data: `mbs:${scope}`, text: "⬅️ Pilih Isi" },
+        { callback_data: "menu:download", text: "📥 Modul Lain" },
+      ],
+      homeRow,
+    ],
+  };
+}
+
+function metabrightAfterKeyboard(scope: string): TelegramInlineKeyboardMarkup {
+  return {
+    inline_keyboard: [
+      [
+        { callback_data: `mbs:${scope}`, text: "🔁 Isi Lain (witel sama)" },
+        { callback_data: "dl:METABRIGHT", text: "📍 Ganti Witel" },
+      ],
+      [{ callback_data: "menu:download", text: "📥 Modul Lain" }],
+      homeRow,
+    ],
+  };
+}
+
 function isDownloadProduct(value: string): value is ReportProductKey {
   return REPORT_DOWNLOAD_PRODUCTS.includes(value as ReportProductKey);
 }
@@ -1341,6 +1427,44 @@ async function handleDownload(botToken: string, chatId: number, product: ReportP
   }
 }
 
+async function handleMetabrightDownload(botToken: string, chatId: number, scopeValue: string, contentValue: string) {
+  const contents: MetabrightContent[] = contentValue === "semua" ? ["data", "tabel", "viz"] : contentValue === "data" || contentValue === "tabel" || contentValue === "viz" ? [contentValue] : [];
+  if (contents.length === 0) return;
+  const scope: MetabrightScope = scopeValue === MB_SCOPE_ALL ? "all" : { witel: scopeValue };
+  const scopeLabel = scope === "all" ? "semua witel" : scopeValue;
+  const working = await sendTelegramMessage(botToken, chatId, `⏳ <b>Menyiapkan report MetaBright (${escapeHtml(scopeLabel)})…</b>`);
+  const workingId = working.ok ? working.messageId : undefined;
+  const retry = metabrightRetryKeyboard(contentValue, scopeValue);
+  try {
+    const { images, excel } = await buildMetabrightFiles(scope, contents);
+    const total = images.length + (excel ? 1 : 0);
+    let sentCount = 0;
+    let failed = 0;
+    const withCaption = (icon: string, caption: string) => {
+      const [title, ...rest] = caption.split("\n");
+      return [`${icon} <b>${escapeHtml(title)}</b>`, ...rest.map(escapeHtml)].join("\n");
+    };
+    const next = () => {
+      sentCount += 1;
+      return sentCount === total ? metabrightAfterKeyboard(scopeValue) : undefined;
+    };
+    if (excel) {
+      const sent = await sendTelegramDocument(botToken, chatId, excel.filename, excel.bytes, withCaption("📊", excel.caption), undefined, next());
+      if (!sent.ok) failed += 1;
+    }
+    for (const image of images) {
+      const sent = await sendTelegramDocument(botToken, chatId, image.filename, image.bytes, withCaption("🖼️", image.caption), "image/png", next());
+      if (!sent.ok) failed += 1;
+    }
+    if (failed > 0) await sendTelegramMessage(botToken, chatId, "❌ <b>Sebagian file gagal dikirim</b>\n\nSilakan coba lagi sebentar.", { replyMarkup: retry });
+  } catch (error) {
+    const reason = error instanceof Error ? error.message : "Terjadi kesalahan.";
+    await sendTelegramMessage(botToken, chatId, `❌ <b>Report MetaBright belum bisa dibuat</b>\n\n${escapeHtml(reason)}`, { replyMarkup: retry });
+  } finally {
+    await deleteTelegramMessage(botToken, chatId, workingId);
+  }
+}
+
 async function handleCallbackQuery(botToken: string, callbackQuery: TelegramCallbackQuery, baseUrl: string) {
   await answerCallbackQuery(botToken, callbackQuery.id);
 
@@ -1400,6 +1524,34 @@ async function handleCallbackQuery(botToken: string, callbackQuery: TelegramCall
     return;
   }
 
+  if (data === "dl:METABRIGHT") {
+    await sendOrEditTelegramMessage(botToken, chatId, messageId, metabrightScopeText(), { replyMarkup: metabrightScopeKeyboard() });
+    return;
+  }
+
+  if (data === "mbp") {
+    try {
+      const witels = await listMetabrightWitels();
+      await sendOrEditTelegramMessage(botToken, chatId, messageId, metabrightWitelText(), { replyMarkup: metabrightWitelKeyboard(witels) });
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : "Terjadi kesalahan.";
+      await sendOrEditTelegramMessage(botToken, chatId, messageId, `❌ <b>Daftar witel belum bisa dimuat</b>\n\n${escapeHtml(reason)}`, { replyMarkup: metabrightScopeKeyboard() });
+    }
+    return;
+  }
+
+  if (data.startsWith("mbs:")) {
+    await sendOrEditTelegramMessage(botToken, chatId, messageId, metabrightContentText(data.slice(4)), { replyMarkup: metabrightContentKeyboard(data.slice(4)) });
+    return;
+  }
+
+  if (data.startsWith("mb:")) {
+    const rest = data.slice(3);
+    const cut = rest.indexOf(":");
+    if (cut > 0) await handleMetabrightDownload(botToken, chatId, rest.slice(cut + 1), rest.slice(0, cut));
+    return;
+  }
+
   if (data.startsWith("dl:")) {
     const product = data.slice(3);
     if (isDownloadProduct(product)) {
@@ -1412,6 +1564,10 @@ async function handleCallbackQuery(botToken: string, callbackQuery: TelegramCall
 
   if (data.startsWith("dlx:") || data.startsWith("dli:")) {
     const product = data.slice(4);
+    if (product === "METABRIGHT") {
+      await handleMetabrightDownload(botToken, chatId, MB_SCOPE_ALL, data.startsWith("dli:") ? "tabel" : "data");
+      return;
+    }
     if (isDownloadProduct(product)) await handleDownload(botToken, chatId, product, data.startsWith("dli:") ? "image" : "excel");
     return;
   }
