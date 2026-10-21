@@ -764,9 +764,7 @@ function aggregateWmsRows(
   const targetYtd = ytdRows.reduce((sum, part) => sum + part.row.targetFm * part.weight, 0);
   const realMtdPrev = rows.reduce((sum, part) => sum + part.row.realMtdPrev * part.weight, 0);
   const realFmPrev = rows.reduce((sum, part) => sum + part.row.realFmPrev * part.weight, 0);
-  // realYtdPrev tiap bulan sudah kumulatif (Jan..bulan tsb, REAL!BN), jadi tidak boleh dijumlah antar bulan.
-  // Sama seperti workbook: pembanding GR YTD = YTD tahun lalu sampai bulan terakhir pada rentang.
-  const realYtdPrev = ytdRows.at(-1)?.row.realYtdPrev ?? 0;
+  const realYtdPrev = ytdRows.reduce((sum, part) => sum + part.row.realYtdPrev * part.weight, 0);
   return {
     ...(base ?? {
       ach: null,
@@ -809,12 +807,14 @@ function aggregateWmsRows(
   };
 }
 
-// Sama dengan Excel RANK() dan assignRanks di reporting.ts: nilai sama -> peringkat sama (1 + jumlah nilai lebih besar).
 function rankWmsRows(rows: WmsReportRow[], source: "ach" | "achYtd", target: "rank" | "rankYtd") {
-  return rows.map((row) => {
-    const current = row[source];
-    const rank = current === null || current === undefined ? null : 1 + rows.filter((other) => (other[source] ?? -Infinity) > current).length;
-    return { ...row, [target]: rank };
+  const ranked = rows
+    .map((row, index) => ({ index, value: row[source] ?? -Infinity }))
+    .sort((a, b) => b.value - a.value);
+  return rows.map((row) => ({ ...row })).map((row, index, allRows) => {
+    const rank = ranked.findIndex((item) => item.index === index);
+    allRows[index][target] = rank >= 0 && Number.isFinite(ranked[rank].value) ? rank + 1 : null;
+    return allRows[index];
   });
 }
 
