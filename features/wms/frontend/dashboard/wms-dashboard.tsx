@@ -764,9 +764,7 @@ function aggregateWmsRows(
   const targetYtd = ytdRows.reduce((sum, part) => sum + part.row.targetFm * part.weight, 0);
   const realMtdPrev = rows.reduce((sum, part) => sum + part.row.realMtdPrev * part.weight, 0);
   const realFmPrev = rows.reduce((sum, part) => sum + part.row.realFmPrev * part.weight, 0);
-  // realYtdPrev tiap bulan sudah kumulatif (Jan..bulan tsb, REAL!BN), jadi tidak boleh dijumlah antar bulan.
-  // Sama seperti workbook: pembanding GR YTD = YTD tahun lalu sampai bulan terakhir pada rentang.
-  const realYtdPrev = ytdRows.at(-1)?.row.realYtdPrev ?? 0;
+  const realYtdPrev = ytdRows.reduce((sum, part) => sum + part.row.realYtdPrev * part.weight, 0);
   return {
     ...(base ?? {
       ach: null,
@@ -809,12 +807,14 @@ function aggregateWmsRows(
   };
 }
 
-// Sama dengan Excel RANK() dan assignRanks di reporting.ts: nilai sama -> peringkat sama (1 + jumlah nilai lebih besar).
 function rankWmsRows(rows: WmsReportRow[], source: "ach" | "achYtd", target: "rank" | "rankYtd") {
-  return rows.map((row) => {
-    const current = row[source];
-    const rank = current === null || current === undefined ? null : 1 + rows.filter((other) => (other[source] ?? -Infinity) > current).length;
-    return { ...row, [target]: rank };
+  const ranked = rows
+    .map((row, index) => ({ index, value: row[source] ?? -Infinity }))
+    .sort((a, b) => b.value - a.value);
+  return rows.map((row) => ({ ...row })).map((row, index, allRows) => {
+    const rank = ranked.findIndex((item) => item.index === index);
+    allRows[index][target] = rank >= 0 && Number.isFinite(ranked[rank].value) ? rank + 1 : null;
+    return allRows[index];
   });
 }
 
@@ -1018,7 +1018,7 @@ export function WmsDashboard({ permissions = fullAccessPermissions }: { permissi
       const storedRows = window.localStorage.getItem(STORAGE_KEY);
       const storedSavedAt = window.localStorage.getItem(SAVED_AT_KEY);
       const shouldRefreshSeed = window.localStorage.getItem(DATA_VERSION_KEY) !== wmsDataVersion;
-      let nextArchive: PeriodArchive = { ...seedArchive, ...storedArchive }; // Never overwrite uploaded data when seed version changes.
+      let nextArchive: PeriodArchive = shouldRefreshSeed ? { ...storedArchive, ...seedArchive } : { ...seedArchive, ...storedArchive };
 
       if (Object.keys(storedArchive).length === 0 && storedRows) {
         try {
@@ -1049,7 +1049,7 @@ export function WmsDashboard({ permissions = fullAccessPermissions }: { permissi
       void loadDashboardStateFromServer()
         .then(({ configured, state }) => {
           if (state) {
-            const mergedArchive = { ...nextArchive, ...state.periodArchive }; // Server is authoritative when present.
+            const mergedArchive = shouldRefreshSeed ? { ...state.periodArchive, ...nextArchive } : { ...nextArchive, ...state.periodArchive };
             applyPersistedState({ ...state, periodArchive: mergedArchive }, "Data server dimuat");
           } else if (!configured) {
             setAutoSaveStatus("Database server belum dikonfigurasi; data tersimpan di browser ini");
