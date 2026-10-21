@@ -1018,7 +1018,7 @@ export function WmsDashboard({ permissions = fullAccessPermissions }: { permissi
       const storedRows = window.localStorage.getItem(STORAGE_KEY);
       const storedSavedAt = window.localStorage.getItem(SAVED_AT_KEY);
       const shouldRefreshSeed = window.localStorage.getItem(DATA_VERSION_KEY) !== wmsDataVersion;
-      let nextArchive: PeriodArchive = shouldRefreshSeed ? { ...storedArchive, ...seedArchive } : { ...seedArchive, ...storedArchive };
+      let nextArchive: PeriodArchive = { ...seedArchive, ...storedArchive }; // Never overwrite uploaded data when seed version changes.
 
       if (Object.keys(storedArchive).length === 0 && storedRows) {
         try {
@@ -1049,7 +1049,7 @@ export function WmsDashboard({ permissions = fullAccessPermissions }: { permissi
       void loadDashboardStateFromServer()
         .then(({ configured, state }) => {
           if (state) {
-            const mergedArchive = { ...nextArchive, ...state.periodArchive };
+            const mergedArchive = { ...nextArchive, ...state.periodArchive }; // Server is authoritative when present.
             applyPersistedState({ ...state, periodArchive: mergedArchive }, "Data server dimuat");
           } else if (!configured) {
             setAutoSaveStatus("Database server belum dikonfigurasi; data tersimpan di browser ini");

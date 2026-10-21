@@ -388,14 +388,11 @@ export async function buildReportFile(product: UploadProduct): Promise<ReportFil
     XLSX.utils.book_append_sheet(wb, hsiSheet(report.targetStf.witel, dayCount), "STF Witel");
     XLSX.utils.book_append_sheet(wb, hsiSheet(report.targetStf.branch, dayCount), "STF Telda");
   } else {
-    // Include all archived periods, as the web dashboard does for YTD/history.
-    const allPeriodRows = Object.entries(archive)
+    const historicalRows = Object.entries(archive)
+      .filter(([key, value]) => /^\d{6}$/.test(key) && key <= selected && Array.isArray(asRecord(value).rows))
       .sort(([a], [b]) => a.localeCompare(b))
-      .flatMap(([, value]) => {
-        const periodRows = asRecord(value).rows;
-        return Array.isArray(periodRows) ? (periodRows as Row[]) : [];
-      });
-    const report = computeWmsReport(allPeriodRows, selected);
+      .flatMap(([, value]) => asRecord(value).rows as Row[]);
+    const report = computeWmsReport(historicalRows.length ? historicalRows : rows, selected);
     periodLabel = report.periodLabel;
     const dayCount = Math.max(...[...report.witel.rows, report.witel.total, ...report.telda.rows, report.telda.total].map((r) => r.days.length), 0);
     XLSX.utils.book_append_sheet(wb, wmsSheet(report.witel.rows, report.witel.total, dayCount), "Report Witel");
