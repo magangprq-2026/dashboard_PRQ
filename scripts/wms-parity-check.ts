@@ -9,7 +9,7 @@ import { normalizeImportedMasterRows } from "../features/wms/domain/reporting/ma
 import { parseWmsReference } from "../features/wms/domain/reporting/reference";
 
 const require = createRequire(import.meta.url);
-const XLSX = require(path.resolve(import.meta.dirname, "../public/vendor/xlsx.full.min.js"));
+const XLSX = require(path.resolve(process.cwd(), "public/vendor/xlsx.full.min.js"));
 const file = process.argv[2];
 if (!file) throw new Error("Pakai: npx tsx scripts/wms-parity-check.ts <workbook.xlsx>");
 
