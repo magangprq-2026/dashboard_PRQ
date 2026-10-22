@@ -874,6 +874,7 @@ body {
 }
 .metabright-page .card.fill .leg { margin-top: auto; }
 .metabright-page .leg i { display: inline-block; width: 10px; height: 10px; margin-right: 5px; border-radius: 3px; }
+.metabright-page .leg i.dash { width: 0; height: 12px; margin-right: 7px; border-radius: 0; border-left: 2px dashed #334155; vertical-align: -2px; }
 
 /* ---------- Podium & sorotan ---------- */
 .metabright-page .g3 .card { display: flex; flex-direction: column; }

@@ -15,34 +15,74 @@ const tipStyle = { background: "rgba(26,20,87,.96)", border: 0, borderRadius: 12
 const tipItem = { color: "#fff" };
 const tv = (value: unknown) => (typeof value === "number" ? value : Number(value ?? 0));
 
+
+/* trek abu-abu di belakang bar: menunjukkan "ruang" sampai skor maksimum */
+const TRACK = { fill: "#f1f5f9", radius: 10 } as never;
+
+/* label pill kecil di atas garis referensi (garis putus-putus) */
+function RefTag({ viewBox, text, color }: { viewBox?: { x?: number; y?: number }; text: string; color: string }) {
+  const x = viewBox?.x ?? 0;
+  const y = (viewBox?.y ?? 0) - 8;
+  const w = text.length * 6.4 + 18;
+  return (
+    <g>
+      <rect x={x - w / 2} y={y - 20} width={w} height={20} rx={10} fill={color} />
+      <text x={x} y={y - 10} textAnchor="middle" dominantBaseline="central" fontSize={10.5} fontWeight={800} fill="#fff">{text}</text>
+    </g>
+  );
+}
+
+type LblProps = { x?: number | string; y?: number | string; width?: number | string; height?: number | string; value?: unknown };
+const pos = (p: LblProps) => ({ x: Number(p.x ?? 0), y: Number(p.y ?? 0), w: Number(p.width ?? 0), h: Number(p.height ?? 0), v: Number(p.value ?? 0) });
+
+/* angka di ujung bar + selisih terhadap rata-rata (▲ di atas / ▼ di bawah garis putus-putus) */
+const deltaLabel = (mean: number) => function DeltaLabel(p: LblProps) {
+  const { x, y, w, h, v } = pos(p);
+  const d = v - mean;
+  const up = d >= 0;
+  return (
+    <text x={x + w + 8} y={y + h / 2} dominantBaseline="central" fontSize={11.5} fontWeight={800} fill="#0f172a">
+      {nf(v)}
+      <tspan dx={6} fontSize={10} fontWeight={700} fill={up ? "#059669" : "#e11d48"}>{up ? "▲" : "▼"} {nf(Math.abs(d))}</tspan>
+    </text>
+  );
+};
+
+/* batas sumbu dinamis supaya bar > 100% tidak terpotong */
+const niceMax = (vals: number[], floor: number) => Math.max(floor, Math.ceil((Math.max(0, ...vals) + 8) / 10) * 10);
+
 export const witelColor = (ws: string[], w: string) => COL[ws.indexOf(w) % COL.length];
 
 /* 1. Peringkat total score */
 export function RankChart({ rows, ws, topN }: { rows: Row[]; ws: string[]; topN: number }) {
   const top = [...rows].sort((a, b) => b.total - a.total).slice(0, topN || rows.length);
   const data = top.map((r, k) => ({ label: `${k + 1}. ${r.telda}`, telda: r.telda, witel: r.witel, total: r.total }));
-  const h = top.length * (top.length <= 12 ? 46 : 30) + 50;
+  const h = top.length * (top.length <= 12 ? 46 : 30) + 64;
+  /* garis putus-putus = rata-rata total score SEMUA telda hasil filter (bukan hanya yang tampil di grafik) */
   const mean = avg(rows.map((r) => r.total));
   return (
     <ResponsiveContainer width="100%" height={h}>
-      <BarChart data={data} layout="vertical" margin={{ top: 4, right: 48, bottom: 4, left: 4 }}>
+      <BarChart data={data} layout="vertical" margin={{ top: 34, right: 40, bottom: 4, left: 4 }} barCategoryGap="22%">
         <CartesianGrid horizontal={false} stroke={GRID} />
         <XAxis type="number" domain={[0, 110]} ticks={[0, 25, 50, 75, 100]} tick={AXIS} axisLine={false} tickLine={false} />
         <YAxis type="category" dataKey="label" width={150} interval={0} tick={{ ...AXIS, fontWeight: 600, fill: "#334155" }} axisLine={false} tickLine={false} />
-        <ReferenceLine x={mean} stroke="#94a3b8" strokeDasharray="5 4" label={{ value: "Rata-rata " + nf(mean), position: "insideTopRight", fontSize: 10, fill: "#64748b" }} />
+        <ReferenceLine x={mean} stroke="#334155" strokeWidth={1.5} strokeDasharray="6 4" ifOverflow="extendDomain" label={<RefTag text={"Rata-rata " + nf(mean)} color="#334155" />} />
         <Tooltip
           cursor={{ fill: "rgba(148,163,184,.12)" }}
           contentStyle={tipStyle}
           itemStyle={tipItem}
           labelStyle={{ color: "#fff", fontWeight: 700 }}
-          formatter={(v: unknown, _n: unknown, p: unknown) => [
-            nf(tv(v)),
-            (p as { payload?: { witel?: string } }).payload?.witel ?? "Total score",
-          ]}
+          formatter={(v: unknown, _n: unknown, p: unknown) => {
+            const d = tv(v) - mean;
+            return [
+              `${nf(tv(v))}  (${d >= 0 ? "+" : "−"}${nf(Math.abs(d))} dari rata-rata)`,
+              (p as { payload?: { witel?: string } }).payload?.witel ?? "Total score",
+            ];
+          }}
         />
-        <Bar dataKey="total" radius={[0, 10, 10, 0]} maxBarSize={top.length <= 12 ? 28 : 18} isAnimationActive={false}>
+        <Bar dataKey="total" radius={[0, 10, 10, 0]} maxBarSize={top.length <= 12 ? 26 : 16} background={TRACK} isAnimationActive={false}>
           {data.map((d, i) => <Cell key={i} fill={witelColor(ws, d.witel)} />)}
-          <LabelList dataKey="total" position="right" formatter={(v: unknown) => nf(Number(v))} style={LBL} />
+          <LabelList dataKey="total" position="right" content={deltaLabel(mean) as never} />
         </Bar>
       </BarChart>
     </ResponsiveContainer>
@@ -65,7 +105,7 @@ export function WitelChart({ rows, ws }: { rows: Row[]; ws: string[] }) {
         <XAxis type="number" domain={[0, 110]} ticks={[0, 25, 50, 75, 100]} tick={AXIS} axisLine={false} tickLine={false} />
         <YAxis type="category" dataKey="label" width={150} interval={0} tick={{ ...AXIS, fontWeight: 600, fill: "#334155" }} axisLine={false} tickLine={false} />
         <Tooltip cursor={{ fill: "rgba(148,163,184,.12)" }} contentStyle={tipStyle} itemStyle={tipItem} formatter={(v: unknown) => [nf(tv(v)), "Rata-rata"]} />
-        <Bar dataKey="v" radius={[0, 10, 10, 0]} maxBarSize={22} isAnimationActive={false}>
+        <Bar dataKey="v" radius={[0, 10, 10, 0]} maxBarSize={22} background={TRACK} isAnimationActive={false}>
           {data.map((d, i) => <Cell key={i} fill={witelColor(ws, d.witel)} />)}
           <LabelList dataKey="v" position="right" formatter={(v: unknown) => nf(Number(v))} style={LBL} />
         </Bar>
@@ -103,15 +143,18 @@ function WrapTick(props: { x?: number; y?: number; payload?: { value: string } }
 export function IndicatorChart({ rows, d }: { rows: Row[]; d: Dataset }) {
   const iv = indicatorAvg(rows, d);
   const data = d.indicators.map((x, k) => ({ name: x.name, v: +iv[k].toFixed(1) }));
+  /* sumbu mengikuti nilai tertinggi (mis. OCA bisa > 100%) agar bar & angkanya tidak terpotong */
+  const max = niceMax(data.map((x) => x.v), 110);
+  const ticks = [0, 25, 50, 75, 100, ...(max > 110 ? [Math.floor(max / 10) * 10] : [])];
   return (
-    <ResponsiveContainer width="100%" height={data.length * 34 + 30}>
-      <BarChart data={data} layout="vertical" margin={{ top: 4, right: 56, bottom: 4, left: 4 }}>
+    <ResponsiveContainer width="100%" height={data.length * 36 + 48}>
+      <BarChart data={data} layout="vertical" margin={{ top: 34, right: 24, bottom: 4, left: 4 }} barCategoryGap="22%">
         <CartesianGrid horizontal={false} stroke={GRID} />
-        <XAxis type="number" domain={[0, 110]} ticks={[0, 25, 50, 75, 100]} tickFormatter={(v) => v + "%"} tick={AXIS} axisLine={false} tickLine={false} />
+        <XAxis type="number" domain={[0, max]} ticks={ticks} tickFormatter={(v) => v + "%"} tick={AXIS} axisLine={false} tickLine={false} />
         <YAxis type="category" dataKey="name" width={170} interval={0} tick={<WrapTick />} axisLine={false} tickLine={false} />
-        <ReferenceLine x={100} stroke="#94a3b8" strokeDasharray="5 4" />
+        <ReferenceLine x={100} stroke="#334155" strokeWidth={1.5} strokeDasharray="6 4" label={<RefTag text="Target 100%" color="#334155" />} />
         <Tooltip cursor={{ fill: "rgba(148,163,184,.12)" }} contentStyle={tipStyle} itemStyle={tipItem} formatter={(v: unknown) => [nf(tv(v)) + "% dari bobot", "Capaian"]} />
-        <Bar dataKey="v" radius={[0, 10, 10, 0]} maxBarSize={20} isAnimationActive={false}>
+        <Bar dataKey="v" radius={[0, 10, 10, 0]} maxBarSize={20} background={TRACK} isAnimationActive={false}>
           {data.map((d2, i) => <Cell key={i} fill={d2.v >= 80 ? "#059669" : d2.v >= 50 ? "#f59e0b" : "#e11d48"} />)}
           <LabelList dataKey="v" position="right" formatter={(v: unknown) => nf(Number(v), 1) + "%"} style={LBL} />
         </Bar>

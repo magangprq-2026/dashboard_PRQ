@@ -66,10 +66,10 @@ function plan(d: Dataset, rows: Row[]) {
   const podH = 330;
   const r3Y = podY + podH + GAP;
   const wsCardH = Math.max(ws.length * 34 + 78, 130);
-  const rankH = Math.max(topN * 32 + 84, wsCardH + GAP + 230);
+  const rankH = Math.max(topN * 32 + 92, wsCardH + GAP + 230);
   const distH = rankH - wsCardH - GAP;
   const indY = r3Y + rankH + GAP;
-  const indH = d.indicators.length * 30 + 84;
+  const indH = d.indicators.length * 30 + 92;
   const hmY = indY + indH + GAP;
   const hmRowH = 34;
   const hmH = 84 + (ws.length > 1 ? ws.length + 1 : ws.length) * hmRowH + 60;
@@ -121,14 +121,25 @@ function hBars(ctx: Ctx, x: number, y: number, w: number, bars: Bar[], max: numb
   const barMaxW = w - labelW - 64;
   if (ref) {
     const rx = barX + (Math.min(ref.v, max) / max) * barMaxW;
-    ctx.strokeStyle = "#94a3b8";
-    ctx.lineWidth = 1;
-    ctx.setLineDash([5, 4]);
+    ctx.strokeStyle = "#334155";
+    ctx.lineWidth = 1.5;
+    ctx.setLineDash([6, 4]);
     ctx.beginPath();
-    ctx.moveTo(rx, y - 4);
+    ctx.moveTo(rx, y - 2);
     ctx.lineTo(rx, y + bars.length * rowH);
     ctx.stroke();
     ctx.setLineDash([]);
+    if (ref.label) {
+      ctx.font = "800 11px Arial";
+      const tw = ctx.measureText(ref.label).width + 18;
+      ctx.fillStyle = "#334155";
+      rr(ctx, rx - tw / 2, y - 26, tw, 20, 10);
+      ctx.fill();
+      ctx.fillStyle = "#ffffff";
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      ctx.fillText(ref.label, rx, y - 16);
+    }
   }
   bars.forEach((b, k) => {
     const cy = y + k * rowH + rowH / 2;
@@ -319,19 +330,19 @@ export function drawMetabrightViz(ctx: Ctx, d: Dataset, rows: Row[], period: str
 
   // peringkat total score
   const rankW = Math.round(CW * 0.5);
-  card(ctx, M, P.r3Y, rankW, P.rankH, `Peringkat total score (${P.topN} teratas)`, "Warna menunjukkan witel · garis putus-putus = rata-rata");
+  card(ctx, M, P.r3Y, rankW, P.rankH, `Peringkat total score (${P.topN} teratas)`, "Warna = witel · garis putus-putus = rata-rata seluruh telda hasil filter");
   const meanAll = avg(rows.map((r) => r.total));
-  const rankRowH = Math.min(46, Math.floor((P.rankH - 76 - 44) / P.topN));
+  const rankRowH = Math.min(46, Math.floor((P.rankH - 84 - 44) / P.topN));
   hBars(
     ctx,
     M + 14,
-    P.r3Y + 76,
+    P.r3Y + 84,
     rankW - 28,
     S.sorted.slice(0, P.topN).map((r, k) => ({ label: `${k + 1}. ${r.telda}`, value: r.total, color: wsColor(r.witel), text: nf(r.total) })),
     110,
     rankRowH,
     150,
-    { v: meanAll },
+    { v: meanAll, label: "Rata-rata " + nf(meanAll) },
   );
   // legenda witel
   let lx = M + 24;
@@ -394,17 +405,17 @@ export function drawMetabrightViz(ctx: Ctx, d: Dataset, rows: Row[], period: str
   ctx.stroke();
 
   // capaian rata-rata per indikator
-  card(ctx, M, P.indY, CW, P.indH, "Capaian rata-rata per indikator", "Skor diperoleh terhadap bobot indikator (%) · ≥ 80% hijau, 50–79% kuning, < 50% merah");
+  card(ctx, M, P.indY, CW, P.indH, "Capaian rata-rata per indikator", "Skor diperoleh terhadap bobot indikator (%) · garis putus-putus = target 100% · ≥ 80% hijau, 50–79% kuning, < 50% merah");
   hBars(
     ctx,
     M + 14,
-    P.indY + 76,
+    P.indY + 84,
     CW - 28,
     S.iv.map((x) => ({ label: x.n, value: x.p, color: x.p >= 80 ? "#059669" : x.p >= 50 ? "#f59e0b" : "#e11d48", text: nf(x.p, 1) + "%" })),
-    110,
+    Math.max(110, Math.ceil((Math.max(...S.iv.map((x) => x.p)) + 8) / 10) * 10),
     30,
     300,
-    { v: 100 },
+    { v: 100, label: "Target 100%" },
   );
 
   // peta capaian witel per indikator
