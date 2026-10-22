@@ -12,7 +12,6 @@ import {
   isAllowedUploader,
   loadLatestRows,
   parseMasterRows,
-  parseWmsReferenceFromBuffer,
 } from "@/features/telegram/master-upload";
 import {
   claimLtsReport,
@@ -628,7 +627,7 @@ async function buildHsiReport(): Promise<ProductReport> {
 async function buildWmsReportFromState(): Promise<ProductReport | null> {
   const latest = await loadLatestRows("WMS");
   if (!latest) return null;
-  const report = computeWmsReport(latest.allRows as WmsMasterRow[], latest.periodKey, { reference: latest.reference });
+  const report = computeWmsReport(latest.rows as WmsMasterRow[], latest.periodKey);
   const total = report.witel.total;
   const top = [...report.telda.rows].filter((r) => typeof r.ach === "number").sort((a, b) => Number(b.ach) - Number(a.ach))[0];
   const metrics: ReportMetric[] = [];
@@ -1389,7 +1388,7 @@ async function handleDocumentUpload(botToken: string, chatId: number, message: T
       return;
     }
     const rows = parseMasterRows(product, buffer);
-    const summary = await importMaster(product, rows, { reference: product === "WMS" ? parseWmsReferenceFromBuffer(buffer) : null });
+    const summary = await importMaster(product, rows);
     const periods = summary.periods.map((p) => `${escapeHtml(p.label)} (${p.rows.toLocaleString("id-ID")} baris)`).join(", ");
     const sent = await sendReportImages(botToken, chatId, product, `✅ <b>Upload ${product} berhasil</b>\n\n📅 ${periods}\n\n`, afterUploadKeyboard());
     await deleteTelegramMessage(botToken, chatId, workingId);

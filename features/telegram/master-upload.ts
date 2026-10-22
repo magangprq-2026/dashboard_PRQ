@@ -13,14 +13,11 @@ import {
 import { seedData as hsiSeed } from "@/features/hsi/domain/reporting/seed-data";
 import {
   computeWmsReport,
-  groupMasterRowsByPeriod as wmsGroupRowsByPeriod,
   masterHeaders as wmsHeaders,
+  periodKeyFromMasterRow as wmsPeriodKeyFromRow,
   periodLabelFromKey as wmsPeriodLabel,
-  type MasterRow as WmsMasterRow,
-  type WmsReference,
   type WmsReportRow,
 } from "@/features/wms/domain/reporting/reporting";
-import { normalizeWmsReference, parseWmsReference } from "@/features/wms/domain/reporting/reference";
 
 export type UploadProduct = "HSI" | "WMS";
 type Cell = string | number | boolean | null;
@@ -193,24 +190,6 @@ export function parseMasterRows(product: UploadProduct, buffer: Buffer): Row[] {
   return result;
 }
 
-/** Data acuan (HELPER/TARGET/REAL) dari workbook WMS lengkap; null bila file bukan workbook lengkap. */
-export function parseWmsReferenceFromBuffer(buffer: Buffer): WmsReference | null {
-  try {
-    if (delimitedRows(buffer) || !isBinaryWorkbook(buffer)) return null;
-    const workbook = XLSX.read(buffer, { cellDates: true, type: "buffer" });
-    return parseWmsReference((name) => {
-      const found = workbook.SheetNames.find((n) => n.trim().toUpperCase() === name.toUpperCase());
-      if (!found) return null;
-      const worksheet = workbook.Sheets[found];
-      // Mulai dari kolom A/baris 1 agar indeks kolom sama dengan nomor kolom Excel.
-      const end = XLSX.utils.decode_range(worksheet["!ref"] ?? "A1").e;
-      return XLSX.utils.sheet_to_json<unknown[]>(worksheet, { blankrows: true, defval: null, header: 1, range: { e: end, s: { c: 0, r: 0 } }, raw: true });
-    }).reference;
-  } catch {
-    return null;
-  }
-}
-
 // ---------- Periode ----------
 function parsePeriodKey(value: unknown) {
   const digits = String(value ?? "").replace(/\D/g, "");
@@ -271,7 +250,7 @@ function mergeHistoryTable(previous: Record<string, (number | null)[]>, table: H
 
 export type ImportSummary = { periods: { key: string; label: string; rows: number }[]; savedAt: string };
 
-export async function importMaster(product: UploadProduct, rows: Row[], options: { reference?: WmsReference | null } = {}): Promise<ImportSummary> {
+export async function importMaster(product: UploadProduct, rows: Row[]): Promise<ImportSummary> {
   const state = await loadState(product);
   const archive = asRecord(state.periodArchive);
   const snapshots = asRecord(state.saveSnapshots);
@@ -280,8 +259,10 @@ export async function importMaster(product: UploadProduct, rows: Row[], options:
   const grouped: Record<string, Row[]> = {};
   if (product === "HSI") grouped[hsiPeriodKey(rows)] = rows;
   else {
-    // Baris tanpa periode terbaca ikut periode dominan (tidak dibuang), sama seperti Excel.
-    Object.assign(grouped, wmsGroupRowsByPeriod(rows as WmsMasterRow[]));
+    for (const row of rows) {
+      const key = wmsPeriodKeyFromRow(row);
+      if (key) (grouped[key] ??= []).push(row);
+    }
     if (Object.keys(grouped).length === 0) throw new Error("Kolom periode (NPER/bulan) tidak terbaca dari file WMS.");
   }
 
@@ -331,14 +312,7 @@ export async function importMaster(product: UploadProduct, rows: Row[], options:
           selectedPeriodKey: latestKey,
           updatedAt: savedAt,
         }
-      : {
-          ...state,
-          periodArchive: nextArchive,
-          reference: options.reference ?? normalizeWmsReference(state.reference),
-          saveSnapshots: nextSnapshots,
-          selectedPeriodKey: latestKey,
-          updatedAt: savedAt,
-        };
+      : { periodArchive: nextArchive, saveSnapshots: nextSnapshots, selectedPeriodKey: latestKey, updatedAt: savedAt };
 
   await saveState(product, nextState);
   return {
@@ -404,7 +378,7 @@ export async function buildReportFile(product: UploadProduct): Promise<ReportFil
     XLSX.utils.book_append_sheet(wb, hsiSheet(report.targetStf.witel, dayCount), "STF Witel");
     XLSX.utils.book_append_sheet(wb, hsiSheet(report.targetStf.branch, dayCount), "STF Telda");
   } else {
-    const report = computeWmsReport(allArchiveRows(archive, selected, rows), selected, { reference: normalizeWmsReference(state.reference) });
+    const report = computeWmsReport(rows, selected);
     periodLabel = report.periodLabel;
     const dayCount = Math.max(...[...report.witel.rows, report.witel.total, ...report.telda.rows, report.telda.total].map((r) => r.days.length), 0);
     XLSX.utils.book_append_sheet(wb, wmsSheet(report.witel.rows, report.witel.total, dayCount), "Report Witel");
@@ -419,18 +393,6 @@ export async function buildReportFile(product: UploadProduct): Promise<ReportFil
   };
 }
 
-/** Semua baris arsip (lintas periode) dengan baris periode aktif di akhir: bulan lalu/YTD butuh baris periode sebelumnya. */
-function allArchiveRows(archive: Json, selected: string, activeRows: Row[]): WmsMasterRow[] {
-  const others = Object.keys(archive)
-    .filter((key) => key !== selected)
-    .sort()
-    .flatMap((key) => {
-      const entryRows = asRecord(archive[key]).rows;
-      return Array.isArray(entryRows) ? (entryRows as WmsMasterRow[]) : [];
-    });
-  return [...others, ...(activeRows as WmsMasterRow[])];
-}
-
 /** Baris MASTER periode aktif dari dashboard_state (sumber yang sama dengan web). null bila belum ada data. */
 export async function loadLatestRows(product: UploadProduct) {
   const state = await loadState(product);
@@ -439,13 +401,7 @@ export async function loadLatestRows(product: UploadProduct) {
   const entry = asRecord(selected ? archive[selected] : null);
   const rows = Array.isArray(entry.rows) ? (entry.rows as Row[]) : [];
   if (!selected || rows.length === 0) return null;
-  return {
-    allRows: allArchiveRows(archive, selected, rows),
-    periodKey: selected,
-    reference: normalizeWmsReference(state.reference),
-    rows,
-    savedAt: typeof entry.savedAt === "string" ? entry.savedAt : null,
-  };
+  return { periodKey: selected, rows, savedAt: typeof entry.savedAt === "string" ? entry.savedAt : null };
 }
 
 /** Entri periode aktif lengkap (termasuk riwayat harian HSI) untuk membuat gambar report yang sama dengan web. */
@@ -457,9 +413,7 @@ export async function loadLatestEntry(product: UploadProduct) {
   const rows = Array.isArray(entry.rows) ? (entry.rows as Row[]) : [];
   if (!selected || rows.length === 0) return null;
   return {
-    allRows: allArchiveRows(archive, selected, rows),
     periodKey: selected,
-    reference: normalizeWmsReference(state.reference),
     reportHistory: entry.reportHistory && typeof entry.reportHistory === "object" ? entry.reportHistory : null,
     reportSnapshot: entry.reportSnapshot && typeof entry.reportSnapshot === "object" ? entry.reportSnapshot : null,
     rows,

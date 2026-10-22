@@ -26,23 +26,6 @@ export type WmsReportRow = {
   targetYtd: number;
 };
 
-// Data acuan yang di workbook berasal dari sheet REAL (histori), TARGET, dan HELPER.
-// Bawaan = data yang ditanam di aplikasi; saat file xlsx lengkap diupload, nilainya diganti
-// dengan isi sheet tsb supaya hasil dashboard selalu sama dengan workbook.
-export type WmsTargetEntry = { monthly: readonly number[] };
-export type WmsReference = {
-  history: { telda: Record<string, WmsHistoryEntry>; witel: Record<string, WmsHistoryEntry> };
-  importedAt?: string | null;
-  /** Bulan terakhir yang sudah "tutup" di sheet REAL (HELPER bulan - 1). */
-  lastClosedMonth: number;
-  /** Periode laporan yang dipakai histori REAL!B:AG (HELPER!B3 pada tahun berjalan), mis. "202610". */
-  reportPeriodKey: string;
-  source?: string | null;
-  targets: { telda: Record<string, WmsTargetEntry>; witel: Record<string, WmsTargetEntry> };
-  /** Tahun laporan (REAL!AL:AW = tahun ini, REAL!BA:BL = tahun sebelumnya). */
-  year: number;
-};
-
 export type WmsComputedReport = {
   cutoffDay: number;
   cutoffLabel: string;
@@ -65,19 +48,6 @@ export type WmsComputedReport = {
 };
 
 const seed = wmsSeedData;
-
-export const defaultWmsReference: WmsReference = {
-  history: { telda: wmsHistory.telda, witel: wmsHistory.witel },
-  importedAt: null,
-  lastClosedMonth: wmsHistory.lastClosedMonth2026,
-  reportPeriodKey: wmsHistory.reportPeriodKey,
-  source: "bawaan aplikasi",
-  targets: {
-    telda: seed.targets.telda as Record<string, TargetEntry>,
-    witel: seed.targets.witel as Record<string, TargetEntry>,
-  },
-  year: 2026,
-};
 
 // Hasil export Tableau memakai header "TABLE_NAME", sedangkan seed lama menulis "Table Name".
 // Tanpa penyesuaian ini upload CSV/Excel ditolak ("kurang kolom wajib: Table Name").
@@ -121,13 +91,6 @@ function toLabel(value: unknown) {
   return String(value ?? "").trim().toUpperCase();
 }
 
-// Padanan operator "=" di Excel (SUMPRODUCT((MASTER!M=$C6)...)): tidak membedakan huruf besar/kecil,
-// tetapi TIDAK memangkas spasi. Nilai WITEL/TELKOM_DAERAH dengan spasi berlebih tidak dihitung di Excel,
-// jadi dashboard juga tidak menghitungnya.
-function matchKey(value: unknown) {
-  return String(value ?? "").toUpperCase();
-}
-
 function pad2(value: number) {
   return String(value).padStart(2, "0");
 }
@@ -136,58 +99,17 @@ function daysInMonth(year: number, month: number) {
   return new Date(year, month, 0).getDate();
 }
 
-function validPeriodKey(value: unknown) {
-  if (value === null || value === undefined || value === "") return null;
-  const digits = typeof value === "number" ? String(Math.trunc(value)) : String(value).replace(/\D/g, "");
-  if (!/^\d{6}$/.test(digits)) return null;
-  const month = Number(digits.slice(4, 6));
-  return month >= 1 && month <= 12 ? digits : null;
-}
-
-// Urutan: TANGGAL (yyyymmdd) -> kolom periode 6 digit (PERIOD, PERIOD_U, BULAN_PS, NPER).
-// Excel tidak memfilter bulan sama sekali (semua baris MASTER dihitung per hari), jadi baris yang
-// TANGGAL-nya kosong tidak boleh hilang begitu saja.
 function periodFromRow(row: MasterRow) {
   const tanggal = toNumber(row[indexByHeader.TANGGAL]);
-  if (tanggal) {
-    const fromDate = validPeriodKey(Math.trunc(tanggal / 100));
-    if (fromDate) return fromDate;
-  }
-  for (const header of ["PERIOD", "PERIOD_U", "BULAN_PS", "NPER"]) {
-    const key = validPeriodKey(row[indexByHeader[header]]);
-    if (key) return key;
-  }
-  return tanggal ? String(Math.trunc(tanggal / 100)) : "";
+  if (tanggal) return String(Math.trunc(tanggal / 100));
+  const nper = row[indexByHeader.NPER];
+  if (typeof nper === "number") return String(nper);
+  return String(nper ?? "").replace(/\D/g, "").slice(0, 6);
 }
 
 export function periodKeyFromMasterRow(row: MasterRow) {
   const periodKey = periodFromRow(row);
   return /^\d{6}$/.test(periodKey) ? periodKey : null;
-}
-
-// Mengelompokkan baris hasil upload per periode. Baris yang periodenya tidak terbaca (TANGGAL dan kolom
-// periode kosong) ikut periode dominan file, dengan TANGGAL dilengkapi dari "Day of LAST_UPDATED_DATE".
-// Dengan begitu tidak ada baris yang diam-diam terbuang, sama seperti Excel yang menghitung semua baris MASTER.
-export function groupMasterRowsByPeriod(rows: MasterRow[], fallbackKey?: string) {
-  const grouped: Record<string, MasterRow[]> = {};
-  const loose: MasterRow[] = [];
-  for (const row of rows) {
-    const key = periodKeyFromMasterRow(row);
-    if (key) (grouped[key] ??= []).push(row);
-    else loose.push(row);
-  }
-  if (loose.length === 0) return grouped;
-  const dominant =
-    Object.entries(grouped).sort((a, b) => b[1].length - a[1].length || b[0].localeCompare(a[0]))[0]?.[0] ?? fallbackKey;
-  if (!dominant) return grouped;
-  const tanggalColumn = indexByHeader.TANGGAL;
-  const stamped = loose.map((row) => {
-    const copy = [...row];
-    if (!toNumber(copy[tanggalColumn])) copy[tanggalColumn] = Number(`${dominant}${pad2(Math.min(31, Math.max(1, dayFromRow(row))))}`);
-    return copy;
-  });
-  (grouped[dominant] ??= []).push(...stamped);
-  return grouped;
 }
 
 export function periodLabelFromKey(periodKey: string) {
@@ -286,9 +208,9 @@ export function periodOptionsFromRows(rows: MasterRow[]) {
 }
 
 // TARGET FM = INDEX(TARGET!bulan, bulan laporan); TARGET YTD = SUM(Jan .. bulan laporan).
-function targetFor(reference: WmsReference, scope: ReportScope, label: string, periodKey: string) {
+function targetFor(scope: ReportScope, label: string, periodKey: string) {
   const monthIndex = Number(periodKey.slice(4, 6)) - 1;
-  const table = (scope === "witel" ? reference.targets.witel : reference.targets.telda) as Record<string, TargetEntry>;
+  const table = (scope === "witel" ? seed.targets.witel : seed.targets.telda) as Record<string, TargetEntry>;
   const target = table[label];
   const monthly = target?.monthly?.[monthIndex] ?? 0;
   const targetYtd = target?.monthly?.slice(0, monthIndex + 1).reduce((sum: number, value: number) => sum + toNumber(value), 0) ?? 0;
@@ -315,7 +237,7 @@ function buildSalesIndex(rows: MasterRow[], scopeColumn: number): SalesIndex {
     if (!sales) continue;
     const day = dayFromRow(row);
     if (day < 1 || day > 31) continue;
-    const name = matchKey(row[scopeColumn]);
+    const name = toLabel(row[scopeColumn]);
     if (!name) continue;
     const period = periodFromRow(row);
     let byPeriod = index.get(name);
@@ -359,22 +281,22 @@ function combineHistory(entries: WmsHistoryEntry[]): WmsHistoryEntry | null {
   };
 }
 
-function historyFor(reference: WmsReference, scope: ReportScope, label: string) {
+function historyFor(scope: ReportScope, label: string) {
   if (scope === "witel") {
-    const entry = reference.history.witel[toLabel(label)];
+    const entry = wmsHistory.witel[toLabel(label)];
     return entry ? combineHistory([entry]) : null;
   }
   const members = wmsBranchMembers[toLabel(label)] ?? [toLabel(label)];
-  return combineHistory(members.map((member) => reference.history.telda[member]).filter(Boolean));
+  return combineHistory(members.map((member) => wmsHistory.telda[member]).filter(Boolean));
 }
 
 function masterNamesFor(scope: ReportScope, label: string) {
-  if (scope === "witel") return [matchKey(label)];
+  if (scope === "witel") return [toLabel(label)];
   const members = wmsBranchMembers[toLabel(label)] ?? [toLabel(label)];
-  return members.flatMap((member) => wmsTeldaMasterNames[member] ?? [member]).map(matchKey);
+  return members.flatMap((member) => wmsTeldaMasterNames[member] ?? [member]).map(toLabel);
 }
 
-function makeRows(rows: MasterRow[], periodKey: string, scope: ReportScope, now: JakartaNow, reference: WmsReference) {
+function makeRows(rows: MasterRow[], periodKey: string, scope: ReportScope, now: JakartaNow) {
   const month = Number(periodKey.slice(4, 6));
   const year = Number(periodKey.slice(0, 4));
   const dayCount = daysInMonth(year, month);
@@ -384,29 +306,29 @@ function makeRows(rows: MasterRow[], periodKey: string, scope: ReportScope, now:
   const previousPeriod = previousPeriodKey(periodKey) ?? "";
   const previousYear = Number(previousPeriod.slice(0, 4));
   const previousMonth = Number(previousPeriod.slice(4, 6));
-  const historyApplies = year === reference.year;
+  const historyApplies = year === 2026;
 
   const reportRows: WmsReportRow[] = labelsForScope(scope).map((label) => {
     const names = masterNamesFor(scope, label);
-    const history = historyApplies ? historyFor(reference, scope, label) : null;
+    const history = historyApplies ? historyFor(scope, label) : null;
 
     // Realisasi harian bulan berjalan dan MTD.
     const monthDays = indexedDays(salesIndex, names, periodKey);
     const days = Array.from({ length: dayCount }, (_, index) => monthDays[index + 1]);
     const mtd = days.reduce((sum, value) => sum + value, 0);
-    const target = targetFor(reference, scope, label, periodKey);
+    const target = targetFor(scope, label, periodKey);
 
     // REAL MTD bulan lalu (sampai batas hari REAL!AH1) dan REAL FM bulan lalu (REAL!AG).
     let previousDays: readonly number[];
     let realFmPrev: number;
-    if (history && reference.reportPeriodKey === periodKey) {
+    if (history && wmsHistory.reportPeriodKey === periodKey) {
       previousDays = history.prevDays;
       realFmPrev = history.prevTotal;
     } else {
       const fromRows = indexedDays(salesIndex, names, previousPeriod).slice(1);
       previousDays = fromRows;
       realFmPrev =
-        history && previousYear === reference.year && previousMonth >= 1 && previousMonth <= reference.lastClosedMonth
+        history && previousYear === 2026 && previousMonth >= 1 && previousMonth <= wmsHistory.lastClosedMonth2026
           ? toNumber(history.y2026[previousMonth - 1])
           : fromRows.reduce((sum, value) => sum + value, 0);
     }
@@ -416,7 +338,7 @@ function makeRows(rows: MasterRow[], periodKey: string, scope: ReportScope, now:
     let realYtd = mtd;
     for (let m = 1; m < month; m += 1) {
       realYtd +=
-        history && m <= reference.lastClosedMonth
+        history && m <= wmsHistory.lastClosedMonth2026
           ? toNumber(history.y2026[m - 1])
           : indexedMonthTotal(salesIndex, names, `${year}${pad2(m)}`);
     }
@@ -501,15 +423,14 @@ function totalRow(rows: WmsReportRow[], label = "Total"): WmsReportRow {
 export function computeWmsReport(
   rows: MasterRow[],
   periodKey: string = seed.periodKey,
-  options: { now?: Date; reference?: WmsReference | null } = {},
+  options: { now?: Date } = {},
 ): WmsComputedReport {
   const now = jakartaNow(options.now);
-  const reference = options.reference ?? defaultWmsReference;
   const periodOptions = periodOptionsFromRows(rows);
   const activePeriod = periodOptions.some((option) => option.periodKey === periodKey) ? periodKey : periodOptions.at(-1)?.periodKey ?? seed.periodKey;
   const monthIndex = Number(activePeriod.slice(4, 6)) - 1;
-  const witelRows = makeRows(rows, activePeriod, "witel", now, reference);
-  const teldaRows = makeRows(rows, activePeriod, "telda", now, reference);
+  const witelRows = makeRows(rows, activePeriod, "witel", now);
+  const teldaRows = makeRows(rows, activePeriod, "telda", now);
   const daysInActiveMonth = daysInMonth(Number(activePeriod.slice(0, 4)), Number(activePeriod.slice(4, 6)));
   const periodRows = rows.filter((row) => periodFromRow(row) === activePeriod);
   const latestDataDay = Math.max(1, ...periodRows.map(dayFromRow));

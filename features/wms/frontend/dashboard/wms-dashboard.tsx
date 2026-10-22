@@ -45,8 +45,6 @@ import { DashboardPeriodFilter, defaultPeriodFilter, type DashboardPeriodFilterS
 import {
   computeWmsReport,
   defaultWmsPeriodKey,
-  defaultWmsReference,
-  groupMasterRowsByPeriod,
   initialMasterRows,
   masterHeaders,
   periodKeyFromMasterRow,
@@ -55,11 +53,8 @@ import {
   wmsDataVersion,
   type MasterRow,
   type WmsComputedReport,
-  type WmsReference,
   type WmsReportRow,
 } from "@/features/wms/domain/reporting/reporting";
-import { ensureRowWidth, normalizeImportedMasterRows, rowsIncludeMasterHeader } from "@/features/wms/domain/reporting/master-import";
-import { normalizeWmsReference, parseWmsReference } from "@/features/wms/domain/reporting/reference";
 import {
   Bar,
   CartesianGrid,
@@ -101,7 +96,6 @@ const PERIOD_ARCHIVE_KEY = "wms-period-archive-v1";
 const SAVE_SNAPSHOTS_KEY = "wms-save-snapshots-v1";
 const SELECTED_PERIOD_KEY = "wms-selected-period-v1";
 const DATA_VERSION_KEY = "wms-seed-data-version-v1";
-const REFERENCE_KEY = "wms-reference-v1";
 const AUTO_SAVE_DELAY_MS = 3 * 60 * 1000;
 
 type PeriodArchiveEntry = {
@@ -119,8 +113,6 @@ type SavedVersion = {
 };
 type SaveSnapshots = Record<string, SavedVersion[]>;
 type DashboardPersistedState = {
-  /** Data acuan (target + histori REAL) dari sheet TARGET/REAL/HELPER workbook terakhir yang diupload. */
-  reference?: WmsReference | null;
   periodArchive: PeriodArchive;
   saveSnapshots: SaveSnapshots;
   selectedPeriodKey: string;
@@ -168,6 +160,67 @@ function parseClipboard(text: string) {
     .split("\n")
     .filter((line, index, lines) => !(index === lines.length - 1 && line === ""))
     .map((line) => line.split("\t"));
+}
+
+function cleanWorkbookCell(value: unknown): MasterRow[number] {
+  if (value === null || value === undefined || value === "") return null;
+  if (value instanceof Date) {
+    const pad = (input: number) => String(input).padStart(2, "0");
+    return `${value.getFullYear()}-${pad(value.getMonth() + 1)}-${pad(value.getDate())} ${pad(value.getHours())}:${pad(value.getMinutes())}:${pad(value.getSeconds())}`;
+  }
+  if (typeof value === "number" || typeof value === "boolean") return value;
+  return String(value);
+}
+
+function ensureRowWidth(row: unknown[]): MasterRow {
+  return Array.from({ length: masterHeaders.length }, (_, index) => {
+    const value = row[index];
+    return value === undefined || value === "" ? null : (value as MasterRow[number]);
+  });
+}
+
+function normalizedHeader(value: unknown) {
+  return String(value ?? "").trim().replace(/\s+/g, " ").toUpperCase();
+}
+
+function rowsIncludeMasterHeader(rows: unknown[][]) {
+  const first = rows[0];
+  if (!first) return false;
+  const normalizedFirst = first.slice(0, masterHeaders.length).map(normalizedHeader);
+  const normalizedHeaders = masterHeaders.map(normalizedHeader);
+  return normalizedHeaders.every((header, index) => normalizedFirst[index] === header);
+}
+
+function rowsHaveMappableHeader(rows: unknown[][]) {
+  const first = rows[0];
+  if (!first) return false;
+  const headerSet = new Set(first.map(normalizedHeader));
+  return ["TANGGAL", "WITEL", "TELKOM_DAERAH", "JML_SALES", "DAY OF LAST_UPDATED_DATE"].every((header) => headerSet.has(header));
+}
+
+function normalizeImportedMasterRows(sheetRows: unknown[][], sourceLabel: string) {
+  if (rowsIncludeMasterHeader(sheetRows)) {
+    return sheetRows.slice(1)
+      .map((row) => ensureRowWidth(row.map(cleanWorkbookCell)))
+      .filter((row) => row.some((cell) => cell !== null && String(cell).trim() !== ""));
+  }
+
+  if (rowsHaveMappableHeader(sheetRows)) {
+    const sourceHeaders = sheetRows[0];
+    const indexByImportedHeader = new Map(sourceHeaders.map((header, index) => [normalizedHeader(header), index]));
+    const missingHeaders = masterHeaders.filter((header) => !indexByImportedHeader.has(normalizedHeader(header)));
+    if (missingHeaders.length > 0) {
+      throw new Error(`${sourceLabel} kurang kolom wajib: ${missingHeaders.slice(0, 5).join(", ")}${missingHeaders.length > 5 ? "..." : ""}`);
+    }
+    return sheetRows.slice(1)
+      .map((row) => masterHeaders.map((header) => cleanWorkbookCell(row[indexByImportedHeader.get(normalizedHeader(header)) ?? -1])))
+      .map(ensureRowWidth)
+      .filter((row) => row.some((cell) => cell !== null && String(cell).trim() !== ""));
+  }
+
+  return sheetRows
+    .map((row) => ensureRowWidth(row.map(cleanWorkbookCell)))
+    .filter((row) => row.some((cell) => cell !== null && String(cell).trim() !== ""));
 }
 
 function isCsvFile(file: File) {
@@ -242,9 +295,7 @@ async function loadSheetJs() {
   return window.XLSX;
 }
 
-type ImportedMaster = { reference: WmsReference | null; referenceProblems: string[]; rows: MasterRow[] };
-
-async function readMasterRowsFromWorkbook(file: File): Promise<ImportedMaster> {
+async function readMasterRowsFromWorkbook(file: File) {
   const buffer = await file.arrayBuffer();
   const XLSX = await loadSheetJs();
   const workbook = XLSX.read(buffer, { cellDates: true, type: "array" });
@@ -258,30 +309,16 @@ async function readMasterRowsFromWorkbook(file: File): Promise<ImportedMaster> {
   });
   const rows = normalizeImportedMasterRows(sheetRows, `Sheet ${sheetName}`);
   if (rows.length === 0) throw new Error(`Sheet ${sheetName} tidak berisi data MASTER.`);
-  // Workbook lengkap: ambil juga data acuan (HELPER/TARGET/REAL) agar hasil sama dengan Excel.
-  const parsed = parseWmsReference((name) => {
-    const found = workbook.SheetNames.find((sheet) => sheet.trim().toUpperCase() === name.toUpperCase());
-    if (!found) return null;
-    const worksheet = workbook.Sheets[found] as { "!ref"?: string };
-    // Mulai dari kolom A/baris 1 agar indeks kolom sama dengan nomor kolom Excel.
-    // Tipe global Window.XLSX dipakai bersama modul lain, jadi di sini dipakai tipe lokal yang lebih lengkap.
-    const utils = XLSX.utils as unknown as {
-      decode_range: (ref: string) => { e: { c: number; r: number } };
-      sheet_to_json: (sheet: unknown, options: Record<string, unknown>) => unknown[][];
-    };
-    const end = utils.decode_range(worksheet["!ref"] ?? "A1").e;
-    return utils.sheet_to_json(worksheet, { blankrows: true, defval: null, header: 1, range: { e: end, s: { c: 0, r: 0 } }, raw: true });
-  });
-  return { reference: parsed.reference, referenceProblems: parsed.problems, rows };
+  return rows;
 }
 
-async function readMasterRowsFromCsv(file: File): Promise<ImportedMaster> {
+async function readMasterRowsFromCsv(file: File) {
   const rows = normalizeImportedMasterRows(parseCsvRows(await file.text()), file.name);
   if (rows.length === 0) throw new Error(`${file.name} tidak berisi data MASTER.`);
-  return { reference: null, referenceProblems: [], rows };
+  return rows;
 }
 
-async function readMasterRowsFromUpload(file: File): Promise<ImportedMaster> {
+async function readMasterRowsFromUpload(file: File) {
   if (isCsvFile(file)) return readMasterRowsFromCsv(file);
   return readMasterRowsFromWorkbook(file);
 }
@@ -438,8 +475,13 @@ function createPeriodEntry(periodKey: string, rows: MasterRow[], savedAt: string
 }
 
 function splitRowsByPeriod(rows: MasterRow[]) {
-  // Baris tanpa periode terbaca ikut periode dominan (bukan dibuang), seperti Excel yang menghitung semua baris MASTER.
-  return groupMasterRowsByPeriod(rows.map((row) => ensureRowWidth(row)));
+  const grouped: Record<string, MasterRow[]> = {};
+  for (const row of rows) {
+    const periodKey = periodKeyFromMasterRow(row);
+    if (!periodKey) continue;
+    grouped[periodKey] = [...(grouped[periodKey] ?? []), ensureRowWidth(row)];
+  }
+  return grouped;
 }
 
 function initialSeedPeriodArchive(): PeriodArchive {
@@ -519,7 +561,6 @@ function parsePersistedDashboardState(value: unknown): DashboardPersistedState |
   const periodArchive = parsePeriodArchive(JSON.stringify(candidate.periodArchive ?? {}));
   if (Object.keys(periodArchive).length > 0 && typeof candidate.selectedPeriodKey === "string") {
     return {
-      reference: normalizeWmsReference(candidate.reference),
       periodArchive,
       saveSnapshots: parseSaveSnapshots(JSON.stringify(candidate.saveSnapshots ?? {})),
       selectedPeriodKey: candidate.selectedPeriodKey,
@@ -530,7 +571,6 @@ function parsePersistedDashboardState(value: unknown): DashboardPersistedState |
     const rows = candidate.rows.map((row) => ensureRowWidth(Array.isArray(row) ? row : []));
     const periodKey = detectPeriodKey(rows);
     return {
-      reference: normalizeWmsReference(candidate.reference),
       periodArchive: { [periodKey]: createPeriodEntry(periodKey, rows, typeof candidate.savedAt === "string" ? candidate.savedAt : null) },
       saveSnapshots: {},
       selectedPeriodKey: periodKey,
@@ -553,17 +593,6 @@ function persistDashboardStateLocally(state: DashboardPersistedState) {
     window.localStorage.removeItem(SAVED_AT_KEY);
   }
   safeStorageSet(SAVE_SNAPSHOTS_KEY, JSON.stringify(state.saveSnapshots));
-  if (state.reference) safeStorageSet(REFERENCE_KEY, JSON.stringify(state.reference));
-  else window.localStorage.removeItem(REFERENCE_KEY);
-}
-
-function loadReferenceLocally(): WmsReference | null {
-  try {
-    const raw = window.localStorage.getItem(REFERENCE_KEY);
-    return raw ? normalizeWmsReference(JSON.parse(raw)) : null;
-  } catch {
-    return null;
-  }
 }
 
 async function loadDashboardStateFromServer(): Promise<{ configured: boolean; state: DashboardPersistedState | null }> {
@@ -828,7 +857,6 @@ function reportForWmsPeriodFilter(
   periodArchive: PeriodArchive,
   selectedPeriodKey: string,
   filter: DashboardPeriodFilterState,
-  reference: WmsReference,
 ) {
   const normalized = normalizeWmsPeriodFilter(filter);
   const validationMessage = validateWmsPeriodFilter(normalized);
@@ -849,7 +877,7 @@ function reportForWmsPeriodFilter(
     .map((part) => {
       const entry = periodArchive[part.periodKey];
       if (!entry) return null;
-      return { ...part, report: computeWmsReport(allRowsFromArchive(periodArchive, part.periodKey, entry.rows), part.periodKey, { reference }) };
+      return { ...part, report: computeWmsReport(entry.rows, part.periodKey) };
     })
     .filter(Boolean) as WmsReportPart[];
   if (reportParts.length === 0) return { report: baseReport, validationMessage: "Data periode yang dipilih belum tersedia." };
@@ -859,7 +887,7 @@ function reportForWmsPeriodFilter(
     .map((part) => {
       const entry = periodArchive[part.periodKey];
       if (!entry) return null;
-      return { ...part, report: computeWmsReport(allRowsFromArchive(periodArchive, part.periodKey, entry.rows), part.periodKey, { reference }) };
+      return { ...part, report: computeWmsReport(entry.rows, part.periodKey) };
     })
     .filter(Boolean) as WmsReportPart[];
   const effectiveYtdParts = ytdParts.length > 0 ? ytdParts : reportParts;
@@ -922,7 +950,6 @@ export function WmsDashboard({ permissions = fullAccessPermissions }: { permissi
   const [rows, setRows] = useState<MasterRow[]>(() => initialSeedPeriodArchive()[defaultWmsPeriodKey]?.rows ?? initialMasterRows.map((row) => [...row]));
   const [periodArchive, setPeriodArchive] = useState<PeriodArchive>(() => initialSeedPeriodArchive());
   const [saveSnapshots, setSaveSnapshots] = useState<SaveSnapshots>({});
-  const [reference, setReference] = useState<WmsReference | null>(null);
   const [savedAt, setSavedAt] = useState<string | null>(null);
   const [selectedPeriodKey, setSelectedPeriodKey] = useState<string>(defaultWmsPeriodKey);
   const [periodFilter, setPeriodFilter] = useState<DashboardPeriodFilterState>(() => defaultPeriodFilter(defaultWmsPeriodKey));
@@ -941,11 +968,10 @@ export function WmsDashboard({ permissions = fullAccessPermissions }: { permissi
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const reportRows = useMemo(() => allRowsFromArchive(periodArchive, selectedPeriodKey, rows), [periodArchive, rows, selectedPeriodKey]);
-  const activeReference = reference ?? defaultWmsReference;
-  const report = useMemo(() => computeWmsReport(reportRows, selectedPeriodKey, { reference: activeReference }), [activeReference, reportRows, selectedPeriodKey]);
+  const report = useMemo(() => computeWmsReport(reportRows, selectedPeriodKey), [reportRows, selectedPeriodKey]);
   const filteredReportState = useMemo(
-    () => reportForWmsPeriodFilter(report, periodArchive, selectedPeriodKey, periodFilter, activeReference),
-    [activeReference, periodArchive, periodFilter, report, selectedPeriodKey],
+    () => reportForWmsPeriodFilter(report, periodArchive, selectedPeriodKey, periodFilter),
+    [periodArchive, periodFilter, report, selectedPeriodKey],
   );
   const displayReport = filteredReportState.report;
   const periodOptions = useMemo(() => {
@@ -965,7 +991,6 @@ export function WmsDashboard({ permissions = fullAccessPermissions }: { permissi
     const periodArchiveWithActive = { ...nextArchive, [activePeriodKey]: activePeriod };
     setPeriodArchive(periodArchiveWithActive);
     setSaveSnapshots(state.saveSnapshots);
-    setReference(state.reference ?? null);
     setSelectedPeriodKey(activePeriodKey);
     setRows(activePeriod.rows);
     setSavedAt(activePeriod.savedAt);
@@ -1013,9 +1038,7 @@ export function WmsDashboard({ permissions = fullAccessPermissions }: { permissi
       const activePeriod = nextArchive[activePeriodKey] ?? createPeriodEntry(activePeriodKey, blankMasterRows(), null);
       nextArchive = { ...nextArchive, [activePeriodKey]: activePeriod };
 
-      const localReference = loadReferenceLocally();
       const localState: DashboardPersistedState = {
-        reference: localReference,
         periodArchive: nextArchive,
         saveSnapshots: storedSnapshots,
         selectedPeriodKey: activePeriodKey,
@@ -1027,9 +1050,7 @@ export function WmsDashboard({ permissions = fullAccessPermissions }: { permissi
         .then(({ configured, state }) => {
           if (state) {
             const mergedArchive = shouldRefreshSeed ? { ...state.periodArchive, ...nextArchive } : { ...nextArchive, ...state.periodArchive };
-            // Data acuan: pakai yang paling baru diimpor (server lalu lokal), jangan jatuh ke data bawaan bila sudah pernah diupload.
-            const serverReference = state.reference ?? localReference;
-            applyPersistedState({ ...state, reference: serverReference, periodArchive: mergedArchive }, "Data server dimuat");
+            applyPersistedState({ ...state, periodArchive: mergedArchive }, "Data server dimuat");
           } else if (!configured) {
             setAutoSaveStatus("Database server belum dikonfigurasi; data tersimpan di browser ini");
           }
@@ -1068,7 +1089,6 @@ export function WmsDashboard({ permissions = fullAccessPermissions }: { permissi
       [periodKey]: createPeriodEntry(periodKey, nextRows, timestamp),
     };
     const persistedState: DashboardPersistedState = {
-      reference,
       periodArchive: nextArchive,
       saveSnapshots: nextSnapshots,
       selectedPeriodKey: periodKey,
@@ -1084,7 +1104,7 @@ export function WmsDashboard({ permissions = fullAccessPermissions }: { permissi
     const status = options.automated ? `Auto-save tersimpan: ${formatJakartaDateTime(new Date(timestamp), true)}` : "Data tersimpan manual";
     setAutoSaveStatus(status);
     syncDashboardState(persistedState, `${status} dan tersinkron ke server`);
-  }, [periodArchive, reference, rows, saveSnapshots, selectedPeriodKey, syncDashboardState]);
+  }, [periodArchive, rows, saveSnapshots, selectedPeriodKey, syncDashboardState]);
 
   useEffect(() => {
     if (!hydrated || !dirty) return undefined;
@@ -1103,9 +1123,7 @@ export function WmsDashboard({ permissions = fullAccessPermissions }: { permissi
   async function importExcel(file: File | undefined) {
     if (!file) return;
     try {
-      const imported = await readMasterRowsFromUpload(file);
-      const importedRows = imported.rows;
-      const nextReference = imported.reference ?? reference;
+      const importedRows = await readMasterRowsFromUpload(file);
       const grouped = splitRowsByPeriod(importedRows);
       const timestamp = new Date().toISOString();
       const importedArchive = Object.fromEntries(
@@ -1123,7 +1141,6 @@ export function WmsDashboard({ permissions = fullAccessPermissions }: { permissi
         ].slice(-MAX_SNAPSHOTS_PER_PERIOD);
       }
       const persistedState: DashboardPersistedState = {
-        reference: nextReference,
         periodArchive: nextArchive,
         saveSnapshots: nextSnapshots,
         selectedPeriodKey: activePeriodKey,
@@ -1132,18 +1149,11 @@ export function WmsDashboard({ permissions = fullAccessPermissions }: { permissi
       persistDashboardStateLocally(persistedState);
       setPeriodArchive(nextArchive);
       setSaveSnapshots(nextSnapshots);
-      setReference(nextReference);
       setSelectedPeriodKey(activePeriodKey);
       setRows(nextArchive[activePeriodKey]?.rows ?? importedRows);
       setSavedAt(nextArchive[activePeriodKey]?.savedAt ?? timestamp);
       setDirty(false);
-      setAutoSaveStatus(
-        imported.reference
-          ? "Import file tersimpan; target & histori REAL ikut diperbarui dari workbook"
-          : imported.referenceProblems.length > 0
-            ? `Import file tersimpan; data acuan workbook tidak dipakai (${imported.referenceProblems[0]})`
-            : "Import file tersimpan",
-      );
+      setAutoSaveStatus("Import file tersimpan");
       setImportError(null);
       syncDashboardState(persistedState, "Import file tersinkron ke server");
       if (fileInputRef.current) fileInputRef.current.value = "";
@@ -1165,7 +1175,6 @@ export function WmsDashboard({ permissions = fullAccessPermissions }: { permissi
       [selectedPeriodKey]: createPeriodEntry(selectedPeriodKey, previous.rows, previous.savedAt),
     };
     const persistedState: DashboardPersistedState = {
-      reference,
       periodArchive: nextArchive,
       saveSnapshots: nextSnapshots,
       selectedPeriodKey,
