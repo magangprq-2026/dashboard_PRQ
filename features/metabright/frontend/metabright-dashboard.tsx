@@ -14,7 +14,7 @@ import {
   indicatorAvg, witelColor,
 } from "./metabright-charts";
 import { DataTable, Heatmap } from "./metabright-tables";
-import { renderMetabrightTablePng } from "@/features/metabright/domain/report-image-browser";
+import { renderMetabrightTablePng, renderMetabrightVizPng } from "@/features/metabright/domain/report-image-browser";
 import DownloadModal from "./metabright-download-modal";
 import { MasterUnlockModal } from "@/features/shared/dashboard/master-unlock-modal";
 import type { DashboardPermissions } from "@/features/hsi/backend/auth/session";
@@ -190,6 +190,11 @@ export function MetabrightDashboard({ permissions = NO_ACCESS }: { permissions?:
     if (mode === "data" && d) {
       const subset = w === "ALL" ? d.rows : d.rows.filter((r) => r.witel === w);
       return renderMetabrightTablePng(d, subset, cur ?? DEFAULT_LABEL, w === "ALL" ? undefined : w);
+    }
+    // Visualisasi: juga digambar langsung di canvas dengan kode yang sama seperti bot Telegram (hasil identik & rapi).
+    if (mode === "viz" && d) {
+      const subset = w === "ALL" ? d.rows : d.rows.filter((r) => r.witel === w);
+      return renderMetabrightVizPng({ ...d, rows: subset }, cur ?? DEFAULT_LABEL, w === "ALL" ? "Semua witel" : w);
     }
     setWitel(w);
     setCap(mode);
@@ -439,7 +444,7 @@ export function MetabrightDashboard({ permissions = NO_ACCESS }: { permissions?:
                 <div className="g2">
                   <section className="card fill">
                     <div className="ch">
-                      <div><h3>Peringkat total score</h3><div className="sub">Warna = witel · garis putus-putus = rata-rata total score seluruh telda hasil filter · ▲▼ = selisih dari rata-rata</div></div>
+                      <div><h3>Peringkat total score</h3><div className="sub">Warna menunjukkan witel · garis putus-putus = rata-rata</div></div>
                       <select className="mini" value={topN} onChange={(e) => setTopN(+e.target.value)}>
                         <option value={10}>10 teratas</option>
                         <option value={20}>20 teratas</option>
@@ -449,7 +454,6 @@ export function MetabrightDashboard({ permissions = NO_ACCESS }: { permissions?:
                     <div className="box"><RankChart rows={rows} ws={ws} topN={topN} /></div>
                     <div className="leg">
                       {ws.map((w) => <span key={w}><i style={{ background: witelColor(ws, w) }} />{w}</span>)}
-                      <span><i className="dash" />Rata-rata</span>
                     </div>
                   </section>
                   <div className="stack">
@@ -469,13 +473,12 @@ export function MetabrightDashboard({ permissions = NO_ACCESS }: { permissions?:
                 <div className="g2">
                   <section className="card fill">
                     <h3>Capaian rata-rata per indikator</h3>
-                    <div className="sub">Skor diperoleh terhadap bobot indikator (%) · garis putus-putus = target 100% (bobot penuh)</div>
+                    <div className="sub">Skor diperoleh terhadap bobot indikator (%)</div>
                     <div className="box" style={{ marginTop: 10 }}><IndicatorChart rows={rows} d={d} /></div>
                     <div className="leg">
                       <span><i style={{ background: "#059669" }} />≥ 80%</span>
                       <span><i style={{ background: "#f59e0b" }} />50–79%</span>
                       <span><i style={{ background: "#e11d48" }} />&lt; 50%</span>
-                      <span><i className="dash" />Target 100%</span>
                     </div>
                   </section>
                   <section className="card fill">

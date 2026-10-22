@@ -1339,8 +1339,16 @@ async function handleDocumentUpload(botToken: string, chatId: number, message: T
       const periods = result.periods.join(", ");
       const caption = [
         `🗂️ <b>${escapeHtml(result.filename)}</b>`,
-        `📅 Periode ${escapeHtml(periods)}  •  ${result.rowCount.toLocaleString("id-ID")} baris`,
-        `📉 Total cabutan (SSL_DO): ${result.cabutan.toLocaleString("id-ID")}  •  ${result.witelCount} witel`,
+        SECTION,
+        `📅 <b>Periode</b>  •  ${escapeHtml(periods)}`,
+        "",
+        `📄 <b>Jumlah baris</b>  •  ${result.rowCount.toLocaleString("id-ID")}`,
+        "",
+        `📉 <b>Total cabutan (SSL_DO)</b>  •  ${result.cabutan.toLocaleString("id-ID")}`,
+        "",
+        `📍 <b>Jumlah witel</b>  •  ${result.witelCount}`,
+        SECTION,
+        "<i>Sheet1 = pivot Sum of SSL_DO per Witel × Divisi</i>",
       ].join("\n");
       const sent = await sendTelegramDocument(botToken, chatId, result.filename, result.bytes, caption, undefined, cabutanKeyboard());
       await deleteTelegramMessage(botToken, chatId, workingId);
