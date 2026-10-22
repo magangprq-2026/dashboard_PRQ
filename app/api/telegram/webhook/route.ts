@@ -30,6 +30,7 @@ import {
   tryParseMetabrightFile,
 } from "@/features/telegram/metabright-upload";
 import { buildCabutanWorkbook, isCabutanFile } from "@/features/telegram/cabutan";
+import { lastCabutanMeta, loadLastCabutanCsv, saveLastCabutan, type CabutanMeta } from "@/features/telegram/cabutan-store";
 import { downloadTelegramFile, sendTelegramDocument } from "@/features/telegram/telegram-api";
 import {
   buildMetabrightFiles,
@@ -1070,8 +1071,8 @@ function uploadHelpText() {
   ].join("\n");
 }
 
-function cabutanHelpText() {
-  return [
+function cabutanMenuText(last: CabutanMeta | null) {
+  const lines = [
     "🗂️ <b>Data Cabutan</b>",
     SECTION,
     "Ubah file CSV <b>T_NAL Full Data</b> menjadi <b>DO_&lt;Bulan&gt;.xlsx</b> (mis. <i>DO_Oktober.xlsx</i>).",
@@ -1081,15 +1082,89 @@ function cabutanHelpText() {
     "1️⃣ Kirim file <b>.csv</b> ke chat ini sebagai <i>dokumen</i> (ikon 📎 → File).",
     "",
     "2️⃣ Bot membalas dengan file Excel berisi:",
-    "▫️ <b>Sheet1</b> — ringkasan Sum of SSL_DO per Witel × Divisi",
+    "▫️ <b>Sheet1</b> — pivot Sum of SSL_DO per Witel × Divisi",
     "▫️ <b>T_NAL_Full Data_data (2)</b> — seluruh data CSV",
     SECTION,
-    "Nama bulan diambil dari kolom PERIODE. File hanya dikonversi, tidak disimpan ke dashboard.",
-  ].join("\n");
+  ];
+  if (last) {
+    const when = formatJakartaTimestamp(last.uploadedAt);
+    lines.push(
+      "📌 <b>Upload terakhir</b>",
+      "",
+      `📄 ${escapeHtml(last.fileName)}`,
+      "",
+      `📅 Periode ${escapeHtml(last.periods.join(", "))}  •  ${last.rowCount.toLocaleString("id-ID")} baris`,
+      ...(when ? ["", `🕒 ${escapeHtml(when)}${last.uploadedBy ? `  •  ${escapeHtml(last.uploadedBy)}` : ""}`] : []),
+      "",
+      "Tekan <b>Unduh Data Cabutan</b> untuk mengambil file Excel dari data ini.",
+    );
+  } else {
+    lines.push("📌 Belum ada data cabutan yang diupload.", "", "Kirim file CSV untuk memulai.");
+  }
+  return lines.join("\n");
+}
+
+function cabutanMenuKeyboard(last: CabutanMeta | null): TelegramInlineKeyboardMarkup {
+  const rows: TelegramInlineKeyboardButton[][] = [];
+  if (last) rows.push([{ callback_data: "cabutan:dl", text: "📥 Unduh Data Cabutan" }]);
+  rows.push(homeRow);
+  return { inline_keyboard: rows };
+}
+
+async function lastCabutanSafe() {
+  try {
+    return await lastCabutanMeta();
+  } catch {
+    return null;
+  }
 }
 
 function cabutanKeyboard(): TelegramInlineKeyboardMarkup {
-  return { inline_keyboard: [[{ callback_data: "menu:cabutan", text: "🗂️ Data Cabutan Lagi" }], homeRow] };
+  return { inline_keyboard: [[{ callback_data: "menu:cabutan", text: "🗂️ Menu Data Cabutan" }], homeRow] };
+}
+
+// Buat DO_<Bulan>.xlsx dari CSV dan kirim ke chat. `note` = baris tambahan di bawah caption.
+async function sendCabutanFile(botToken: string, chatId: number, csv: Buffer, note?: string) {
+  const result = await buildCabutanWorkbook(csv);
+  const caption = [
+    `🗂️ <b>${escapeHtml(result.filename)}</b>`,
+    SECTION,
+    `📅 <b>Periode</b>  •  ${escapeHtml(result.periods.join(", "))}`,
+    "",
+    `📄 <b>Jumlah baris</b>  •  ${result.rowCount.toLocaleString("id-ID")}`,
+    "",
+    `📉 <b>Total cabutan (SSL_DO)</b>  •  ${result.cabutan.toLocaleString("id-ID")}`,
+    "",
+    `📍 <b>Jumlah witel</b>  •  ${result.witelCount}`,
+    SECTION,
+    ...(note ? [note, ""] : []),
+    "<i>Sheet1 = pivot Sum of SSL_DO per Witel × Divisi</i>",
+  ].join("\n");
+  const sent = await sendTelegramDocument(botToken, chatId, result.filename, result.bytes, caption, undefined, cabutanKeyboard());
+  return { result, sent };
+}
+
+async function handleCabutanDownload(botToken: string, chatId: number) {
+  const working = await sendTelegramMessage(botToken, chatId, "⏳ <b>Menyiapkan Data Cabutan…</b>");
+  const workingId = working.ok ? working.messageId : undefined;
+  try {
+    const stored = await loadLastCabutanCsv();
+    if (!stored) {
+      await sendTelegramMessage(botToken, chatId, "⚠️ <b>Belum ada data cabutan</b>\n\nKirim file CSV T_NAL terlebih dahulu.", { replyMarkup: cabutanMenuKeyboard(null) });
+      return;
+    }
+    const when = formatJakartaTimestamp(stored.meta.uploadedAt);
+    const note = `🕒 <i>Dari upload terakhir${when ? `: ${escapeHtml(when)}` : ""}</i>`;
+    const { sent } = await sendCabutanFile(botToken, chatId, stored.csv, note);
+    if (!sent.ok) {
+      await sendTelegramMessage(botToken, chatId, "❌ <b>File Data Cabutan gagal dikirim</b>\n\nSilakan coba lagi sebentar.", { replyMarkup: cabutanMenuKeyboard(stored.meta) });
+    }
+  } catch (error) {
+    const reason = error instanceof Error ? error.message : "Terjadi kesalahan.";
+    await sendTelegramMessage(botToken, chatId, `❌ <b>Data Cabutan belum bisa dibuat</b>\n\n${escapeHtml(reason)}`, { replyMarkup: cabutanMenuKeyboard(await lastCabutanSafe()) });
+  } finally {
+    await deleteTelegramMessage(botToken, chatId, workingId);
+  }
 }
 
 function downloadModuleName(product: ReportProductKey) {
@@ -1335,25 +1410,20 @@ async function handleDocumentUpload(botToken: string, chatId: number, message: T
     const buffer = await downloadTelegramFile(botToken, document.file_id);
     // Data Cabutan (CSV T_NAL Full Data) dikenali dari judul kolom; dicek lebih dulu karena nama file "T_NAL" mirip file LTS "nal".
     if (isCabutanFile(fileName, buffer)) {
-      const result = await buildCabutanWorkbook(buffer);
-      const periods = result.periods.join(", ");
-      const caption = [
-        `🗂️ <b>${escapeHtml(result.filename)}</b>`,
-        SECTION,
-        `📅 <b>Periode</b>  •  ${escapeHtml(periods)}`,
-        "",
-        `📄 <b>Jumlah baris</b>  •  ${result.rowCount.toLocaleString("id-ID")}`,
-        "",
-        `📉 <b>Total cabutan (SSL_DO)</b>  •  ${result.cabutan.toLocaleString("id-ID")}`,
-        "",
-        `📍 <b>Jumlah witel</b>  •  ${result.witelCount}`,
-        SECTION,
-        "<i>Sheet1 = pivot Sum of SSL_DO per Witel × Divisi</i>",
-      ].join("\n");
-      const sent = await sendTelegramDocument(botToken, chatId, result.filename, result.bytes, caption, undefined, cabutanKeyboard());
+      const { result, sent } = await sendCabutanFile(botToken, chatId, buffer);
+      // Simpan CSV supaya bisa diunduh lagi lewat menu Data Cabutan. Kegagalan simpan tidak membatalkan file yang sudah dikirim.
+      const saved = await saveLastCabutan(buffer, {
+        fileName,
+        periods: result.periods,
+        rowCount: result.rowCount,
+        uploadedBy: message.from?.first_name ?? null,
+      }).catch(() => false);
       await deleteTelegramMessage(botToken, chatId, workingId);
       if (!sent.ok) {
         await sendTelegramMessage(botToken, chatId, "❌ <b>File Data Cabutan gagal dikirim</b>\n\nSilakan coba kirim ulang CSV-nya.", { replyMarkup: cabutanKeyboard() });
+      }
+      if (!saved) {
+        await sendTelegramMessage(botToken, chatId, "⚠️ <i>Data belum tersimpan di server, jadi tombol Unduh Data Cabutan belum memuat file ini.</i>");
       }
       return;
     }
@@ -1572,7 +1642,13 @@ async function handleCallbackQuery(botToken: string, callbackQuery: TelegramCall
   }
 
   if (data === "menu:cabutan") {
-    await sendOrEditTelegramMessage(botToken, chatId, messageId, cabutanHelpText(), { replyMarkup: helpKeyboard() });
+    const last = await lastCabutanSafe();
+    await sendOrEditTelegramMessage(botToken, chatId, messageId, cabutanMenuText(last), { replyMarkup: cabutanMenuKeyboard(last) });
+    return;
+  }
+
+  if (data === "cabutan:dl") {
+    await handleCabutanDownload(botToken, chatId);
     return;
   }
 
@@ -1768,7 +1844,8 @@ export async function POST(request: NextRequest) {
   }
 
   if (command === "/cabutan") {
-    await sendTelegramMessage(botToken, chatId, cabutanHelpText(), { replyMarkup: helpKeyboard() });
+    const last = await lastCabutanSafe();
+    await sendTelegramMessage(botToken, chatId, cabutanMenuText(last), { replyMarkup: cabutanMenuKeyboard(last) });
     return NextResponse.json({ ok: true });
   }
 
