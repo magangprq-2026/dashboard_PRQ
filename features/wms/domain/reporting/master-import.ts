@@ -23,7 +23,7 @@ function normalizedHeader(value: unknown) {
   return String(value ?? "").trim().replace(/\s+/g, " ").toUpperCase();
 }
 
-function rowsIncludeMasterHeader(rows: unknown[][]) {
+export function rowsIncludeMasterHeader(rows: unknown[][]) {
   const first = rows[0];
   if (!first) return false;
   const normalizedFirst = first.slice(0, masterHeaders.length).map(normalizedHeader);

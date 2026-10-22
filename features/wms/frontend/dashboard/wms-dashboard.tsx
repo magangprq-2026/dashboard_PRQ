@@ -58,7 +58,7 @@ import {
   type WmsReference,
   type WmsReportRow,
 } from "@/features/wms/domain/reporting/reporting";
-import { ensureRowWidth, normalizeImportedMasterRows } from "@/features/wms/domain/reporting/master-import";
+import { ensureRowWidth, normalizeImportedMasterRows, rowsIncludeMasterHeader } from "@/features/wms/domain/reporting/master-import";
 import { normalizeWmsReference, parseWmsReference } from "@/features/wms/domain/reporting/reference";
 import {
   Bar,
@@ -85,11 +85,7 @@ type SheetJsWorkbook = {
 type SheetJsApi = {
   read: (data: ArrayBuffer, options?: { cellDates?: boolean; type?: "array" }) => SheetJsWorkbook;
   utils: {
-    decode_range: (ref: string) => { e: { c: number; r: number }; s: { c: number; r: number } };
-    sheet_to_json: (
-      sheet: unknown,
-      options?: { blankrows?: boolean; defval?: null; header?: 1; range?: { e: { c: number; r: number }; s: { c: number; r: number } }; raw?: boolean },
-    ) => unknown[][];
+    sheet_to_json: (sheet: unknown, options?: { blankrows?: boolean; defval?: null; header?: 1; raw?: boolean }) => unknown[][];
   };
 };
 
@@ -268,8 +264,13 @@ async function readMasterRowsFromWorkbook(file: File): Promise<ImportedMaster> {
     if (!found) return null;
     const worksheet = workbook.Sheets[found] as { "!ref"?: string };
     // Mulai dari kolom A/baris 1 agar indeks kolom sama dengan nomor kolom Excel.
-    const end = XLSX.utils.decode_range(worksheet["!ref"] ?? "A1").e;
-    return XLSX.utils.sheet_to_json(worksheet, { blankrows: true, defval: null, header: 1, range: { e: end, s: { c: 0, r: 0 } }, raw: true });
+    // Tipe global Window.XLSX dipakai bersama modul lain, jadi di sini dipakai tipe lokal yang lebih lengkap.
+    const utils = XLSX.utils as unknown as {
+      decode_range: (ref: string) => { e: { c: number; r: number } };
+      sheet_to_json: (sheet: unknown, options: Record<string, unknown>) => unknown[][];
+    };
+    const end = utils.decode_range(worksheet["!ref"] ?? "A1").e;
+    return utils.sheet_to_json(worksheet, { blankrows: true, defval: null, header: 1, range: { e: end, s: { c: 0, r: 0 } }, raw: true });
   });
   return { reference: parsed.reference, referenceProblems: parsed.problems, rows };
 }
