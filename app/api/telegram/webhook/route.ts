@@ -1335,7 +1335,7 @@ async function handleDocumentUpload(botToken: string, chatId: number, message: T
     const buffer = await downloadTelegramFile(botToken, document.file_id);
     // Data Cabutan (CSV T_NAL Full Data) dikenali dari judul kolom; dicek lebih dulu karena nama file "T_NAL" mirip file LTS "nal".
     if (isCabutanFile(fileName, buffer)) {
-      const result = buildCabutanWorkbook(buffer);
+      const result = await buildCabutanWorkbook(buffer);
       const periods = result.periods.join(", ");
       const caption = [
         `🗂️ <b>${escapeHtml(result.filename)}</b>`,

@@ -1,10 +1,11 @@
 // Menu bot "Data Cabutan": mengubah CSV "T_NAL Full Data" menjadi file DO_<Bulan>.xlsx.
 // Hanya konversi file (tanpa menyimpan apa pun ke database/portal).
 //
-// Isi file hasil:
-//  - Sheet1                    : ringkasan Sum of SSL_DO per L_WITEL (baris) x DIVISI (kolom), meniru pivot contoh DO_Oktober.xlsx.
-//                                Angkanya berupa rumus SUMIFS ke sheet data, jadi ikut berubah bila data diedit.
+// Isi file hasil (meniru contoh DO_Oktober.xlsx):
+//  - Sheet1                    : PivotTable asli Excel - Sum of SSL_DO, baris L_WITEL, kolom PERIODE > DIVISI,
+//                                filter halaman L_PRODUK (All). Bisa di-Refresh / diubah seperti pivot biasa.
 //  - T_NAL_Full Data_data (2)  : seluruh isi CSV (61 kolom), angka disimpan sebagai angka.
+import JSZip from "jszip";
 import * as XLSX from "xlsx";
 
 export const CABUTAN_DATA_SHEET = "T_NAL_Full Data_data (2)";
@@ -133,7 +134,7 @@ export type CabutanResult = {
   witelCount: number;
 };
 
-export function buildCabutanWorkbook(buffer: Buffer): CabutanResult {
+export async function buildCabutanWorkbook(buffer: Buffer): Promise<CabutanResult> {
   const { header, rows } = readCabutanCsv(buffer);
   const idx = (name: string) => header.indexOf(name);
   const iPeriode = idx("PERIODE");
@@ -177,10 +178,9 @@ export function buildCabutanWorkbook(buffer: Buffer): CabutanResult {
   const divisiList = [...divisis].sort((a, b) => a.localeCompare(b));
 
   const lastRow = rows.length + 1;
-  const rng = (c: number) => `'${CABUTAN_DATA_SHEET}'!$${colLetter(c)}$2:$${colLetter(c)}$${lastRow}`;
   const summary: XLSX.WorkSheet = {};
-  const put = (addr: string, v: string | number, f?: string) => {
-    summary[addr] = f ? { f, t: typeof v === "number" ? "n" : "s", v } : { t: typeof v === "number" ? "n" : "s", v };
+  const put = (addr: string, v: string | number) => {
+    summary[addr] = { t: typeof v === "number" ? "n" : "s", v };
   };
 
   put("A2", "L_PRODUK");
@@ -190,28 +190,19 @@ export function buildCabutanWorkbook(buffer: Buffer): CabutanResult {
   put("A6", "Row Labels");
 
   // Kolom: per periode -> [divisi...] + "<periode> Total"; terakhir "Grand Total".
-  type Col = { divisi?: string; kind: "cell" | "grand" | "total"; period?: number };
-  const cols: Col[] = [];
+  let colNo = 1;
   for (const p of periodList) {
-    for (const d of divisiList) cols.push({ divisi: d, kind: "cell", period: p });
-    cols.push({ kind: "total", period: p });
-  }
-  cols.push({ kind: "grand" });
-
-  cols.forEach((col, i) => {
-    const letter = colLetter(i + 1);
-    if (col.kind === "cell") {
-      if (col.divisi === divisiList[0]) put(`${letter}5`, col.period!);
-      put(`${letter}6`, col.divisi!);
-    } else if (col.kind === "total") {
-      put(`${letter}5`, `${col.period} Total`);
-    } else {
-      put(`${letter}5`, "Grand Total");
+    put(`${colLetter(colNo)}5`, p);
+    for (const d of divisiList) {
+      put(`${colLetter(colNo)}6`, d);
+      colNo += 1;
     }
-  });
+    put(`${colLetter(colNo)}5`, `${p} Total`);
+    colNo += 1;
+  }
+  put(`${colLetter(colNo)}5`, "Grand Total");
+  const lastCol = colNo;
 
-  const firstDataRow = 7;
-  const totalRow = firstDataRow + witelList.length;
   const cellValue = (p: number | null, witel: string | null, divisi: string | null) => {
     let total = 0;
     for (const [key, v] of sum) {
@@ -221,34 +212,29 @@ export function buildCabutanWorkbook(buffer: Buffer): CabutanResult {
     return total;
   };
 
+  const firstDataRow = 7;
+  const totalRow = firstDataRow + witelList.length;
   const rowsToWrite = [...witelList.map((w, i) => ({ r: firstDataRow + i, witel: w as string | null })), { r: totalRow, witel: null }];
   for (const { r, witel } of rowsToWrite) {
     put(`A${r}`, witel ?? "Grand Total");
-    cols.forEach((col, i) => {
-      const letter = colLetter(i + 1);
-      const wCrit = witel === null ? "" : `,${rng(iWitel)},$A${r}`;
-      let formula: string;
-      let value: number;
-      if (col.kind === "cell") {
-        formula = `SUMIFS(${rng(iDo)},${rng(iPeriode)},${col.period},${rng(iDivisi)},${letter}$6${wCrit})`;
-        value = cellValue(col.period!, witel, col.divisi!);
-      } else if (col.kind === "total") {
-        formula = `SUMIFS(${rng(iDo)},${rng(iPeriode)},${col.period}${wCrit})`;
-        value = cellValue(col.period!, witel, null);
-      } else {
-        formula = witel === null ? `SUM(${rng(iDo)})` : `SUMIFS(${rng(iDo)},${rng(iWitel)},$A${r})`;
-        value = cellValue(null, witel, null);
+    let c = 1;
+    for (const p of periodList) {
+      for (const d of divisiList) {
+        put(`${colLetter(c)}${r}`, cellValue(p, witel, d));
+        c += 1;
       }
-      put(`${letter}${r}`, value, formula);
-    });
+      put(`${colLetter(c)}${r}`, cellValue(p, witel, null));
+      c += 1;
+    }
+    put(`${colLetter(c)}${r}`, cellValue(null, witel, null));
   }
-  summary["!ref"] = `A2:${colLetter(cols.length)}${totalRow}`;
-  summary["!cols"] = [{ wch: 26 }, ...cols.map(() => ({ wch: 13 }))];
+
+  summary["!ref"] = `A2:${colLetter(lastCol)}${totalRow}`;
+  summary["!cols"] = [{ wch: 26 }, ...Array.from({ length: lastCol }, () => ({ wch: 13 }))];
 
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, summary, CABUTAN_SUMMARY_SHEET);
   XLSX.utils.book_append_sheet(wb, dataSheet, CABUTAN_DATA_SHEET);
-  wb.Workbook = { CalcPr: { fullCalcOnLoad: true } } as XLSX.WorkBook["Workbook"];
 
   // Bulan diambil dari PERIODE data (periode terbanyak); jika tidak ada, memakai bulan berjalan (WIB).
   const counts = new Map<number, number>();
@@ -256,9 +242,25 @@ export function buildCabutanWorkbook(buffer: Buffer): CabutanResult {
   const mainPeriod = [...counts.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] ?? null;
   const monthName = monthNameFromPeriod(mainPeriod);
 
-  const bytes = XLSX.write(wb, { bookType: "xlsx", compression: true, type: "array" }) as ArrayBuffer;
+  const plain = XLSX.write(wb, { bookType: "xlsx", compression: true, type: "array" }) as ArrayBuffer;
+  const bytes = await addPivotTable(new Uint8Array(plain), {
+    divisiList,
+    divisiCol: iDivisi,
+    doCol: iDo,
+    header,
+    lastRow,
+    periodCol: iPeriode,
+    periodList,
+    produkCol: idx("L_PRODUK"),
+    produkList: [...new Set(rows.map((r) => r[idx("L_PRODUK")] ?? ""))].sort((a, b) => a.localeCompare(b)),
+    rowCount: rows.length,
+    witelCol: iWitel,
+    witelList,
+    doMin: Math.min(...body.map((r) => Number(r[iDo]) || 0)),
+    doMax: Math.max(...body.map((r) => Number(r[iDo]) || 0)),
+  });
   return {
-    bytes: new Uint8Array(bytes),
+    bytes,
     cabutan: cellValue(null, null, null),
     filename: `DO_${monthName}.xlsx`,
     monthName,
@@ -266,4 +268,132 @@ export function buildCabutanWorkbook(buffer: Buffer): CabutanResult {
     rowCount: rows.length,
     witelCount: witelList.length,
   };
+}
+
+// ---------------------------------------------------------------------------------------------
+// PivotTable asli. SheetJS tidak bisa membuat pivot, jadi bagian OOXML-nya disisipkan ke file xlsx.
+// Cache dibuat tanpa catatan (count=0) dan refreshOnLoad="1": Excel membangun ulang cache dari sheet data
+// saat file dibuka, sementara angka yang sudah ditulis di Sheet1 tampil sebagai nilai awal.
+// ---------------------------------------------------------------------------------------------
+type PivotSpec = {
+  divisiCol: number;
+  divisiList: string[];
+  doCol: number;
+  doMax: number;
+  doMin: number;
+  header: string[];
+  lastRow: number;
+  periodCol: number;
+  periodList: number[];
+  produkCol: number;
+  produkList: string[];
+  rowCount: number;
+  witelCol: number;
+  witelList: string[];
+};
+
+const NS_MAIN = "http://schemas.openxmlformats.org/spreadsheetml/2006/main";
+const NS_REL = "http://schemas.openxmlformats.org/officeDocument/2006/relationships";
+const REL_BASE = "http://schemas.openxmlformats.org/officeDocument/2006/relationships";
+
+function xmlEscape(value: string) {
+  return value.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+}
+
+function sharedStrings(values: string[]) {
+  return `<sharedItems count="${values.length}">${values.map((v) => `<s v="${xmlEscape(v)}"/>`).join("")}</sharedItems>`;
+}
+
+function itemList(count: number) {
+  return `<items count="${count + 1}">${Array.from({ length: count }, (_, i) => `<item x="${i}"/>`).join("")}<item t="default"/></items>`;
+}
+
+function buildPivotCacheXml(spec: PivotSpec) {
+  const fields = spec.header.map((name, i) => {
+    let shared = "<sharedItems/>";
+    if (i === spec.periodCol) {
+      const min = Math.min(...spec.periodList);
+      const max = Math.max(...spec.periodList);
+      shared = `<sharedItems containsSemiMixedTypes="0" containsString="0" containsNumber="1" containsInteger="1" minValue="${min}" maxValue="${max}" count="${spec.periodList.length}">${spec.periodList.map((p) => `<n v="${p}"/>`).join("")}</sharedItems>`;
+    } else if (i === spec.produkCol) shared = sharedStrings(spec.produkList);
+    else if (i === spec.divisiCol) shared = sharedStrings(spec.divisiList);
+    else if (i === spec.witelCol) shared = sharedStrings(spec.witelList);
+    else if (i === spec.doCol) shared = `<sharedItems containsSemiMixedTypes="0" containsString="0" containsNumber="1" containsInteger="1" minValue="${spec.doMin}" maxValue="${spec.doMax}"/>`;
+    return `<cacheField name="${xmlEscape(name)}" numFmtId="0">${shared}</cacheField>`;
+  });
+  const serial = Date.now() / 86400000 + 25569; // tanggal serial Excel
+  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<pivotCacheDefinition xmlns="${NS_MAIN}" xmlns:r="${NS_REL}" r:id="rId1" refreshOnLoad="1" refreshedBy="PRIME Bot" refreshedDate="${serial}" createdVersion="8" refreshedVersion="8" minRefreshableVersion="3" recordCount="${spec.rowCount}"><cacheSource type="worksheet"><worksheetSource ref="A1:${colLetter(spec.header.length - 1)}${spec.lastRow}" sheet="${xmlEscape(CABUTAN_DATA_SHEET)}"/></cacheSource><cacheFields count="${spec.header.length}">${fields.join("")}</cacheFields></pivotCacheDefinition>`;
+}
+
+function buildPivotTableXml(spec: PivotSpec) {
+  const nP = spec.periodList.length;
+  const nD = spec.divisiList.length;
+  const fields = spec.header.map((_, i) => {
+    if (i === spec.periodCol) return `<pivotField axis="axisCol" showAll="0">${itemList(nP)}</pivotField>`;
+    if (i === spec.produkCol) return `<pivotField axis="axisPage" showAll="0">${itemList(spec.produkList.length)}</pivotField>`;
+    if (i === spec.divisiCol) return `<pivotField axis="axisCol" showAll="0">${itemList(nD)}</pivotField>`;
+    if (i === spec.witelCol) return `<pivotField axis="axisRow" showAll="0">${itemList(spec.witelList.length)}</pivotField>`;
+    if (i === spec.doCol) return `<pivotField dataField="1" showAll="0"/>`;
+    return `<pivotField showAll="0"/>`;
+  });
+  const rowItems = [
+    ...spec.witelList.map((_, i) => (i === 0 ? "<i><x/></i>" : `<i><x v="${i}"/></i>`)),
+    '<i t="grand"><x/></i>',
+  ];
+  const colItems: string[] = [];
+  spec.periodList.forEach((_, p) => {
+    for (let d = 0; d < nD; d += 1) {
+      if (d === 0) colItems.push(p === 0 ? "<i><x/><x/></i>" : `<i><x v="${p}"/><x/></i>`);
+      else colItems.push(`<i r="1"><x v="${d}"/></i>`);
+    }
+    colItems.push(p === 0 ? '<i t="default"><x/></i>' : `<i t="default"><x v="${p}"/></i>`);
+  });
+  colItems.push('<i t="grand"><x/></i>');
+  const lastCol = colLetter(1 + nP * (nD + 1));
+  const lastRow = 6 + spec.witelList.length + 1;
+  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<pivotTableDefinition xmlns="${NS_MAIN}" name="PivotTable1" cacheId="1" applyNumberFormats="0" applyBorderFormats="0" applyFontFormats="0" applyPatternFormats="0" applyAlignmentFormats="0" applyWidthHeightFormats="1" dataCaption="Values" updatedVersion="8" minRefreshableVersion="3" useAutoFormatting="1" itemPrintTitles="1" createdVersion="8" indent="0" outline="1" outlineData="1" multipleFieldFilters="0"><location ref="A4:${lastCol}${lastRow}" firstHeaderRow="1" firstDataRow="3" firstDataCol="1" rowPageCount="1" colPageCount="1"/><pivotFields count="${spec.header.length}">${fields.join("")}</pivotFields><rowFields count="1"><field x="${spec.witelCol}"/></rowFields><rowItems count="${rowItems.length}">${rowItems.join("")}</rowItems><colFields count="2"><field x="${spec.periodCol}"/><field x="${spec.divisiCol}"/></colFields><colItems count="${colItems.length}">${colItems.join("")}</colItems><pageFields count="1"><pageField fld="${spec.produkCol}" hier="-1"/></pageFields><dataFields count="1"><dataField name="Sum of SSL_DO" fld="${spec.doCol}" baseField="0" baseItem="0"/></dataFields><pivotTableStyleInfo name="PivotStyleLight16" showRowHeaders="1" showColHeaders="1" showRowStripes="0" showColStripes="0" showLastColumn="1"/></pivotTableDefinition>`;
+}
+
+async function addPivotTable(xlsx: Uint8Array, spec: PivotSpec): Promise<Uint8Array> {
+  const zip = await JSZip.loadAsync(xlsx);
+  const text = async (path: string) => {
+    const file = zip.file(path);
+    if (!file) throw new Error(`Bagian ${path} tidak ditemukan di file xlsx.`);
+    return file.async("string");
+  };
+
+  zip.file("xl/pivotCache/pivotCacheDefinition1.xml", buildPivotCacheXml(spec));
+  zip.file("xl/pivotCache/pivotCacheRecords1.xml", `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<pivotCacheRecords xmlns="${NS_MAIN}" xmlns:r="${NS_REL}" count="0"/>`);
+  zip.file("xl/pivotCache/_rels/pivotCacheDefinition1.xml.rels", `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="${REL_BASE}/pivotCacheRecords" Target="pivotCacheRecords1.xml"/></Relationships>`);
+  zip.file("xl/pivotTables/pivotTable1.xml", buildPivotTableXml(spec));
+  zip.file("xl/pivotTables/_rels/pivotTable1.xml.rels", `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="${REL_BASE}/pivotCacheDefinition" Target="../pivotCache/pivotCacheDefinition1.xml"/></Relationships>`);
+
+  // Sheet1 -> pivotTable
+  const sheetRelsPath = "xl/worksheets/_rels/sheet1.xml.rels";
+  const pivotRel = `<Relationship Id="rIdPivot1" Type="${REL_BASE}/pivotTable" Target="../pivotTables/pivotTable1.xml"/>`;
+  const existingSheetRels = zip.file(sheetRelsPath);
+  zip.file(
+    sheetRelsPath,
+    existingSheetRels
+      ? (await existingSheetRels.async("string")).replace("</Relationships>", `${pivotRel}</Relationships>`)
+      : `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">${pivotRel}</Relationships>`,
+  );
+
+  // workbook -> pivotCache
+  const wbRelsPath = "xl/_rels/workbook.xml.rels";
+  zip.file(wbRelsPath, (await text(wbRelsPath)).replace("</Relationships>", `<Relationship Id="rIdPivotCache1" Type="${REL_BASE}/pivotCacheDefinition" Target="pivotCache/pivotCacheDefinition1.xml"/></Relationships>`));
+  const workbook = await text("xl/workbook.xml");
+  if (!workbook.includes("</workbook>")) throw new Error("workbook.xml tidak valid.");
+  zip.file("xl/workbook.xml", workbook.replace("</workbook>", '<pivotCaches><pivotCache cacheId="1" r:id="rIdPivotCache1"/></pivotCaches></workbook>'));
+
+  const types = await text("[Content_Types].xml");
+  zip.file(
+    "[Content_Types].xml",
+    types.replace(
+      "</Types>",
+      '<Override PartName="/xl/pivotTables/pivotTable1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.pivotTable+xml"/><Override PartName="/xl/pivotCache/pivotCacheDefinition1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.pivotCacheDefinition+xml"/><Override PartName="/xl/pivotCache/pivotCacheRecords1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.pivotCacheRecords+xml"/></Types>',
+    ),
+  );
+
+  return zip.generateAsync({ compression: "DEFLATE", type: "uint8array" });
 }
