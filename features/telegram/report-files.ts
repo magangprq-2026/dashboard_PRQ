@@ -60,7 +60,7 @@ export async function buildReportImages(product: ReportProductKey, deps: ReportD
   if (product === "WMS") {
     const entry = await loadLatestEntry("WMS");
     if (!entry) throw new Error("Belum ada data WMS. Upload file MASTER WMS dulu.");
-    const report = computeWmsReport(entry.rows as WmsMasterRow[], entry.periodKey);
+    const report = computeWmsReport(entry.allRows as WmsMasterRow[], entry.periodKey, { reference: entry.reference });
     return [buildWmsImage(report, new Date())];
   }
 

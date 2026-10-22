@@ -47,8 +47,9 @@ export const wmsHistory = {
   } as Record<string, WmsHistoryEntry>,
 };
 
-// Telda (14 baris REAL) -> nama TELKOM_DAERAH di MASTER (kolom K).
-// MEA YOGYAKARTA di MASTER tertulis "INNER - YOGYA JATENG SELATAN" (lihat Report Sementara!AZ).
+// Telda (14 baris REAL) -> nama TELKOM_DAERAH di MASTER (kolom K), persis seperti daftar
+// "Telda Reference" di Report Sementara!AZ23:AZ36 (rumus SUMPRODUCT membandingkan kolom K dengan sel tsb).
+// MEA YOGYAKARTA di MASTER tertulis "INNER - YOGYA JATENG SELATAN"; Excel TIDAK menghitung nilai "MEA YOGYAKARTA".
 export const wmsTeldaMasterNames: Record<string, readonly string[]> = {
   "BANJARNEGARA": ["BANJARNEGARA"],
   "BANTUL": ["BANTUL"],
@@ -56,7 +57,7 @@ export const wmsTeldaMasterNames: Record<string, readonly string[]> = {
   "GUNUNG KIDUL": ["GUNUNG KIDUL"],
   "KEBUMEN": ["KEBUMEN"],
   "MAGELANG": ["MAGELANG"],
-  "MEA YOGYAKARTA": ["INNER - YOGYA JATENG SELATAN", "MEA YOGYAKARTA"],
+  "MEA YOGYAKARTA": ["INNER - YOGYA JATENG SELATAN"],
   "MUNTILAN": ["MUNTILAN"],
   "PURBALINGGA": ["PURBALINGGA"],
   "PURWOKERTO": ["PURWOKERTO"],
