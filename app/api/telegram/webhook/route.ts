@@ -72,7 +72,6 @@ type TelegramMessage = {
   document?: TelegramDocument;
   from?: TelegramUser;
   message_id?: number;
-  reply_to_message?: TelegramMessage;
   text?: string;
 };
 
@@ -104,8 +103,6 @@ type TelegramInlineKeyboardMarkup = {
 
 type TelegramMessageOptions = {
   replyMarkup?: TelegramInlineKeyboardMarkup;
-  /** Balas pesan ini, sehingga tombol yang ditekan nanti bisa mengambil kembali file aslinya lewat reply_to_message. */
-  replyToMessageId?: number;
 };
 
 type DashboardPresenceRow = {
@@ -954,7 +951,6 @@ async function sendTelegramMessage(botToken: string, chatId: number, text: strin
       disable_web_page_preview: true,
       parse_mode: "HTML",
       ...(options.replyMarkup ? { reply_markup: options.replyMarkup } : {}),
-      ...(options.replyToMessageId ? { reply_parameters: { allow_sending_without_reply: true, message_id: options.replyToMessageId } } : {}),
       text,
     }),
     headers: {
@@ -1089,8 +1085,8 @@ function cabutanMenuText(last: CabutanMeta | null) {
     "▫️ <b>Sheet1</b> — pivot Sum of SSL_DO per Witel × Divisi",
     "▫️ <b>T_NAL_Full Data_data (2)</b> — seluruh data CSV",
     SECTION,
-    "⚠️ <b>Beri caption</b> saat mengirim CSV: <code>cabutan</code>, <code>data cabutan</code>, atau <code>y</code>.",
-    "<i>Tanpa caption, bot akan bertanya lewat tombol: Data Cabutan atau CAPS (NAL) LTS. Caption <b>lts</b> langsung diproses sebagai LTS.</i>",
+    "⚠️ <b>Wajib beri caption</b> saat mengirim CSV: <code>cabutan</code>, <code>data cabutan</code>, atau <code>y</code>.",
+    "<i>Tanpa caption tersebut, CSV dianggap file LTS (CAPS/NAL).</i>",
     SECTION,
   ];
   if (last) {
@@ -1399,35 +1395,7 @@ async function sendReportExcel(botToken: string, chatId: number, product: Report
 
 // CSV T_NAL: UBIS selain Business -> pasti Data Cabutan. Hanya Business -> CAPS (NAL) LTS, kecuali menu Data Cabutan
 // baru dibuka (mode aktif) atau caption memuat "cabutan".
-// CSV T_NAL berformat sama untuk Data Cabutan dan CAPS (NAL) LTS. Tanpa caption bot tidak menebak: pengguna diminta memilih.
-// Pertanyaan dikirim sebagai balasan ke file, sehingga saat tombol ditekan file aslinya bisa diambil lewat reply_to_message.
-async function askNalKind(botToken: string, chatId: number, message: TelegramMessage) {
-  return sendTelegramMessage(
-    botToken,
-    chatId,
-    [
-      "❓ <b>File CSV ini data apa?</b>",
-      "",
-      "Format file ini sama untuk <b>Data Cabutan</b> dan <b>CAPS (NAL)</b> LTS, dan tidak ada caption yang menjelaskannya.",
-      "",
-      "Pilih salah satu 👇",
-      "",
-      "<i>Tips: tulis <b>cabutan</b> (atau <b>y</b>) di caption agar tidak ditanya lagi, atau <b>lts</b> untuk data LTS.</i>",
-    ].join("\n"),
-    {
-      replyMarkup: {
-        inline_keyboard: [
-          [{ callback_data: "nal:cabutan", text: "🗂️ Data Cabutan" }],
-          [{ callback_data: "nal:lts", text: "📶 CAPS (NAL) LTS" }],
-        ],
-      },
-      replyToMessageId: message.message_id,
-    },
-  );
-}
-
-// `forced` diisi saat pengguna sudah memilih lewat tombol; penentuan otomatis dilewati.
-async function handleDocumentUpload(botToken: string, chatId: number, message: TelegramMessage, forced?: "cabutan" | "lts") {
+async function handleDocumentUpload(botToken: string, chatId: number, message: TelegramMessage) {
   const document = message.document!;
   const userId = telegramUserId(message.from);
   if (!isAllowedUploader(userId)) {
@@ -1445,14 +1413,9 @@ async function handleDocumentUpload(botToken: string, chatId: number, message: T
   const workingId = working.ok ? working.messageId : undefined;
   try {
     const buffer = await downloadTelegramFile(botToken, document.file_id);
-    // Aturan: caption "cabutan" / "data cabutan" / "y" -> Data Cabutan. Caption lain (mis. "lts") -> diproses seperti biasa (LTS).
-    // Tanpa caption sama sekali dan file berformat CSV T_NAL (ambigu dengan CAPS LTS) -> bot bertanya lewat tombol.
-    const asCabutan = forced ? forced === "cabutan" : isCabutanCaption(message.caption);
-    if (!forced && !asCabutan && !(message.caption ?? "").trim() && isCabutanFile(fileName, buffer)) {
-      await deleteTelegramMessage(botToken, chatId, workingId);
-      await askNalKind(botToken, chatId, message);
-      return;
-    }
+    // Aturan: HANYA caption yang menentukan. Caption "cabutan" / "data cabutan" / "y" -> Data Cabutan.
+    // Tanpa caption tersebut -> diproses seperti biasa (CSV T_NAL = CAPS LTS). Isi file tidak dipakai untuk menebak.
+    const asCabutan = isCabutanCaption(message.caption);
     if (asCabutan && !isCabutanFile(fileName, buffer)) {
       await deleteTelegramMessage(botToken, chatId, workingId);
       await sendTelegramMessage(
@@ -1463,7 +1426,7 @@ async function handleDocumentUpload(botToken: string, chatId: number, message: T
           "",
           "Caption <b>cabutan</b> / <b>data cabutan</b> / <b>y</b> hanya untuk file <b>.csv</b> T_NAL Full Data yang memuat kolom PERIODE, L_WITEL, DIVISI, SSL_DO, SSL_NAL, KATEGORI_DO, dan JENISPSB.",
           "",
-          "Jika ini data LTS, kirim ulang dengan caption <b>lts</b>.",
+          "Jika ini data LTS, kirim ulang tanpa caption tersebut.",
         ].join("\n"),
         { replyMarkup: cabutanKeyboard() },
       );
@@ -1698,24 +1661,6 @@ async function handleCallbackQuery(botToken: string, callbackQuery: TelegramCall
 
   if (data === "menu:upload") {
     await sendOrEditTelegramMessage(botToken, chatId, messageId, uploadHelpText(), { replyMarkup: helpKeyboard() });
-    return;
-  }
-
-  // Pengguna menjawab "CSV ini data apa?". File asli diambil dari pesan yang dibalas bot (reply_to_message).
-  if (data === "nal:cabutan" || data === "nal:lts") {
-    const original = callbackQuery.message?.reply_to_message;
-    if (!original?.document) {
-      await sendOrEditTelegramMessage(
-        botToken,
-        chatId,
-        messageId,
-        "⚠️ <b>File aslinya tidak ditemukan</b>\n\nKirim ulang CSV-nya dengan caption <b>cabutan</b> (Data Cabutan) atau <b>lts</b> (CAPS/NAL LTS).",
-        { replyMarkup: cabutanKeyboard() },
-      );
-      return;
-    }
-    await deleteTelegramMessage(botToken, chatId, messageId);
-    await handleDocumentUpload(botToken, chatId, { ...original, from: callbackQuery.from }, data === "nal:cabutan" ? "cabutan" : "lts");
     return;
   }
 
