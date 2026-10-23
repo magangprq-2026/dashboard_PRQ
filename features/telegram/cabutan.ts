@@ -112,9 +112,14 @@ export function isCabutanFile(fileName: string, buffer: Buffer): boolean {
   return REQUIRED_COLUMNS.every((c) => columns.has(c));
 }
 
-/** Satu-satunya penanda Data Cabutan: kata "cabutan" di caption (huruf besar/kecil bebas). */
+/**
+ * Penanda Data Cabutan di caption (huruf besar/kecil bebas): caption memuat kata "cabutan" (mis. "Cabutan", "Data Cabutan"),
+ * atau caption hanya berisi huruf "y" sebagai singkatan. "y" harus berdiri sendiri, supaya huruf y di dalam kata lain
+ * (mis. caption "lts nal" atau "sales") tidak terhitung.
+ */
 export function isCabutanCaption(caption: string | undefined): boolean {
-  return /cabutan/i.test(caption ?? "");
+  const text = (caption ?? "").trim();
+  return /cabutan/i.test(text) || /^y$/i.test(text);
 }
 
 function readCabutanCsv(buffer: Buffer): CabutanSheetRows {

@@ -1079,14 +1079,14 @@ function cabutanMenuText(last: CabutanMeta | null) {
     "",
     "<b>Cara pakai</b>",
     "",
-    `1️⃣ Kirim file <b>.csv</b> ke chat ini sebagai <i>dokumen</i> (ikon 📎 → File) dengan caption <b>cabutan</b>.`,
+    `1️⃣ Kirim file <b>.csv</b> ke chat ini sebagai <i>dokumen</i> (ikon 📎 → File) dengan caption <b>cabutan</b>, <b>data cabutan</b>, atau <b>y</b>.`,
     "",
     "2️⃣ Bot membalas dengan file Excel berisi:",
     "▫️ <b>Sheet1</b> — pivot Sum of SSL_DO per Witel × Divisi",
     "▫️ <b>T_NAL_Full Data_data (2)</b> — seluruh data CSV",
     SECTION,
-    "⚠️ <b>Wajib tulis <code>cabutan</code> di caption</b> saat mengirim CSV.",
-    "<i>Tanpa caption <b>cabutan</b>, CSV dianggap file LTS (CAPS/NAL).</i>",
+    "⚠️ <b>Wajib beri caption</b> saat mengirim CSV: <code>cabutan</code>, <code>data cabutan</code>, atau <code>y</code>.",
+    "<i>Tanpa caption tersebut, CSV dianggap file LTS (CAPS/NAL).</i>",
     SECTION,
   ];
   if (last) {
@@ -1423,9 +1423,9 @@ async function handleDocumentUpload(botToken: string, chatId: number, message: T
         [
           "⚠️ <b>File ini tidak bisa diproses sebagai Data Cabutan</b>",
           "",
-          "Caption <b>cabutan</b> hanya untuk file <b>.csv</b> T_NAL Full Data yang memuat kolom PERIODE, L_WITEL, DIVISI, SSL_DO, SSL_NAL, KATEGORI_DO, dan JENISPSB.",
+          "Caption <b>cabutan</b> / <b>data cabutan</b> / <b>y</b> hanya untuk file <b>.csv</b> T_NAL Full Data yang memuat kolom PERIODE, L_WITEL, DIVISI, SSL_DO, SSL_NAL, KATEGORI_DO, dan JENISPSB.",
           "",
-          "Jika ini data LTS, kirim ulang tanpa caption <b>cabutan</b>.",
+          "Jika ini data LTS, kirim ulang tanpa caption tersebut.",
         ].join("\n"),
         { replyMarkup: cabutanKeyboard() },
       );
