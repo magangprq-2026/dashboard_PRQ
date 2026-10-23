@@ -30,7 +30,7 @@ import {
   tryParseMetabrightFile,
 } from "@/features/telegram/metabright-upload";
 import { buildCabutanWorkbook, hasNonBusinessUbis, isCabutanFile } from "@/features/telegram/cabutan";
-import { armCabutan, CABUTAN_PENDING_MINUTES, disarmCabutan, isCabutanArmed, lastCabutanMeta, loadLastCabutanCsv, ltsWaitsForCaps, saveLastCabutan, type CabutanMeta } from "@/features/telegram/cabutan-store";
+import { lastCabutanMeta, loadLastCabutanCsv, saveLastCabutan, type CabutanMeta } from "@/features/telegram/cabutan-store";
 import { downloadTelegramFile, sendTelegramDocument } from "@/features/telegram/telegram-api";
 import {
   buildMetabrightFiles,
@@ -1071,7 +1071,7 @@ function uploadHelpText() {
   ].join("\n");
 }
 
-function cabutanMenuText(last: CabutanMeta | null, armed = true) {
+function cabutanMenuText(last: CabutanMeta | null) {
   const lines = [
     "🗂️ <b>Data Cabutan</b>",
     SECTION,
@@ -1079,17 +1079,13 @@ function cabutanMenuText(last: CabutanMeta | null, armed = true) {
     "",
     "<b>Cara pakai</b>",
     "",
-    `1️⃣ Kirim file <b>.csv</b> ke chat ini sebagai <i>dokumen</i> (ikon 📎 → File) dalam <b>${CABUTAN_PENDING_MINUTES} menit</b> setelah membuka menu ini.`,
+    `1️⃣ Kirim file <b>.csv</b> ke chat ini sebagai <i>dokumen</i> (ikon 📎 → File).`,
     "",
     "2️⃣ Bot membalas dengan file Excel berisi:",
     "▫️ <b>Sheet1</b> — pivot Sum of SSL_DO per Witel × Divisi",
     "▫️ <b>T_NAL_Full Data_data (2)</b> — seluruh data CSV",
     SECTION,
-    armed
-      ? "🟢 <b>Siap menerima CSV Data Cabutan.</b>"
-      : "⚠️ <b>Mode cabutan gagal diaktifkan</b> — CSV yang hanya berisi UBIS Business akan diproses sebagai file LTS.",
-    "",
-    "<i>CSV yang berisi UBIS selain Business (Enterprise, Government, dst.) otomatis dikenali sebagai Data Cabutan. CSV yang hanya berisi Business dianggap file LTS (CAPS/NAL), kecuali menu ini dibuka lebih dulu.</i>",
+    "<i>CSV yang berisi UBIS selain Business (Enterprise, Government, dst.) otomatis dikenali sebagai Data Cabutan. CSV yang hanya berisi Business dianggap file LTS (CAPS/NAL); jika itu justru data cabutan, tulis <b>cabutan</b> di caption saat mengirim.</i>",
     SECTION,
   ];
   if (last) {
@@ -1418,12 +1414,8 @@ async function handleDocumentUpload(botToken: string, chatId: number, message: T
     const buffer = await downloadTelegramFile(botToken, document.file_id);
     // Data Cabutan (CSV T_NAL Full Data) dikenali dari judul kolom; dicek lebih dulu karena nama file "T_NAL" mirip file LTS "nal".
     // Data Cabutan hanya bila menu Data Cabutan sudah dibuka (atau caption memuat "cabutan"), karena CSV CAPS (NAL) LTS berformat sama.
-    const asCabutan =
-      isCabutanFile(fileName, buffer) &&
-      (/cabutan/i.test(message.caption ?? "") ||
-        hasNonBusinessUbis(buffer) ||
-        // Hanya Business: bila upload LTS sedang menunggu CAPS (NAL), file ini adalah CAPS walaupun menu cabutan sempat dibuka.
-        ((await isCabutanArmed(chatId).catch(() => false)) && !(await ltsWaitsForCaps().catch(() => false))));
+    // Data Cabutan: UBIS selain Business (otomatis) atau caption memuat "cabutan". CSV yang hanya Business = CAPS (NAL) LTS.
+    const asCabutan = isCabutanFile(fileName, buffer) && (/cabutan/i.test(message.caption ?? "") || hasNonBusinessUbis(buffer));
     if (asCabutan) {
       const { result, sent } = await sendCabutanFile(botToken, chatId, buffer);
       // Simpan CSV supaya bisa diunduh lagi lewat menu Data Cabutan. Kegagalan simpan tidak membatalkan file yang sudah dikirim.
@@ -1433,7 +1425,6 @@ async function handleDocumentUpload(botToken: string, chatId: number, message: T
         rowCount: result.rowCount,
         uploadedBy: message.from?.first_name ?? null,
       }).catch(() => false);
-      if (sent.ok) await disarmCabutan(chatId).catch(() => undefined);
       await deleteTelegramMessage(botToken, chatId, workingId);
       if (!sent.ok) {
         await sendTelegramMessage(botToken, chatId, "❌ <b>File Data Cabutan gagal dikirim</b>\n\nSilakan coba kirim ulang CSV-nya.", { replyMarkup: cabutanKeyboard() });
@@ -1447,7 +1438,6 @@ async function handleDocumentUpload(botToken: string, chatId: number, message: T
     if (ltsKey) {
       const dataset = parseLtsDataset(ltsKey, fileName, buffer);
       await importLtsDataset(dataset);
-      await disarmCabutan(chatId).catch(() => undefined); // sedang upload LTS, bukan cabutan
       const progress = await registerLtsUpload(dataset);
       const received = LTS_DATASET_KEYS.filter((k) => progress.present[k]).length;
       const checklist = [
@@ -1659,9 +1649,8 @@ async function handleCallbackQuery(botToken: string, callbackQuery: TelegramCall
   }
 
   if (data === "menu:cabutan") {
-    const armed = await armCabutan(chatId).catch(() => false);
     const last = await lastCabutanSafe();
-    await sendOrEditTelegramMessage(botToken, chatId, messageId, cabutanMenuText(last, armed), { replyMarkup: cabutanMenuKeyboard(last) });
+    await sendOrEditTelegramMessage(botToken, chatId, messageId, cabutanMenuText(last), { replyMarkup: cabutanMenuKeyboard(last) });
     return;
   }
 
@@ -1862,9 +1851,8 @@ export async function POST(request: NextRequest) {
   }
 
   if (command === "/cabutan") {
-    const armed = await armCabutan(chatId).catch(() => false);
     const last = await lastCabutanSafe();
-    await sendTelegramMessage(botToken, chatId, cabutanMenuText(last, armed), { replyMarkup: cabutanMenuKeyboard(last) });
+    await sendTelegramMessage(botToken, chatId, cabutanMenuText(last), { replyMarkup: cabutanMenuKeyboard(last) });
     return NextResponse.json({ ok: true });
   }
 
