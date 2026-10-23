@@ -30,7 +30,7 @@ import {
   tryParseMetabrightFile,
 } from "@/features/telegram/metabright-upload";
 import { buildCabutanWorkbook, hasNonBusinessUbis, isCabutanFile } from "@/features/telegram/cabutan";
-import { armCabutan, CABUTAN_PENDING_MINUTES, disarmCabutan, isCabutanArmed, lastCabutanMeta, loadLastCabutanCsv, saveLastCabutan, type CabutanMeta } from "@/features/telegram/cabutan-store";
+import { armCabutan, CABUTAN_PENDING_MINUTES, disarmCabutan, isCabutanArmed, lastCabutanMeta, loadLastCabutanCsv, ltsWaitsForCaps, saveLastCabutan, type CabutanMeta } from "@/features/telegram/cabutan-store";
 import { downloadTelegramFile, sendTelegramDocument } from "@/features/telegram/telegram-api";
 import {
   buildMetabrightFiles,
@@ -1420,7 +1420,10 @@ async function handleDocumentUpload(botToken: string, chatId: number, message: T
     // Data Cabutan hanya bila menu Data Cabutan sudah dibuka (atau caption memuat "cabutan"), karena CSV CAPS (NAL) LTS berformat sama.
     const asCabutan =
       isCabutanFile(fileName, buffer) &&
-      (/cabutan/i.test(message.caption ?? "") || hasNonBusinessUbis(buffer) || (await isCabutanArmed(chatId).catch(() => false)));
+      (/cabutan/i.test(message.caption ?? "") ||
+        hasNonBusinessUbis(buffer) ||
+        // Hanya Business: bila upload LTS sedang menunggu CAPS (NAL), file ini adalah CAPS walaupun menu cabutan sempat dibuka.
+        ((await isCabutanArmed(chatId).catch(() => false)) && !(await ltsWaitsForCaps().catch(() => false))));
     if (asCabutan) {
       const { result, sent } = await sendCabutanFile(botToken, chatId, buffer);
       // Simpan CSV supaya bisa diunduh lagi lewat menu Data Cabutan. Kegagalan simpan tidak membatalkan file yang sudah dikirim.
@@ -1444,6 +1447,7 @@ async function handleDocumentUpload(botToken: string, chatId: number, message: T
     if (ltsKey) {
       const dataset = parseLtsDataset(ltsKey, fileName, buffer);
       await importLtsDataset(dataset);
+      await disarmCabutan(chatId).catch(() => undefined); // sedang upload LTS, bukan cabutan
       const progress = await registerLtsUpload(dataset);
       const received = LTS_DATASET_KEYS.filter((k) => progress.present[k]).length;
       const checklist = [

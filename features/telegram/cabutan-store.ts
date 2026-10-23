@@ -2,6 +2,8 @@
 // bisa membuat ulang DO_<Bulan>.xlsx kapan saja. Memakai tabel dashboard_state yang sudah ada (tanpa skema baru).
 // CSV dikompres gzip lalu disimpan sebagai base64 agar ukurannya kecil.
 import { gunzipSync, gzipSync } from "node:zlib";
+import { dbQuery } from "@/features/shared/backend/database/db";
+import { LTS_BATCH_WINDOW_MINUTES } from "@/features/telegram/lts-upload";
 import { readDashboardStateByKey, writeDashboardStateByKey } from "@/features/shared/backend/database/dashboard-state";
 
 const STATE_KEY = "telegram:cabutan:last";
@@ -77,4 +79,25 @@ export async function isCabutanArmed(chatId: number): Promise<boolean> {
 /** Matikan mode cabutan (dipanggil setelah satu CSV berhasil dikonversi). */
 export async function disarmCabutan(chatId: number): Promise<void> {
   await writeDashboardStateByKey(pendingKey(chatId), { until: 0 });
+}
+
+/**
+ * True bila upload LTS sedang berjalan dan masih menunggu file CAPS (NAL): sudah ada file PS atau REG di rangkaian yang
+ * aktif (belum dikirim report-nya, jeda terakhir masih dalam LTS_BATCH_WINDOW_MINUTES) tetapi CAPS belum masuk.
+ * Dalam keadaan itu CSV T_NAL yang hanya berisi UBIS Business adalah file CAPS, bukan Data Cabutan.
+ */
+export async function ltsWaitsForCaps(): Promise<boolean> {
+  const table = process.env.DASHBOARD_STATE_TABLE || "dashboard_state";
+  if (!/^[a-z_][a-z0-9_]*$/.test(table)) return false;
+  const result = await dbQuery<{ batch?: { lastAt?: unknown; received?: Record<string, unknown> | null; reported?: unknown } | null }[]>(
+    `select payload->'ltsBatch' as batch from public."${table}" where key = 'lts' limit 1`,
+    [],
+  );
+  const batch = result.data?.[0]?.batch;
+  if (!batch || typeof batch !== "object" || batch.reported === true || batch.reported === "true") return false;
+  const received = batch.received && typeof batch.received === "object" ? batch.received : {};
+  if (typeof received.caps === "string") return false;
+  if (typeof received.sales !== "string" && typeof received.ct0 !== "string") return false;
+  const lastAt = typeof batch.lastAt === "string" ? Date.parse(batch.lastAt) : NaN;
+  return Number.isFinite(lastAt) && Date.now() - lastAt <= LTS_BATCH_WINDOW_MINUTES * 60_000;
 }
