@@ -55,9 +55,9 @@ export async function loadLastCabutanCsv(): Promise<{ csv: Buffer; meta: Cabutan
 }
 
 // ---------- Mode "siap menerima CSV cabutan" ----------
-// CSV T_NAL untuk Data Cabutan dan file CAPS (NAL) milik LTS berasal dari ekspor Tableau yang sama (kolom identik),
-// jadi isinya tidak bisa dibedakan. Karena itu CSV baru dianggap Data Cabutan setelah pengguna membuka menu
-// Data Cabutan (atau menulis "cabutan" di caption); tanpa itu file diproses sebagai upload LTS seperti biasa.
+// CSV T_NAL biasanya dikenali otomatis dari isi kolom UBIS (lihat hasNonBusinessUbis). Mode ini hanya dipakai untuk
+// kasus yang tidak bisa dibedakan dari isinya, yaitu CSV yang hanya berisi UBIS Business: dianggap Data Cabutan bila
+// pengguna baru saja membuka menu Data Cabutan (atau menulis "cabutan" di caption), selain itu dianggap CAPS (NAL) LTS.
 export const CABUTAN_PENDING_MINUTES = 15;
 const pendingKey = (chatId: number) => `telegram:cabutan:pending:${chatId}`;
 

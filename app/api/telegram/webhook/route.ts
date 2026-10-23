@@ -29,7 +29,7 @@ import {
   parseMetabrightFile,
   tryParseMetabrightFile,
 } from "@/features/telegram/metabright-upload";
-import { buildCabutanWorkbook, isCabutanFile } from "@/features/telegram/cabutan";
+import { buildCabutanWorkbook, hasNonBusinessUbis, isCabutanFile } from "@/features/telegram/cabutan";
 import { armCabutan, CABUTAN_PENDING_MINUTES, disarmCabutan, isCabutanArmed, lastCabutanMeta, loadLastCabutanCsv, saveLastCabutan, type CabutanMeta } from "@/features/telegram/cabutan-store";
 import { downloadTelegramFile, sendTelegramDocument } from "@/features/telegram/telegram-api";
 import {
@@ -1087,9 +1087,9 @@ function cabutanMenuText(last: CabutanMeta | null, armed = true) {
     SECTION,
     armed
       ? "🟢 <b>Siap menerima CSV Data Cabutan.</b>"
-      : "⚠️ <b>Mode cabutan gagal diaktifkan</b> — CSV akan diproses sebagai file LTS. Coba buka menu ini lagi.",
+      : "⚠️ <b>Mode cabutan gagal diaktifkan</b> — CSV yang hanya berisi UBIS Business akan diproses sebagai file LTS.",
     "",
-    "<i>CSV T_NAL untuk LTS (CAPS/NAL) tidak perlu lewat menu ini, langsung kirim saja.</i>",
+    "<i>CSV yang berisi UBIS selain Business (Enterprise, Government, dst.) otomatis dikenali sebagai Data Cabutan. CSV yang hanya berisi Business dianggap file LTS (CAPS/NAL), kecuali menu ini dibuka lebih dulu.</i>",
     SECTION,
   ];
   if (last) {
@@ -1396,6 +1396,8 @@ async function sendReportExcel(botToken: string, chatId: number, product: Report
   return sendTelegramDocument(botToken, chatId, file.filename, file.bytes, caption, undefined, replyMarkup);
 }
 
+// CSV T_NAL: UBIS selain Business -> pasti Data Cabutan. Hanya Business -> CAPS (NAL) LTS, kecuali menu Data Cabutan
+// baru dibuka (mode aktif) atau caption memuat "cabutan".
 async function handleDocumentUpload(botToken: string, chatId: number, message: TelegramMessage) {
   const document = message.document!;
   const userId = telegramUserId(message.from);
@@ -1416,7 +1418,10 @@ async function handleDocumentUpload(botToken: string, chatId: number, message: T
     const buffer = await downloadTelegramFile(botToken, document.file_id);
     // Data Cabutan (CSV T_NAL Full Data) dikenali dari judul kolom; dicek lebih dulu karena nama file "T_NAL" mirip file LTS "nal".
     // Data Cabutan hanya bila menu Data Cabutan sudah dibuka (atau caption memuat "cabutan"), karena CSV CAPS (NAL) LTS berformat sama.
-    if (isCabutanFile(fileName, buffer) && (/cabutan/i.test(message.caption ?? "") || (await isCabutanArmed(chatId).catch(() => false)))) {
+    const asCabutan =
+      isCabutanFile(fileName, buffer) &&
+      (/cabutan/i.test(message.caption ?? "") || hasNonBusinessUbis(buffer) || (await isCabutanArmed(chatId).catch(() => false)));
+    if (asCabutan) {
       const { result, sent } = await sendCabutanFile(botToken, chatId, buffer);
       // Simpan CSV supaya bisa diunduh lagi lewat menu Data Cabutan. Kegagalan simpan tidak membatalkan file yang sudah dikirim.
       const saved = await saveLastCabutan(buffer, {

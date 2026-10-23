@@ -98,6 +98,22 @@ export function isCabutanFile(fileName: string, buffer: Buffer): boolean {
   return REQUIRED_COLUMNS.every((c) => columns.has(c));
 }
 
+/**
+ * CSV T_NAL untuk Data Cabutan dan file CAPS (NAL) milik LTS berformat sama, tetapi filter UBIS-nya berbeda:
+ * file LTS hanya berisi UBIS "Business", sedangkan Data Cabutan memuat UBIS lain (Enterprise Private, Enterprise SOE,
+ * Government, dst.). True bila ada baris dengan UBIS selain Business -> pasti Data Cabutan.
+ */
+export function hasNonBusinessUbis(buffer: Buffer): boolean {
+  const all = parseCsv(decodeCsv(buffer));
+  const col = (all[0] ?? []).map((c) => c.trim()).indexOf("UBIS");
+  if (col < 0) return false;
+  for (let i = 1; i < all.length; i += 1) {
+    const value = (all[i][col] ?? "").trim().toUpperCase();
+    if (value !== "" && value !== "BUSINESS") return true;
+  }
+  return false;
+}
+
 function readCabutanCsv(buffer: Buffer): CabutanSheetRows {
   const all = parseCsv(decodeCsv(buffer));
   const header = (all[0] ?? []).map((c) => c.trim());
