@@ -53,3 +53,28 @@ export async function loadLastCabutanCsv(): Promise<{ csv: Buffer; meta: Cabutan
   const { csvGzipBase64, ...meta } = s;
   return { csv: gunzipSync(Buffer.from(csvGzipBase64, "base64")), meta };
 }
+
+// ---------- Mode "siap menerima CSV cabutan" ----------
+// CSV T_NAL untuk Data Cabutan dan file CAPS (NAL) milik LTS berasal dari ekspor Tableau yang sama (kolom identik),
+// jadi isinya tidak bisa dibedakan. Karena itu CSV baru dianggap Data Cabutan setelah pengguna membuka menu
+// Data Cabutan (atau menulis "cabutan" di caption); tanpa itu file diproses sebagai upload LTS seperti biasa.
+export const CABUTAN_PENDING_MINUTES = 15;
+const pendingKey = (chatId: number) => `telegram:cabutan:pending:${chatId}`;
+
+/** Aktifkan mode cabutan untuk chat ini selama CABUTAN_PENDING_MINUTES menit. */
+export async function armCabutan(chatId: number): Promise<boolean> {
+  const result = await writeDashboardStateByKey(pendingKey(chatId), { until: Date.now() + CABUTAN_PENDING_MINUTES * 60_000 });
+  return !("error" in result.body);
+}
+
+/** Apakah mode cabutan masih aktif untuk chat ini? (tidak mengubah apa pun) */
+export async function isCabutanArmed(chatId: number): Promise<boolean> {
+  const result = await readDashboardStateByKey(pendingKey(chatId));
+  const state = "state" in result.body ? (result.body.state as { until?: unknown } | null) : null;
+  return typeof state?.until === "number" && state.until > Date.now();
+}
+
+/** Matikan mode cabutan (dipanggil setelah satu CSV berhasil dikonversi). */
+export async function disarmCabutan(chatId: number): Promise<void> {
+  await writeDashboardStateByKey(pendingKey(chatId), { until: 0 });
+}

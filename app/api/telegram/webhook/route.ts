@@ -30,7 +30,7 @@ import {
   tryParseMetabrightFile,
 } from "@/features/telegram/metabright-upload";
 import { buildCabutanWorkbook, isCabutanFile } from "@/features/telegram/cabutan";
-import { lastCabutanMeta, loadLastCabutanCsv, saveLastCabutan, type CabutanMeta } from "@/features/telegram/cabutan-store";
+import { armCabutan, CABUTAN_PENDING_MINUTES, disarmCabutan, isCabutanArmed, lastCabutanMeta, loadLastCabutanCsv, saveLastCabutan, type CabutanMeta } from "@/features/telegram/cabutan-store";
 import { downloadTelegramFile, sendTelegramDocument } from "@/features/telegram/telegram-api";
 import {
   buildMetabrightFiles,
@@ -1071,7 +1071,7 @@ function uploadHelpText() {
   ].join("\n");
 }
 
-function cabutanMenuText(last: CabutanMeta | null) {
+function cabutanMenuText(last: CabutanMeta | null, armed = true) {
   const lines = [
     "🗂️ <b>Data Cabutan</b>",
     SECTION,
@@ -1079,11 +1079,17 @@ function cabutanMenuText(last: CabutanMeta | null) {
     "",
     "<b>Cara pakai</b>",
     "",
-    "1️⃣ Kirim file <b>.csv</b> ke chat ini sebagai <i>dokumen</i> (ikon 📎 → File).",
+    `1️⃣ Kirim file <b>.csv</b> ke chat ini sebagai <i>dokumen</i> (ikon 📎 → File) dalam <b>${CABUTAN_PENDING_MINUTES} menit</b> setelah membuka menu ini.`,
     "",
     "2️⃣ Bot membalas dengan file Excel berisi:",
     "▫️ <b>Sheet1</b> — pivot Sum of SSL_DO per Witel × Divisi",
     "▫️ <b>T_NAL_Full Data_data (2)</b> — seluruh data CSV",
+    SECTION,
+    armed
+      ? "🟢 <b>Siap menerima CSV Data Cabutan.</b>"
+      : "⚠️ <b>Mode cabutan gagal diaktifkan</b> — CSV akan diproses sebagai file LTS. Coba buka menu ini lagi.",
+    "",
+    "<i>CSV T_NAL untuk LTS (CAPS/NAL) tidak perlu lewat menu ini, langsung kirim saja.</i>",
     SECTION,
   ];
   if (last) {
@@ -1409,7 +1415,8 @@ async function handleDocumentUpload(botToken: string, chatId: number, message: T
   try {
     const buffer = await downloadTelegramFile(botToken, document.file_id);
     // Data Cabutan (CSV T_NAL Full Data) dikenali dari judul kolom; dicek lebih dulu karena nama file "T_NAL" mirip file LTS "nal".
-    if (isCabutanFile(fileName, buffer)) {
+    // Data Cabutan hanya bila menu Data Cabutan sudah dibuka (atau caption memuat "cabutan"), karena CSV CAPS (NAL) LTS berformat sama.
+    if (isCabutanFile(fileName, buffer) && (/cabutan/i.test(message.caption ?? "") || (await isCabutanArmed(chatId).catch(() => false)))) {
       const { result, sent } = await sendCabutanFile(botToken, chatId, buffer);
       // Simpan CSV supaya bisa diunduh lagi lewat menu Data Cabutan. Kegagalan simpan tidak membatalkan file yang sudah dikirim.
       const saved = await saveLastCabutan(buffer, {
@@ -1418,6 +1425,7 @@ async function handleDocumentUpload(botToken: string, chatId: number, message: T
         rowCount: result.rowCount,
         uploadedBy: message.from?.first_name ?? null,
       }).catch(() => false);
+      if (sent.ok) await disarmCabutan(chatId).catch(() => undefined);
       await deleteTelegramMessage(botToken, chatId, workingId);
       if (!sent.ok) {
         await sendTelegramMessage(botToken, chatId, "❌ <b>File Data Cabutan gagal dikirim</b>\n\nSilakan coba kirim ulang CSV-nya.", { replyMarkup: cabutanKeyboard() });
@@ -1642,8 +1650,9 @@ async function handleCallbackQuery(botToken: string, callbackQuery: TelegramCall
   }
 
   if (data === "menu:cabutan") {
+    const armed = await armCabutan(chatId).catch(() => false);
     const last = await lastCabutanSafe();
-    await sendOrEditTelegramMessage(botToken, chatId, messageId, cabutanMenuText(last), { replyMarkup: cabutanMenuKeyboard(last) });
+    await sendOrEditTelegramMessage(botToken, chatId, messageId, cabutanMenuText(last, armed), { replyMarkup: cabutanMenuKeyboard(last) });
     return;
   }
 
@@ -1844,8 +1853,9 @@ export async function POST(request: NextRequest) {
   }
 
   if (command === "/cabutan") {
+    const armed = await armCabutan(chatId).catch(() => false);
     const last = await lastCabutanSafe();
-    await sendTelegramMessage(botToken, chatId, cabutanMenuText(last), { replyMarkup: cabutanMenuKeyboard(last) });
+    await sendTelegramMessage(botToken, chatId, cabutanMenuText(last, armed), { replyMarkup: cabutanMenuKeyboard(last) });
     return NextResponse.json({ ok: true });
   }
 
