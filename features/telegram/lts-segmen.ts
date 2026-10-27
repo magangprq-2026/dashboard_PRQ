@@ -597,11 +597,12 @@ export async function hasSegmenGroup(chatId: number, groupId: string): Promise<b
   return !result.error && (result.data?.length ?? 0) > 0;
 }
 
-/** Tunggu (maks. ~3 detik) penanda dari file bercaption di album yang sama. */
+/** Tunggu (maks. ~25 detik) penanda dari file bercaption di album yang sama. */
 export async function waitSegmenGroup(chatId: number, groupId: string): Promise<boolean> {
-  for (let i = 0; i < 6; i += 1) {
+  const tries = 50;
+  for (let i = 0; i < tries; i += 1) {
     if (await hasSegmenGroup(chatId, groupId).catch(() => false)) return true;
-    if (i < 5) await new Promise((resolve) => setTimeout(resolve, 500));
+    if (i < tries - 1) await new Promise((resolve) => setTimeout(resolve, 500));
   }
   return false;
 }
