@@ -1,7 +1,7 @@
 // Menu bot "LTS ALL SEGMEN": tiga CSV (T_PS, T_NAL, T_REG) yang dikirim dengan caption "all segmen" diubah menjadi
-// satu file LTS_ALL_SEGMEN.xlsx (meniru contoh LTS_ALL_SEGMEN.xlsx):
+// satu file LTS ALL SEGMEN.xlsx:
 //  - 3 sheet data : T_REG_Full Data_data (N), T_NAL_Full Data_data (N), T_PS_Full Data_data (N)  (isi CSV apa adanya)
-//  - Sheet2       : 4 PivotTable asli — SALES (PS), CHURN (NAL), CT0 DGS & DES (NAL), CT0 SME/RBS/DBS (REG)
+//  - ALL SEGMEN  : 4 PivotTable asli — SALES (PS), CHURN (NAL), CT0 DGS & DES (NAL), CT0 SME/RBS/DBS (REG)
 // Hanya konversi file; tidak ada yang masuk ke dashboard LTS. Ketiga file dikumpulkan sementara di dashboard_state
 // (satu baris per jenis file) sampai lengkap, lalu dihapus setelah file Excel terkirim.
 import JSZip from "jszip";
@@ -13,8 +13,8 @@ import { writeDashboardStateByKey } from "@/features/shared/backend/database/das
 export type SegmenKind = "ps" | "nal" | "reg";
 export const SEGMEN_KINDS: SegmenKind[] = ["ps", "nal", "reg"];
 export const SEGMEN_WINDOW_MINUTES = 30;
-export const SEGMEN_FILENAME = "LTS_ALL_SEGMEN.xlsx";
-const PIVOT_SHEET = "Sheet2";
+export const SEGMEN_FILENAME = "LTS ALL SEGMEN.xlsx";
+const PIVOT_SHEET = "ALL SEGMEN";
 
 export function segmenKindLabel(kind: SegmenKind) {
   return kind === "ps" ? "T_PS (Sales)" : kind === "nal" ? "T_NAL (Churn / CT0)" : "T_REG (CT0 SME/RBS/DBS)";
@@ -578,4 +578,73 @@ export async function loadSegmenFiles(chatId: number): Promise<Record<SegmenKind
 export async function clearSegmenFiles(chatId: number): Promise<void> {
   const keys = SEGMEN_KINDS.map((k) => fileKey(chatId, k));
   await dbQuery(`delete from public."${stateTable()}" where key = any($1::text[])`, [keys]);
+}
+
+// ---------------------------------------------------------------------------------------------
+// Album Telegram: bila beberapa file dikirim sekaligus (media group), caption hanya menempel di SATU file.
+// File bercaption menulis penanda untuk grup-nya; file lain di grup yang sama menunggu penanda itu sebentar.
+// ---------------------------------------------------------------------------------------------
+const groupKey = (chatId: number, groupId: string) => `telegram:segmen:group:${chatId}:${groupId}`;
+
+export async function markSegmenGroup(chatId: number, groupId: string): Promise<void> {
+  await writeDashboardStateByKey(groupKey(chatId, groupId), { at: Date.now() });
+  // Bersihkan penanda lama (lebih dari sehari) agar tabel tidak menumpuk.
+  await dbQuery(`delete from public."${stateTable()}" where key like 'telegram:segmen:group:%' and updated_at < now() - interval '1 day'`, []);
+}
+
+export async function hasSegmenGroup(chatId: number, groupId: string): Promise<boolean> {
+  const result = await dbQuery<{ key: string }[]>(`select key from public."${stateTable()}" where key = $1 limit 1`, [groupKey(chatId, groupId)]);
+  return !result.error && (result.data?.length ?? 0) > 0;
+}
+
+/** Tunggu (maks. ~25 detik) penanda dari file bercaption di album yang sama. */
+export async function waitSegmenGroup(chatId: number, groupId: string): Promise<boolean> {
+  const tries = 50;
+  for (let i = 0; i < tries; i += 1) {
+    if (await hasSegmenGroup(chatId, groupId).catch(() => false)) return true;
+    if (i < tries - 1) await new Promise((resolve) => setTimeout(resolve, 500));
+  }
+  return false;
+}
+
+// ---------------------------------------------------------------------------------------------
+// File album TANPA caption disimpan sebagai "menunggu". Siapa pun yang datang lebih dulu menentukan:
+//  - file bercaption tiba  -> mengambil alih semua file menunggu di grup itu (adoptPendingSegmen)
+//  - file menunggu melihat penanda grup -> mengambil dirinya sendiri (awaitSegmenGroup => "segmen")
+//  - tidak ada caption sampai batas waktu -> file diproses sebagai LTS biasa ("legacy")
+// Pengambilan memakai DELETE ... RETURNING sehingga tiap file hanya diproses satu pihak.
+// ---------------------------------------------------------------------------------------------
+const pendingKey = (chatId: number, groupId: string, kind: SegmenKind) => `telegram:segmen:pending:${chatId}:${groupId}:${kind}`;
+
+type PendingRow = { key: string; payload: { csvGzipBase64?: string; fileName?: string } };
+
+async function takePending(where: string, param: string): Promise<{ fileName: string; buffer: Buffer }[]> {
+  const result = await dbQuery<PendingRow[]>(`delete from public."${stateTable()}" where ${where} returning key, payload`, [param]);
+  if (result.error) return [];
+  return (result.data ?? [])
+    .filter((row) => typeof row.payload?.csvGzipBase64 === "string")
+    .map((row) => ({ fileName: row.payload.fileName ?? "file.csv", buffer: gunzipSync(Buffer.from(row.payload.csvGzipBase64 as string, "base64")) }));
+}
+
+/** Dipanggil file bercaption: ambil alih semua file menunggu di grup yang sama. */
+export async function adoptPendingSegmen(chatId: number, groupId: string): Promise<{ fileName: string; buffer: Buffer }[]> {
+  return takePending("key like $1", `telegram:segmen:pending:${chatId}:${groupId}:%`);
+}
+
+export async function awaitSegmenGroup(chatId: number, groupId: string, kind: SegmenKind, fileName: string, buffer: Buffer): Promise<"segmen" | "adopted" | "legacy"> {
+  const key = pendingKey(chatId, groupId, kind);
+  const saved = await writeDashboardStateByKey(key, { csvGzipBase64: gzipSync(buffer, { level: 6 }).toString("base64"), fileName, at: Date.now() });
+  if ("error" in saved.body) return "legacy";
+  const tries = 40;
+  for (let i = 0; i < tries; i += 1) {
+    const check = await dbQuery<{ marker: boolean; pending: boolean }[]>(
+      `select exists(select 1 from public."${stateTable()}" where key = $1) as marker, exists(select 1 from public."${stateTable()}" where key = $2) as pending`,
+      [groupKey(chatId, groupId), key],
+    );
+    const row = check.data?.[0];
+    if (row && !row.pending) return "adopted";
+    if (row?.marker) return (await takePending("key = $1", key)).length ? "segmen" : "adopted";
+    if (i < tries - 1) await new Promise((resolve) => setTimeout(resolve, 500));
+  }
+  return (await takePending("key = $1", key)).length ? "legacy" : "adopted";
 }

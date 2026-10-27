@@ -38,11 +38,14 @@ import {
   clearSegmenFiles,
   isSegmenCaption,
   loadSegmenFiles,
+  markSegmenGroup,
   releaseSegmenBatch,
   saveSegmenFile,
   SEGMEN_KINDS,
   SEGMEN_WINDOW_MINUTES,
   segmenKindLabel,
+  adoptPendingSegmen,
+  awaitSegmenGroup,
 } from "@/features/telegram/lts-segmen";
 import { downloadTelegramFile, sendTelegramDocument } from "@/features/telegram/telegram-api";
 import {
@@ -84,6 +87,7 @@ type TelegramMessage = {
   chat?: TelegramChat;
   document?: TelegramDocument;
   from?: TelegramUser;
+  media_group_id?: string;
   message_id?: number;
   text?: string;
 };
@@ -357,6 +361,8 @@ function mainMenuText(name?: string | null) {
     "📤 Upload data MASTER",
     "",
     "🗂️ Data Cabutan (CSV → DO_Bulan.xlsx)",
+    "",
+    "📑 LTS ALL SEGMEN (3 CSV → Excel)",
     SECTION,
     "Silakan pilih menu di bawah 👇",
   ].join("\n");
@@ -1078,7 +1084,7 @@ function uploadHelpText() {
     "",
     "📑 <b>LTS ALL SEGMEN</b>",
     "",
-    "Kirim tiga file CSV <b>T_PS</b>, <b>T_NAL</b>, dan <b>T_REG</b> dengan caption <b>all segmen</b> (juga bisa: all, segmen, lts all segmen). Bot mengubahnya menjadi <b>LTS_ALL_SEGMEN.xlsx</b> berisi tiga sheet data dan pivot SALES, CHURN, CT0.",
+    "Kirim tiga file CSV <b>T_PS</b>, <b>T_NAL</b>, dan <b>T_REG</b> dengan caption <b>all segmen</b> (juga bisa: all, segmen, lts all segmen). Bot mengubahnya menjadi <b>LTS ALL SEGMEN.xlsx</b> berisi tiga sheet data dan pivot SALES, CHURN, CT0.",
     "",
     "",
     "✨ <b>MetaBright</b>",
@@ -1416,7 +1422,7 @@ function segmenKeyboard(): TelegramInlineKeyboardMarkup {
   return { inline_keyboard: [[{ callback_data: "menu:upload", text: "📤 Panduan Upload" }], homeRow] };
 }
 
-// LTS ALL SEGMEN: tiga CSV (T_PS, T_NAL, T_REG) ber-caption "all segmen" dikumpulkan lalu diubah menjadi LTS_ALL_SEGMEN.xlsx.
+// LTS ALL SEGMEN: tiga CSV (T_PS, T_NAL, T_REG) ber-caption "all segmen" dikumpulkan lalu diubah menjadi LTS ALL SEGMEN.xlsx.
 async function handleSegmenFile(botToken: string, chatId: number, fileName: string, buffer: Buffer, workingId: number | undefined) {
   const kind = classifySegmenFile(fileName, buffer);
   if (!kind) {
@@ -1479,7 +1485,7 @@ async function handleSegmenFile(botToken: string, chatId: number, fileName: stri
       "",
       `💳 <b>T_REG</b>  •  ${result.rowCounts.reg.toLocaleString("id-ID")} baris`,
       SECTION,
-      "<i>Sheet2 = pivot SALES, CHURN, CT0 DGS &amp; DES, CT0 SME/RBS/DBS</i>",
+      "<i>Sheet ALL SEGMEN = pivot SALES, CHURN, CT0 DGS &amp; DES, CT0 SME/RBS/DBS</i>",
     ].join("\n");
     const sent = await sendTelegramDocument(botToken, chatId, result.filename, result.bytes, caption, undefined, segmenKeyboard());
     if (!sent.ok) throw new Error("File Excel gagal dikirim ke Telegram.");
@@ -1507,13 +1513,32 @@ async function handleDocumentUpload(botToken: string, chatId: number, message: T
     return;
   }
 
+  // LTS ALL SEGMEN: caption "all segmen" dll. Pada album Telegram caption hanya ada di satu file, jadi grup ditandai di database.
+  const groupId = message.media_group_id;
+  let segmen = isSegmenCaption(message.caption);
+  if (segmen && groupId) await markSegmenGroup(chatId, groupId).catch(() => undefined);
+
   const working = await sendTelegramMessage(botToken, chatId, `⏳ <b>Memproses file…</b>\n<i>${escapeHtml(fileName)}</i>`);
   const workingId = working.ok ? working.messageId : undefined;
   try {
     const buffer = await downloadTelegramFile(botToken, document.file_id);
     // LTS ALL SEGMEN: ditentukan oleh caption (all / segmen / all segmen / lts all segmen), dicek paling awal.
-    if (isSegmenCaption(message.caption)) {
+    if (!segmen && groupId) {
+      const pendingKind = classifySegmenFile(fileName, buffer);
+      if (pendingKind) {
+        const outcome = await awaitSegmenGroup(chatId, groupId, pendingKind, fileName, buffer);
+        if (outcome === "adopted") {
+          await deleteTelegramMessage(botToken, chatId, workingId);
+          return;
+        }
+        segmen = outcome === "segmen";
+      }
+    }
+    if (segmen) {
       await handleSegmenFile(botToken, chatId, fileName, buffer, workingId);
+      if (isSegmenCaption(message.caption) && groupId) {
+        for (const sibling of await adoptPendingSegmen(chatId, groupId)) await handleSegmenFile(botToken, chatId, sibling.fileName, sibling.buffer, undefined);
+      }
       return;
     }
     // Data Cabutan (CSV T_NAL Full Data) dikenali dari judul kolom; dicek lebih dulu karena nama file "T_NAL" mirip file LTS "nal".
