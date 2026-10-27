@@ -32,6 +32,16 @@ import {
 import { buildCabutanWorkbook, isCabutanCaption, isCabutanFile } from "@/features/telegram/cabutan";
 import { lastCabutanMeta, loadLastCabutanCsv, saveLastCabutan, type CabutanMeta } from "@/features/telegram/cabutan-store";
 import { downloadTelegramFile, sendTelegramDocument } from "@/features/telegram/telegram-api";
+import { ALL_SEGMEN_KINDS, allSegmenKindLabel, buildAllSegmenWorkbook, detectAllSegmenKind, isAllSegmenCaption, type AllSegmenKind } from "@/features/telegram/lts-all-segmen";
+import {
+  ALL_SEGMEN_WINDOW_MINUTES,
+  claimAllSegmenBuild,
+  consumeAllSegmenParts,
+  flagAllSegmenGroup,
+  loadAllSegmenProgress,
+  saveAllSegmenPart,
+  waitForAllSegmenGroup,
+} from "@/features/telegram/lts-all-segmen-store";
 import {
   buildMetabrightFiles,
   buildReportExcel,
@@ -71,6 +81,7 @@ type TelegramMessage = {
   chat?: TelegramChat;
   document?: TelegramDocument;
   from?: TelegramUser;
+  media_group_id?: string;
   message_id?: number;
   text?: string;
 };
@@ -199,6 +210,7 @@ function portalUrlFromOrigin(origin: string) {
 
 // Perintah boleh diketik dengan atau tanpa "/" dan huruf besar/kecil, mis. "start", "/Start", "Menu", "last update".
 const COMMAND_ALIASES: Record<string, string> = {
+  allsegmen: "/allsegmen",
   bantuan: "/help",
   cabutan: "/cabutan",
   datacabutan: "/cabutan",
@@ -211,11 +223,13 @@ const COMMAND_ALIASES: Record<string, string> = {
   id: "/myid",
   laporan: "/report",
   lastupdate: "/lastupdate",
+  ltsallsegmen: "/allsegmen",
   menu: "/start",
   mulai: "/start",
   myid: "/myid",
   portal: "/portal",
   report: "/report",
+  segmen: "/allsegmen",
   start: "/start",
   status: "/status",
   unduh: "/download",
@@ -914,6 +928,8 @@ function helpText() {
     "",
     "▫️ <code>cabutan</code> — ubah CSV T_NAL menjadi DO_Bulan.xlsx",
     "",
+    "▫️ <code>all segmen</code> — kirim CSV T_REG + T_NAL + T_PS (caption <b>all segmen</b>) → LTS_ALL_SEGMEN.xlsx",
+    "",
     "▫️ <code>portal</code> — buka PRIME Portal",
     "",
     "▫️ <code>myid</code> — lihat Telegram User ID Anda",
@@ -1041,6 +1057,22 @@ function isReportProduct(value: string): value is ReportProduct {
 }
 
 
+function allSegmenHelpText() {
+  return [
+    "📦 <b>LTS ALL SEGMEN</b>",
+    SECTION,
+    "Ubah 3 file CSV Tableau menjadi satu Excel <b>LTS_ALL_SEGMEN.xlsx</b>.",
+    "",
+    "1️⃣ Kirim <b>T_REG</b>, <b>T_NAL</b>, dan <b>T_PS</b> (.csv) ke chat ini sebagai <i>dokumen</i> (ikon 📎 → File).",
+    "2️⃣ Beri caption <b>all segmen</b> (juga bisa: <b>all</b>, <b>segmen</b>, <b>lts all segmen</b>).",
+    "3️⃣ Setelah ketiganya masuk, bot membalas file Excel berisi 3 sheet data + <b>Sheet2</b> (SALES, CHURN, CT0 DGS &amp; DES, CT0 SME/RBS/DBS).",
+    SECTION,
+    "Urutan kirim bebas, jenis file dikenali dari kolomnya. Jika dikirim sebagai album, cukup satu file yang diberi caption.",
+    "",
+    `<i>Jeda antar file maks. ${ALL_SEGMEN_WINDOW_MINUTES} menit.</i>`,
+  ].join("\n");
+}
+
 function uploadHelpText() {
   return [
     "📤 <b>Upload Data MASTER</b>",
@@ -1052,6 +1084,10 @@ function uploadHelpText() {
     "🏠 <b>HSI</b> dan 📡 <b>WMS</b>",
     "",
     "Modul dikenali otomatis dari isi file. Agar pasti, tulis <b>HSI</b> atau <b>WMS</b> di caption.",
+    "",
+    "📦 <b>LTS ALL SEGMEN</b>  —  3 file CSV jadi 1 Excel",
+    "",
+    "Kirim <b>T_REG</b>, <b>T_NAL</b>, dan <b>T_PS</b> (.csv) dengan caption <b>all segmen</b> (boleh juga <b>all</b>, <b>segmen</b>, atau <b>lts all segmen</b>). Bot membalas file <b>LTS_ALL_SEGMEN.xlsx</b>.",
     "",
     "",
     "📶 <b>LTS</b>  —  wajib 3 file",
@@ -1395,6 +1431,70 @@ async function sendReportExcel(botToken: string, chatId: number, product: Report
 
 // CSV T_NAL: UBIS selain Business -> pasti Data Cabutan. Hanya Business -> CAPS (NAL) LTS, kecuali menu Data Cabutan
 // baru dibuka (mode aktif) atau caption memuat "cabutan".
+// LTS ALL SEGMEN: caption all / segmen / all segmen / lts all segmen pada file T_REG, T_NAL, T_PS (.csv).
+// Tiap file disimpan dulu; begitu ketiganya lengkap, satu request membuat LTS_ALL_SEGMEN.xlsx dan mengirimkannya.
+async function handleAllSegmenUpload(botToken: string, chatId: number, fileName: string, buffer: Buffer, workingId: number | undefined) {
+  const kind = /\.csv$/i.test(fileName) ? detectAllSegmenKind(fileName, buffer) : null;
+  if (!kind) {
+    await deleteTelegramMessage(botToken, chatId, workingId);
+    await sendTelegramMessage(
+      botToken,
+      chatId,
+      [
+        "⚠️ <b>File ini tidak bisa dipakai untuk LTS ALL SEGMEN</b>",
+        "",
+        "Caption <b>all segmen</b> hanya untuk 3 file <b>.csv</b> hasil unduh Tableau: <b>T_REG</b>, <b>T_NAL</b>, dan <b>T_PS</b> (Full Data).",
+        "",
+        "Pastikan kolomnya lengkap, lalu kirim ulang.",
+      ].join("\n"),
+      { replyMarkup: uploadErrorKeyboard() },
+    );
+    return;
+  }
+  await saveAllSegmenPart(kind, fileName, buffer);
+  const progress = await loadAllSegmenProgress();
+  const checklist = ALL_SEGMEN_KINDS.map((k) => `${progress.received[k] ? "✅" : "⬜"} <b>${allSegmenKindLabel(k)}</b>${progress.received[k] ? ` — <i>${escapeHtml(progress.received[k]!.fileName)}</i>` : ""}`).join("\n");
+  const head = `📦 <b>LTS ALL SEGMEN</b>\n${SECTION}\n${checklist}\n${SECTION}\n`;
+
+  if (!progress.complete) {
+    await deleteTelegramMessage(botToken, chatId, workingId);
+    const waiting = progress.missing.map((k) => `<b>${allSegmenKindLabel(k)}</b>`).join(" dan ");
+    await sendTelegramMessage(
+      botToken,
+      chatId,
+      `${head}⏳ <b>Menunggu ${progress.missing.length} file lagi</b>\n\n${waiting}\n\n<i>Excel dikirim otomatis setelah ketiganya diterima. Jeda antar file maks. ${ALL_SEGMEN_WINDOW_MINUTES} menit.</i>`,
+      { replyMarkup: uploadWaitingKeyboard() },
+    );
+    return;
+  }
+
+  // Lengkap. Bila file dikirim bersamaan, hanya satu request yang membuat workbook.
+  if (!(await claimAllSegmenBuild(progress.signature))) {
+    await deleteTelegramMessage(botToken, chatId, workingId);
+    await sendTelegramMessage(botToken, chatId, `${head}🎉 <b>Ketiga file lengkap.</b> Excel dikirim otomatis.`, { replyMarkup: afterUploadKeyboard() });
+    return;
+  }
+  const input = {} as Record<AllSegmenKind, { fileName: string; buffer: Buffer }>;
+  for (const k of ALL_SEGMEN_KINDS) input[k] = { buffer: progress.received[k]!.buffer, fileName: progress.received[k]!.fileName };
+  const result = await buildAllSegmenWorkbook(input);
+  const hasSegments = result.divisions.some((d) => ["DGS", "DPS", "DSS"].includes(d));
+  const caption = [
+    "📦 <b>LTS ALL SEGMEN</b>",
+    "",
+    `📅 Periode  •  ${result.periods.map(escapeHtml).join(", ") || "-"}`,
+    `📄 T_REG ${result.rowCounts.reg.toLocaleString("id-ID")}  •  T_NAL ${result.rowCounts.nal.toLocaleString("id-ID")}  •  T_PS ${result.rowCounts.ps.toLocaleString("id-ID")} baris`,
+    `🧩 Segmen  •  ${result.divisions.map(escapeHtml).join(", ") || "-"}`,
+    ...(hasSegments ? [] : ["", "ℹ️ <i>Data hanya berisi segmen RBS/REG. Kolom DGS, DPS, DSS di Sheet2 muncul bila file T_NAL/T_PS memuatnya.</i>"]),
+  ].join("\n");
+  const sent = await sendTelegramDocument(botToken, chatId, result.fileName, result.bytes, caption, undefined, afterUploadKeyboard());
+  await deleteTelegramMessage(botToken, chatId, workingId);
+  if (!sent.ok) {
+    await sendTelegramMessage(botToken, chatId, "❌ <b>File LTS ALL SEGMEN gagal dikirim</b>\n\nKirim ulang salah satu file CSV dengan caption yang sama untuk mencoba lagi.", { replyMarkup: uploadErrorKeyboard() });
+    return;
+  }
+  await consumeAllSegmenParts(progress.received);
+}
+
 async function handleDocumentUpload(botToken: string, chatId: number, message: TelegramMessage) {
   const document = message.document!;
   const userId = telegramUserId(message.from);
@@ -1409,10 +1509,22 @@ async function handleDocumentUpload(botToken: string, chatId: number, message: T
     return;
   }
 
+  // Caption LTS ALL SEGMEN. Pada album Telegram caption hanya menempel di satu file: file bercaption menandai album,
+  // file lain di album yang sama (tanpa caption) ikut dianggap ALL SEGMEN.
+  let asAllSegmen = isAllSegmenCaption(message.caption);
+  if (message.media_group_id) {
+    if (asAllSegmen) await flagAllSegmenGroup(message.media_group_id);
+    else if (!(message.caption ?? "").trim()) asAllSegmen = await waitForAllSegmenGroup(message.media_group_id);
+  }
+
   const working = await sendTelegramMessage(botToken, chatId, `⏳ <b>Memproses file…</b>\n<i>${escapeHtml(fileName)}</i>`);
   const workingId = working.ok ? working.messageId : undefined;
   try {
     const buffer = await downloadTelegramFile(botToken, document.file_id);
+    if (asAllSegmen) {
+      await handleAllSegmenUpload(botToken, chatId, fileName, buffer, workingId);
+      return;
+    }
     // Aturan: HANYA caption yang menentukan. Caption "cabutan" / "data cabutan" / "y" -> Data Cabutan.
     // Tanpa caption tersebut -> diproses seperti biasa (CSV T_NAL = CAPS LTS). Isi file tidak dipakai untuk menebak.
     const asCabutan = isCabutanCaption(message.caption);
@@ -1863,6 +1975,11 @@ export async function POST(request: NextRequest) {
 
   if (command === "/upload") {
     await sendTelegramMessage(botToken, chatId, uploadHelpText(), { replyMarkup: helpKeyboard() });
+    return NextResponse.json({ ok: true });
+  }
+
+  if (command === "/allsegmen") {
+    await sendTelegramMessage(botToken, chatId, allSegmenHelpText(), { replyMarkup: helpKeyboard() });
     return NextResponse.json({ ok: true });
   }
 
