@@ -38,14 +38,11 @@ import {
   clearSegmenFiles,
   isSegmenCaption,
   loadSegmenFiles,
-  markSegmenGroup,
   releaseSegmenBatch,
   saveSegmenFile,
   SEGMEN_KINDS,
   SEGMEN_WINDOW_MINUTES,
   segmenKindLabel,
-  adoptPendingSegmen,
-  awaitSegmenGroup,
 } from "@/features/telegram/lts-segmen";
 import { downloadTelegramFile, sendTelegramDocument } from "@/features/telegram/telegram-api";
 import {
@@ -87,7 +84,6 @@ type TelegramMessage = {
   chat?: TelegramChat;
   document?: TelegramDocument;
   from?: TelegramUser;
-  media_group_id?: string;
   message_id?: number;
   text?: string;
 };
@@ -1084,7 +1080,7 @@ function uploadHelpText() {
     "",
     "📑 <b>LTS ALL SEGMEN</b>",
     "",
-    "Kirim tiga file CSV <b>T_PS</b>, <b>T_NAL</b>, dan <b>T_REG</b> dengan caption <b>all segmen</b> (juga bisa: all, segmen, lts all segmen). Bot mengubahnya menjadi <b>LTS ALL SEGMEN.xlsx</b> berisi tiga sheet data dan pivot SALES, CHURN, CT0.",
+    "Kirim tiga file CSV <b>T_PS</b>, <b>T_NAL</b>, dan <b>T_REG</b> satu per satu, masing-masing dengan caption <b>all segmen</b> (juga bisa: all, segmen, lts all segmen). Bot mengubahnya menjadi <b>LTS ALL SEGMEN.xlsx</b> berisi tiga sheet data dan pivot SALES, CHURN, CT0.",
     "",
     "",
     "✨ <b>MetaBright</b>",
@@ -1459,7 +1455,7 @@ async function handleSegmenFile(botToken: string, chatId: number, fileName: stri
         "",
         progress.missing.map((k) => `<b>${segmenKindLabel(k)}</b>`).join(" dan "),
         "",
-        `<i>File Excel dikirim otomatis setelah ketiga file diterima. Kirim dengan caption <b>all segmen</b>, jeda antar file maks. ${SEGMEN_WINDOW_MINUTES} menit.</i>`,
+        `<i>File Excel dikirim otomatis setelah ketiga file diterima. Kirim satu per satu dengan caption <b>all segmen</b>, jeda antar file maks. ${SEGMEN_WINDOW_MINUTES} menit.</i>`,
       ].join("\n"),
       { replyMarkup: segmenKeyboard() },
     );
@@ -1513,32 +1509,13 @@ async function handleDocumentUpload(botToken: string, chatId: number, message: T
     return;
   }
 
-  // LTS ALL SEGMEN: caption "all segmen" dll. Pada album Telegram caption hanya ada di satu file, jadi grup ditandai di database.
-  const groupId = message.media_group_id;
-  let segmen = isSegmenCaption(message.caption);
-  if (segmen && groupId) await markSegmenGroup(chatId, groupId).catch(() => undefined);
-
   const working = await sendTelegramMessage(botToken, chatId, `⏳ <b>Memproses file…</b>\n<i>${escapeHtml(fileName)}</i>`);
   const workingId = working.ok ? working.messageId : undefined;
   try {
     const buffer = await downloadTelegramFile(botToken, document.file_id);
     // LTS ALL SEGMEN: ditentukan oleh caption (all / segmen / all segmen / lts all segmen), dicek paling awal.
-    if (!segmen && groupId) {
-      const pendingKind = classifySegmenFile(fileName, buffer);
-      if (pendingKind) {
-        const outcome = await awaitSegmenGroup(chatId, groupId, pendingKind, fileName, buffer);
-        if (outcome === "adopted") {
-          await deleteTelegramMessage(botToken, chatId, workingId);
-          return;
-        }
-        segmen = outcome === "segmen";
-      }
-    }
-    if (segmen) {
+    if (isSegmenCaption(message.caption)) {
       await handleSegmenFile(botToken, chatId, fileName, buffer, workingId);
-      if (isSegmenCaption(message.caption) && groupId) {
-        for (const sibling of await adoptPendingSegmen(chatId, groupId)) await handleSegmenFile(botToken, chatId, sibling.fileName, sibling.buffer, undefined);
-      }
       return;
     }
     // Data Cabutan (CSV T_NAL Full Data) dikenali dari judul kolom; dicek lebih dulu karena nama file "T_NAL" mirip file LTS "nal".
