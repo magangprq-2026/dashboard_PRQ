@@ -606,3 +606,45 @@ export async function waitSegmenGroup(chatId: number, groupId: string): Promise<
   }
   return false;
 }
+
+// ---------------------------------------------------------------------------------------------
+// File album TANPA caption disimpan sebagai "menunggu". Siapa pun yang datang lebih dulu menentukan:
+//  - file bercaption tiba  -> mengambil alih semua file menunggu di grup itu (adoptPendingSegmen)
+//  - file menunggu melihat penanda grup -> mengambil dirinya sendiri (awaitSegmenGroup => "segmen")
+//  - tidak ada caption sampai batas waktu -> file diproses sebagai LTS biasa ("legacy")
+// Pengambilan memakai DELETE ... RETURNING sehingga tiap file hanya diproses satu pihak.
+// ---------------------------------------------------------------------------------------------
+const pendingKey = (chatId: number, groupId: string, kind: SegmenKind) => `telegram:segmen:pending:${chatId}:${groupId}:${kind}`;
+
+type PendingRow = { key: string; payload: { csvGzipBase64?: string; fileName?: string } };
+
+async function takePending(where: string, param: string): Promise<{ fileName: string; buffer: Buffer }[]> {
+  const result = await dbQuery<PendingRow[]>(`delete from public."${stateTable()}" where ${where} returning key, payload`, [param]);
+  if (result.error) return [];
+  return (result.data ?? [])
+    .filter((row) => typeof row.payload?.csvGzipBase64 === "string")
+    .map((row) => ({ fileName: row.payload.fileName ?? "file.csv", buffer: gunzipSync(Buffer.from(row.payload.csvGzipBase64 as string, "base64")) }));
+}
+
+/** Dipanggil file bercaption: ambil alih semua file menunggu di grup yang sama. */
+export async function adoptPendingSegmen(chatId: number, groupId: string): Promise<{ fileName: string; buffer: Buffer }[]> {
+  return takePending("key like $1", `telegram:segmen:pending:${chatId}:${groupId}:%`);
+}
+
+export async function awaitSegmenGroup(chatId: number, groupId: string, kind: SegmenKind, fileName: string, buffer: Buffer): Promise<"segmen" | "adopted" | "legacy"> {
+  const key = pendingKey(chatId, groupId, kind);
+  const saved = await writeDashboardStateByKey(key, { csvGzipBase64: gzipSync(buffer, { level: 6 }).toString("base64"), fileName, at: Date.now() });
+  if ("error" in saved.body) return "legacy";
+  const tries = 40;
+  for (let i = 0; i < tries; i += 1) {
+    const check = await dbQuery<{ marker: boolean; pending: boolean }[]>(
+      `select exists(select 1 from public."${stateTable()}" where key = $1) as marker, exists(select 1 from public."${stateTable()}" where key = $2) as pending`,
+      [groupKey(chatId, groupId), key],
+    );
+    const row = check.data?.[0];
+    if (row && !row.pending) return "adopted";
+    if (row?.marker) return (await takePending("key = $1", key)).length ? "segmen" : "adopted";
+    if (i < tries - 1) await new Promise((resolve) => setTimeout(resolve, 500));
+  }
+  return (await takePending("key = $1", key)).length ? "legacy" : "adopted";
+}

@@ -44,7 +44,8 @@ import {
   SEGMEN_KINDS,
   SEGMEN_WINDOW_MINUTES,
   segmenKindLabel,
-  waitSegmenGroup,
+  adoptPendingSegmen,
+  awaitSegmenGroup,
 } from "@/features/telegram/lts-segmen";
 import { downloadTelegramFile, sendTelegramDocument } from "@/features/telegram/telegram-api";
 import {
@@ -1520,9 +1521,22 @@ async function handleDocumentUpload(botToken: string, chatId: number, message: T
   try {
     const buffer = await downloadTelegramFile(botToken, document.file_id);
     // LTS ALL SEGMEN: ditentukan oleh caption (all / segmen / all segmen / lts all segmen), dicek paling awal.
-    if (!segmen && groupId && classifySegmenFile(fileName, buffer)) segmen = await waitSegmenGroup(chatId, groupId);
+    if (!segmen && groupId) {
+      const pendingKind = classifySegmenFile(fileName, buffer);
+      if (pendingKind) {
+        const outcome = await awaitSegmenGroup(chatId, groupId, pendingKind, fileName, buffer);
+        if (outcome === "adopted") {
+          await deleteTelegramMessage(botToken, chatId, workingId);
+          return;
+        }
+        segmen = outcome === "segmen";
+      }
+    }
     if (segmen) {
       await handleSegmenFile(botToken, chatId, fileName, buffer, workingId);
+      if (isSegmenCaption(message.caption) && groupId) {
+        for (const sibling of await adoptPendingSegmen(chatId, groupId)) await handleSegmenFile(botToken, chatId, sibling.fileName, sibling.buffer, undefined);
+      }
       return;
     }
     // Data Cabutan (CSV T_NAL Full Data) dikenali dari judul kolom; dicek lebih dulu karena nama file "T_NAL" mirip file LTS "nal".
