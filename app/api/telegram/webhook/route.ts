@@ -214,6 +214,9 @@ function portalUrlFromOrigin(origin: string) {
 const COMMAND_ALIASES: Record<string, string> = {
   bantuan: "/help",
   cabutan: "/cabutan",
+  segmen: "/segmen",
+  allsegmen: "/segmen",
+  ltsallsegmen: "/segmen",
   datacabutan: "/cabutan",
   download: "/download",
   halo: "/start",
@@ -379,6 +382,7 @@ function mainMenuKeyboard(): TelegramInlineKeyboardMarkup {
         { callback_data: "menu:upload", text: "📤 Upload Data" },
         { callback_data: "menu:cabutan", text: "🗂️ Data Cabutan" },
       ],
+      [{ callback_data: "menu:segmen", text: "📑 LTS ALL SEGMEN" }],
       [
         { callback_data: "menu:portal", text: "🌐 PRIME Portal" },
         { callback_data: "menu:myid", text: "🪪 My ID" },
@@ -1091,6 +1095,26 @@ function uploadHelpText() {
   ].join("\n");
 }
 
+function segmenMenuText() {
+  return [
+    "📑 <b>LTS ALL SEGMEN</b>",
+    SECTION,
+    "Ubah tiga file CSV menjadi satu file Excel <b>LTS ALL SEGMEN.xlsx</b> (tiga sheet data + sheet pivot <b>ALL SEGMEN</b>).",
+    "",
+    "<b>Cara pakai</b>",
+    "",
+    "1️⃣ Kirim <b>T_PS</b> (Sales) dengan caption <b>all segmen</b>",
+    "",
+    "2️⃣ Kirim <b>T_NAL</b> (Churn / CT0) dengan caption <b>all segmen</b>",
+    "",
+    "3️⃣ Kirim <b>T_REG</b> (CT0 SME/RBS/DBS) dengan caption <b>all segmen</b>",
+    "",
+    "Kirim <b>satu per satu</b>, urutan bebas. Excel dikirim otomatis setelah ketiga file diterima.",
+    SECTION,
+    "<i>Caption yang dikenali: all, segmen, all segmen, lts all segmen.</i>",
+  ].join("\n");
+}
+
 function cabutanMenuText(last: CabutanMeta | null) {
   const lines = [
     "🗂️ <b>Data Cabutan</b>",
@@ -1754,6 +1778,11 @@ async function handleCallbackQuery(botToken: string, callbackQuery: TelegramCall
     return;
   }
 
+  if (data === "menu:segmen") {
+    await sendOrEditTelegramMessage(botToken, chatId, messageId, segmenMenuText(), { replyMarkup: helpKeyboard() });
+    return;
+  }
+
   if (data === "menu:cabutan") {
     const last = await lastCabutanSafe();
     await sendOrEditTelegramMessage(botToken, chatId, messageId, cabutanMenuText(last), { replyMarkup: cabutanMenuKeyboard(last) });
@@ -1953,6 +1982,11 @@ export async function POST(request: NextRequest) {
 
   if (command === "/upload") {
     await sendTelegramMessage(botToken, chatId, uploadHelpText(), { replyMarkup: helpKeyboard() });
+    return NextResponse.json({ ok: true });
+  }
+
+  if (command === "/segmen") {
+    await sendTelegramMessage(botToken, chatId, segmenMenuText(), { replyMarkup: helpKeyboard() });
     return NextResponse.json({ ok: true });
   }
 
