@@ -29,24 +29,8 @@ import {
   parseMetabrightFile,
   tryParseMetabrightFile,
 } from "@/features/telegram/metabright-upload";
-import { buildCabutanWorkbook, hasNonBusinessUbis, isCabutanFile } from "@/features/telegram/cabutan";
+import { buildCabutanWorkbook, isCabutanCaption, isCabutanFile } from "@/features/telegram/cabutan";
 import { lastCabutanMeta, loadLastCabutanCsv, saveLastCabutan, type CabutanMeta } from "@/features/telegram/cabutan-store";
-import {
-  buildSegmenWorkbook,
-  claimSegmenBatch,
-  classifySegmenFile,
-  clearSegmenFiles,
-  isSegmenCaption,
-  loadSegmenFiles,
-  markSegmenGroup,
-  releaseSegmenBatch,
-  saveSegmenFile,
-  SEGMEN_KINDS,
-  SEGMEN_WINDOW_MINUTES,
-  segmenKindLabel,
-  adoptPendingSegmen,
-  awaitSegmenGroup,
-} from "@/features/telegram/lts-segmen";
 import { downloadTelegramFile, sendTelegramDocument } from "@/features/telegram/telegram-api";
 import {
   buildMetabrightFiles,
@@ -87,7 +71,6 @@ type TelegramMessage = {
   chat?: TelegramChat;
   document?: TelegramDocument;
   from?: TelegramUser;
-  media_group_id?: string;
   message_id?: number;
   text?: string;
 };
@@ -1080,11 +1063,6 @@ function uploadHelpText() {
     `Kirim ketiganya dalam satu rangkaian (boleh sekaligus, jeda antar file maks. ${LTS_BATCH_WINDOW_MINUTES} menit). Selama belum lengkap, bot menunggu file yang tersisa. Report dikirim otomatis setelah ketiganya diterima.`,
     "",
     "",
-    "📑 <b>LTS ALL SEGMEN</b>",
-    "",
-    "Kirim tiga file CSV <b>T_PS</b>, <b>T_NAL</b>, dan <b>T_REG</b> dengan caption <b>all segmen</b> (juga bisa: all, segmen, lts all segmen). Bot mengubahnya menjadi <b>LTS_ALL_SEGMEN.xlsx</b> berisi tiga sheet data dan pivot SALES, CHURN, CT0.",
-    "",
-    "",
     "✨ <b>MetaBright</b>",
     "",
     "Kirim file <b>Impactful Award Telda</b> (.xls / .xlsx), mis. <i>Impactful Award Telda - 202610.xls</i>. Periode diambil dari nama file; data periode yang sama akan diperbarui.",
@@ -1101,13 +1079,14 @@ function cabutanMenuText(last: CabutanMeta | null) {
     "",
     "<b>Cara pakai</b>",
     "",
-    `1️⃣ Kirim file <b>.csv</b> ke chat ini sebagai <i>dokumen</i> (ikon 📎 → File).`,
+    `1️⃣ Kirim file <b>.csv</b> ke chat ini sebagai <i>dokumen</i> (ikon 📎 → File) dengan caption <b>cabutan</b>, <b>data cabutan</b>, atau <b>y</b>.`,
     "",
     "2️⃣ Bot membalas dengan file Excel berisi:",
     "▫️ <b>Sheet1</b> — pivot Sum of SSL_DO per Witel × Divisi",
     "▫️ <b>T_NAL_Full Data_data (2)</b> — seluruh data CSV",
     SECTION,
-    "<i>CSV yang berisi UBIS selain Business (Enterprise, Government, dst.) otomatis dikenali sebagai Data Cabutan. CSV yang hanya berisi Business dianggap file LTS (CAPS/NAL); jika itu justru data cabutan, tulis <b>cabutan</b> di caption saat mengirim.</i>",
+    "⚠️ <b>Wajib beri caption</b> saat mengirim CSV: <code>cabutan</code>, <code>data cabutan</code>, atau <code>y</code>.",
+    "<i>Tanpa caption tersebut, CSV dianggap file LTS (CAPS/NAL).</i>",
     SECTION,
   ];
   if (last) {
@@ -1416,87 +1395,6 @@ async function sendReportExcel(botToken: string, chatId: number, product: Report
 
 // CSV T_NAL: UBIS selain Business -> pasti Data Cabutan. Hanya Business -> CAPS (NAL) LTS, kecuali menu Data Cabutan
 // baru dibuka (mode aktif) atau caption memuat "cabutan".
-function segmenKeyboard(): TelegramInlineKeyboardMarkup {
-  return { inline_keyboard: [[{ callback_data: "menu:upload", text: "📤 Panduan Upload" }], homeRow] };
-}
-
-// LTS ALL SEGMEN: tiga CSV (T_PS, T_NAL, T_REG) ber-caption "all segmen" dikumpulkan lalu diubah menjadi LTS_ALL_SEGMEN.xlsx.
-async function handleSegmenFile(botToken: string, chatId: number, fileName: string, buffer: Buffer, workingId: number | undefined) {
-  const kind = classifySegmenFile(fileName, buffer);
-  if (!kind) {
-    await deleteTelegramMessage(botToken, chatId, workingId);
-    await sendTelegramMessage(
-      botToken,
-      chatId,
-      ["⚠️ <b>File tidak dikenali</b>", "", "Caption <b>all segmen</b> hanya untuk tiga file CSV berikut:", "", "▫️ <b>T_PS</b> (Sales)", "▫️ <b>T_NAL</b> (Churn / CT0)", "▫️ <b>T_REG</b> (CT0 SME/RBS/DBS)"].join("\n"),
-      { replyMarkup: segmenKeyboard() },
-    );
-    return;
-  }
-  const progress = await saveSegmenFile(chatId, kind, fileName, buffer);
-  const checklist = [
-    `📑 <b>Kelengkapan LTS ALL SEGMEN</b>  (${SEGMEN_KINDS.length - progress.missing.length}/${SEGMEN_KINDS.length})`,
-    "",
-    ...SEGMEN_KINDS.flatMap((k) => [`${progress.present[k] ? "✅" : "⬜"} ${segmenKindLabel(k)}`, ""]),
-  ]
-    .join("\n")
-    .trimEnd();
-  const head = `✅ <b>${segmenKindLabel(kind)}</b> diterima\n\n📄 ${escapeHtml(fileName)}`;
-
-  if (progress.missing.length > 0) {
-    await deleteTelegramMessage(botToken, chatId, workingId);
-    await sendTelegramMessage(
-      botToken,
-      chatId,
-      [
-        head,
-        SECTION,
-        checklist,
-        SECTION,
-        `⏳ <b>Menunggu ${progress.missing.length} file lagi</b>`,
-        "",
-        progress.missing.map((k) => `<b>${segmenKindLabel(k)}</b>`).join(" dan "),
-        "",
-        `<i>File Excel dikirim otomatis setelah ketiga file diterima. Kirim dengan caption <b>all segmen</b>, jeda antar file maks. ${SEGMEN_WINDOW_MINUTES} menit.</i>`,
-      ].join("\n"),
-      { replyMarkup: segmenKeyboard() },
-    );
-    return;
-  }
-
-  if (!(await claimSegmenBatch(chatId))) {
-    await deleteTelegramMessage(botToken, chatId, workingId);
-    await sendTelegramMessage(botToken, chatId, `${head}\n${SECTION}\n${checklist}\n${SECTION}\n🎉 <b>Ketiga file lengkap.</b> File Excel dikirim oleh proses lain.`, { replyMarkup: segmenKeyboard() });
-    return;
-  }
-  try {
-    const files = await loadSegmenFiles(chatId);
-    const result = await buildSegmenWorkbook(files);
-    const caption = [
-      `📑 <b>${escapeHtml(result.filename)}</b>`,
-      SECTION,
-      `📅 <b>Periode</b>  •  ${escapeHtml(result.periods.join(", ") || "-")}`,
-      "",
-      `🧾 <b>T_PS</b>  •  ${result.rowCounts.ps.toLocaleString("id-ID")} baris`,
-      "",
-      `📉 <b>T_NAL</b>  •  ${result.rowCounts.nal.toLocaleString("id-ID")} baris`,
-      "",
-      `💳 <b>T_REG</b>  •  ${result.rowCounts.reg.toLocaleString("id-ID")} baris`,
-      SECTION,
-      "<i>Sheet2 = pivot SALES, CHURN, CT0 DGS &amp; DES, CT0 SME/RBS/DBS</i>",
-    ].join("\n");
-    const sent = await sendTelegramDocument(botToken, chatId, result.filename, result.bytes, caption, undefined, segmenKeyboard());
-    if (!sent.ok) throw new Error("File Excel gagal dikirim ke Telegram.");
-    await clearSegmenFiles(chatId).catch(() => undefined);
-    await deleteTelegramMessage(botToken, chatId, workingId);
-  } catch (error) {
-    await releaseSegmenBatch(chatId).catch(() => undefined);
-    await deleteTelegramMessage(botToken, chatId, workingId);
-    const reason = error instanceof Error ? error.message : "Terjadi kesalahan.";
-    await sendTelegramMessage(botToken, chatId, `❌ <b>LTS ALL SEGMEN belum bisa dibuat</b>\n\n${escapeHtml(reason)}\n\n<i>Ketiga file masih tersimpan. Kirim ulang salah satu file untuk mencoba lagi.</i>`, { replyMarkup: segmenKeyboard() });
-  }
-}
-
 async function handleDocumentUpload(botToken: string, chatId: number, message: TelegramMessage) {
   const document = message.document!;
   const userId = telegramUserId(message.from);
@@ -1511,38 +1409,29 @@ async function handleDocumentUpload(botToken: string, chatId: number, message: T
     return;
   }
 
-  // LTS ALL SEGMEN: caption "all segmen" dll. Pada album Telegram caption hanya ada di satu file, jadi grup ditandai di database.
-  const groupId = message.media_group_id;
-  let segmen = isSegmenCaption(message.caption);
-  if (segmen && groupId) await markSegmenGroup(chatId, groupId).catch(() => undefined);
-
   const working = await sendTelegramMessage(botToken, chatId, `⏳ <b>Memproses file…</b>\n<i>${escapeHtml(fileName)}</i>`);
   const workingId = working.ok ? working.messageId : undefined;
   try {
     const buffer = await downloadTelegramFile(botToken, document.file_id);
-    // LTS ALL SEGMEN: ditentukan oleh caption (all / segmen / all segmen / lts all segmen), dicek paling awal.
-    if (!segmen && groupId) {
-      const pendingKind = classifySegmenFile(fileName, buffer);
-      if (pendingKind) {
-        const outcome = await awaitSegmenGroup(chatId, groupId, pendingKind, fileName, buffer);
-        if (outcome === "adopted") {
-          await deleteTelegramMessage(botToken, chatId, workingId);
-          return;
-        }
-        segmen = outcome === "segmen";
-      }
-    }
-    if (segmen) {
-      await handleSegmenFile(botToken, chatId, fileName, buffer, workingId);
-      if (isSegmenCaption(message.caption) && groupId) {
-        for (const sibling of await adoptPendingSegmen(chatId, groupId)) await handleSegmenFile(botToken, chatId, sibling.fileName, sibling.buffer, undefined);
-      }
+    // Aturan: HANYA caption yang menentukan. Caption "cabutan" / "data cabutan" / "y" -> Data Cabutan.
+    // Tanpa caption tersebut -> diproses seperti biasa (CSV T_NAL = CAPS LTS). Isi file tidak dipakai untuk menebak.
+    const asCabutan = isCabutanCaption(message.caption);
+    if (asCabutan && !isCabutanFile(fileName, buffer)) {
+      await deleteTelegramMessage(botToken, chatId, workingId);
+      await sendTelegramMessage(
+        botToken,
+        chatId,
+        [
+          "⚠️ <b>File ini tidak bisa diproses sebagai Data Cabutan</b>",
+          "",
+          "Caption <b>cabutan</b> / <b>data cabutan</b> / <b>y</b> hanya untuk file <b>.csv</b> T_NAL Full Data yang memuat kolom PERIODE, L_WITEL, DIVISI, SSL_DO, SSL_NAL, KATEGORI_DO, dan JENISPSB.",
+          "",
+          "Jika ini data LTS, kirim ulang tanpa caption tersebut.",
+        ].join("\n"),
+        { replyMarkup: cabutanKeyboard() },
+      );
       return;
     }
-    // Data Cabutan (CSV T_NAL Full Data) dikenali dari judul kolom; dicek lebih dulu karena nama file "T_NAL" mirip file LTS "nal".
-    // Data Cabutan hanya bila menu Data Cabutan sudah dibuka (atau caption memuat "cabutan"), karena CSV CAPS (NAL) LTS berformat sama.
-    // Data Cabutan: UBIS selain Business (otomatis) atau caption memuat "cabutan". CSV yang hanya Business = CAPS (NAL) LTS.
-    const asCabutan = isCabutanFile(fileName, buffer) && (/cabutan/i.test(message.caption ?? "") || hasNonBusinessUbis(buffer));
     if (asCabutan) {
       const { result, sent } = await sendCabutanFile(botToken, chatId, buffer);
       // Simpan CSV supaya bisa diunduh lagi lewat menu Data Cabutan. Kegagalan simpan tidak membatalkan file yang sudah dikirim.
