@@ -579,3 +579,29 @@ export async function clearSegmenFiles(chatId: number): Promise<void> {
   const keys = SEGMEN_KINDS.map((k) => fileKey(chatId, k));
   await dbQuery(`delete from public."${stateTable()}" where key = any($1::text[])`, [keys]);
 }
+
+// ---------------------------------------------------------------------------------------------
+// Album Telegram: bila beberapa file dikirim sekaligus (media group), caption hanya menempel di SATU file.
+// File bercaption menulis penanda untuk grup-nya; file lain di grup yang sama menunggu penanda itu sebentar.
+// ---------------------------------------------------------------------------------------------
+const groupKey = (chatId: number, groupId: string) => `telegram:segmen:group:${chatId}:${groupId}`;
+
+export async function markSegmenGroup(chatId: number, groupId: string): Promise<void> {
+  await writeDashboardStateByKey(groupKey(chatId, groupId), { at: Date.now() });
+  // Bersihkan penanda lama (lebih dari sehari) agar tabel tidak menumpuk.
+  await dbQuery(`delete from public."${stateTable()}" where key like 'telegram:segmen:group:%' and updated_at < now() - interval '1 day'`, []);
+}
+
+export async function hasSegmenGroup(chatId: number, groupId: string): Promise<boolean> {
+  const result = await dbQuery<{ key: string }[]>(`select key from public."${stateTable()}" where key = $1 limit 1`, [groupKey(chatId, groupId)]);
+  return !result.error && (result.data?.length ?? 0) > 0;
+}
+
+/** Tunggu (maks. ~3 detik) penanda dari file bercaption di album yang sama. */
+export async function waitSegmenGroup(chatId: number, groupId: string): Promise<boolean> {
+  for (let i = 0; i < 6; i += 1) {
+    if (await hasSegmenGroup(chatId, groupId).catch(() => false)) return true;
+    if (i < 5) await new Promise((resolve) => setTimeout(resolve, 500));
+  }
+  return false;
+}

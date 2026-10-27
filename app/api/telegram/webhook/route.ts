@@ -38,11 +38,13 @@ import {
   clearSegmenFiles,
   isSegmenCaption,
   loadSegmenFiles,
+  markSegmenGroup,
   releaseSegmenBatch,
   saveSegmenFile,
   SEGMEN_KINDS,
   SEGMEN_WINDOW_MINUTES,
   segmenKindLabel,
+  waitSegmenGroup,
 } from "@/features/telegram/lts-segmen";
 import { downloadTelegramFile, sendTelegramDocument } from "@/features/telegram/telegram-api";
 import {
@@ -84,6 +86,7 @@ type TelegramMessage = {
   chat?: TelegramChat;
   document?: TelegramDocument;
   from?: TelegramUser;
+  media_group_id?: string;
   message_id?: number;
   text?: string;
 };
@@ -1507,12 +1510,18 @@ async function handleDocumentUpload(botToken: string, chatId: number, message: T
     return;
   }
 
+  // LTS ALL SEGMEN: caption "all segmen" dll. Pada album Telegram caption hanya ada di satu file, jadi grup ditandai di database.
+  const groupId = message.media_group_id;
+  let segmen = isSegmenCaption(message.caption);
+  if (segmen && groupId) await markSegmenGroup(chatId, groupId).catch(() => undefined);
+
   const working = await sendTelegramMessage(botToken, chatId, `⏳ <b>Memproses file…</b>\n<i>${escapeHtml(fileName)}</i>`);
   const workingId = working.ok ? working.messageId : undefined;
   try {
     const buffer = await downloadTelegramFile(botToken, document.file_id);
     // LTS ALL SEGMEN: ditentukan oleh caption (all / segmen / all segmen / lts all segmen), dicek paling awal.
-    if (isSegmenCaption(message.caption)) {
+    if (!segmen && groupId && classifySegmenFile(fileName, buffer)) segmen = await waitSegmenGroup(chatId, groupId);
+    if (segmen) {
       await handleSegmenFile(botToken, chatId, fileName, buffer, workingId);
       return;
     }
