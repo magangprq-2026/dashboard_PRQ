@@ -46,7 +46,7 @@ function decodeCsv(buffer: Buffer): string {
 }
 
 // Parser CSV (RFC 4180): koma sebagai pemisah, kutip ganda, sel boleh berisi baris baru.
-function parseCsv(text: string, delimiter = ","): string[][] {
+function parseCsv(text: string): string[][] {
   const rows: string[][] = [];
   let row: string[] = [];
   let field = "";
@@ -66,7 +66,7 @@ function parseCsv(text: string, delimiter = ","): string[][] {
       }
     } else if (ch === '"') {
       inQuotes = true;
-    } else if (ch === delimiter) {
+    } else if (ch === ",") {
       row.push(field);
       field = "";
     } else if (ch === "\n" || ch === "\r") {
@@ -86,45 +86,36 @@ function parseCsv(text: string, delimiter = ","): string[][] {
   return rows;
 }
 
-// Ekspor BRIGHT kadang memakai "#" sebagai pemisah. "#" hanya dianggap pemisah bila di baris judul jumlahnya lebih banyak
-// daripada koma (nama kolom bisa memuat "#", mis. "... Query) #1").
-function detectDelimiter(text: string): string {
-  const line = text.split(/\r?\n/, 1)[0] ?? "";
-  const hashes = (line.match(/#/g) ?? []).length;
-  const commas = (line.match(/,/g) ?? []).length;
-  return hashes > commas ? "#" : ",";
+function headerLine(buffer: Buffer): string {
+  const head = decodeCsv(buffer.subarray(0, 8192));
+  return head.split(/\r?\n/, 1)[0] ?? "";
 }
 
-// Judul kolom dibaca dengan parser CSV sungguhan (kutip ganda, BOM, pemisah "#"), bukan split(",") biasa.
-function headerColumns(buffer: Buffer): string[] {
-  const head = decodeCsv(buffer.subarray(0, 65536));
-  return (parseCsv(head, detectDelimiter(head))[0] ?? []).map((c) => c.trim());
-}
-
-/**
- * CSV T_NAL valid untuk Data Cabutan: berekstensi .csv dan memuat semua kolom wajib.
- * Data Cabutan TIDAK dikenali otomatis: pengguna harus menulis "cabutan" di caption (lihat isCabutanCaption).
- * Tanpa caption tersebut, file dianggap data LTS.
- */
+// File dikenali dari baris judul kolomnya (bukan nama file), karena nama "T_NAL_..." juga mengandung "nal" milik LTS.
 export function isCabutanFile(fileName: string, buffer: Buffer): boolean {
   if (!/\.csv$/i.test(fileName)) return false;
-  const columns = new Set(headerColumns(buffer));
+  const columns = new Set(headerLine(buffer).split(",").map((c) => c.trim().replace(/^"|"$/g, "")));
   return REQUIRED_COLUMNS.every((c) => columns.has(c));
 }
 
 /**
- * Penanda Data Cabutan di caption (huruf besar/kecil bebas): caption memuat kata "cabutan" (mis. "Cabutan", "Data Cabutan"),
- * atau caption hanya berisi huruf "y" sebagai singkatan. "y" harus berdiri sendiri, supaya huruf y di dalam kata lain
- * (mis. caption "lts nal" atau "sales") tidak terhitung.
+ * CSV T_NAL untuk Data Cabutan dan file CAPS (NAL) milik LTS berformat sama, tetapi filter UBIS-nya berbeda:
+ * file LTS hanya berisi UBIS "Business", sedangkan Data Cabutan memuat UBIS lain (Enterprise Private, Enterprise SOE,
+ * Government, dst.). True bila ada baris dengan UBIS selain Business -> pasti Data Cabutan.
  */
-export function isCabutanCaption(caption: string | undefined): boolean {
-  const text = (caption ?? "").trim();
-  return /cabutan/i.test(text) || /^y$/i.test(text);
+export function hasNonBusinessUbis(buffer: Buffer): boolean {
+  const all = parseCsv(decodeCsv(buffer));
+  const col = (all[0] ?? []).map((c) => c.trim()).indexOf("UBIS");
+  if (col < 0) return false;
+  for (let i = 1; i < all.length; i += 1) {
+    const value = (all[i][col] ?? "").trim().toUpperCase();
+    if (value !== "" && value !== "BUSINESS") return true;
+  }
+  return false;
 }
 
 function readCabutanCsv(buffer: Buffer): CabutanSheetRows {
-  const text = decodeCsv(buffer);
-  const all = parseCsv(text, detectDelimiter(text));
+  const all = parseCsv(decodeCsv(buffer));
   const header = (all[0] ?? []).map((c) => c.trim());
   const missing = REQUIRED_COLUMNS.filter((c) => !header.includes(c));
   if (missing.length > 0) throw new Error(`Kolom wajib tidak ditemukan: ${missing.join(", ")}.`);
