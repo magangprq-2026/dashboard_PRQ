@@ -144,6 +144,7 @@ type DashboardStateRow = {
 
 type ReportMetric = {
   label: string;
+  section?: string;
   value: string;
 };
 
@@ -283,6 +284,12 @@ function formatPercent(value: unknown) {
   }).format(percent)}%`;
 }
 
+// Rasio dashboard (mis. 1,71 = 171,00%) selalu dikali 100, tanpa tebakan satuan seperti formatPercent.
+function formatRatioPercent(value: unknown) {
+  if (typeof value !== "number" || Number.isNaN(value)) return null;
+  return `${new Intl.NumberFormat("id-ID", { maximumFractionDigits: 2, minimumFractionDigits: 2 }).format(value * 100)}%`;
+}
+
 function periodLabelFromPeriodKey(periodKey: string | null | undefined) {
   if (!periodKey) return null;
   const match = periodKey.match(/^(\d{4})-?(\d{2})/);
@@ -317,8 +324,8 @@ function pickFirst(record: Record<string, unknown>, keys: string[]) {
   return null;
 }
 
-function addMetric(metrics: ReportMetric[], label: string, value: string | null) {
-  if (value) metrics.push({ label, value });
+function addMetric(metrics: ReportMetric[], label: string, value: string | null, section?: string) {
+  if (value) metrics.push({ label, section, value });
 }
 
 function telegramUserId(user: TelegramUser | undefined) {
@@ -591,13 +598,30 @@ async function buildHsiReportFromState(): Promise<ProductReport | null> {
   const rkap = report.witel.total;
   const stf = report.targetStf.witel.total;
   const metrics: ReportMetric[] = [];
-  addMetric(metrics, "Achievement RKAP", formatPercent(rkap.targetAch));
-  addMetric(metrics, "Achievement YTD", formatPercent(rkap.achYtd));
-  addMetric(metrics, "Shortage RKAP", formatNumber(rkap.shortageFm));
-  addMetric(metrics, "Achievement STF", formatPercent(stf.targetAch));
-  addMetric(metrics, "Shortage STF", formatNumber(stf.shortageFm));
-  const top = [...report.branch.rows].filter((r) => typeof r.targetAch === "number").sort((a, b) => Number(b.targetAch) - Number(a.targetAch))[0];
-  if (top) addMetric(metrics, "Top TELDA", `${top.label} (${formatPercent(top.targetAch)})`);
+  const mtd = "📌 RKAP  •  MTD";
+  addMetric(metrics, "Target RKAP", formatNumber(rkap.targetFm), mtd);
+  addMetric(metrics, "Realisasi MTD", formatNumber(rkap.mtd), mtd);
+  addMetric(metrics, "Achievement RKAP", formatRatioPercent(rkap.targetAch), mtd);
+  addMetric(metrics, "Shortage RKAP", formatNumber(rkap.shortageFm), mtd);
+  addMetric(metrics, "Pertumbuhan MTD vs bln lalu", formatRatioPercent(rkap.growthMtd), mtd);
+  const ytd = "📆 RKAP  •  YTD";
+  addMetric(metrics, "Target YTD", formatNumber(rkap.targetYtd), ytd);
+  addMetric(metrics, "Realisasi YTD", formatNumber(rkap.realYtd), ytd);
+  addMetric(metrics, "Achievement YTD", formatRatioPercent(rkap.achYtd), ytd);
+  addMetric(metrics, "Shortage YTD", formatNumber(rkap.shortageYtd), ytd);
+  const stfSection = "🎯 TARGET STF  •  MTD";
+  addMetric(metrics, "Target STF", formatNumber(stf.targetFm), stfSection);
+  addMetric(metrics, "Realisasi STF", formatNumber(stf.mtd), stfSection);
+  addMetric(metrics, "Achievement STF", formatRatioPercent(stf.targetAch), stfSection);
+  addMetric(metrics, "Shortage STF", formatNumber(stf.shortageFm), stfSection);
+  const byAch = (rows: typeof report.branch.rows) => [...rows].filter((r) => typeof r.targetAch === "number").sort((a, b) => Number(b.targetAch) - Number(a.targetAch));
+  const witelRank = byAch(report.witel.rows);
+  const teldaRank = byAch(report.branch.rows);
+  const rank = "🏆 PERINGKAT  •  ACH RKAP MTD";
+  if (witelRank[0]) addMetric(metrics, "Top WITEL", `${witelRank[0].label} (${formatRatioPercent(witelRank[0].targetAch)})`, rank);
+  if (teldaRank[0]) addMetric(metrics, "Top TELDA", `${teldaRank[0].label} (${formatRatioPercent(teldaRank[0].targetAch)})`, rank);
+  const lowTelda = teldaRank[teldaRank.length - 1];
+  if (lowTelda && lowTelda !== teldaRank[0]) addMetric(metrics, "Terendah TELDA", `${lowTelda.label} (${formatRatioPercent(lowTelda.targetAch)})`, rank);
   return {
     available: true,
     lastUpdate: formatJakartaTimestamp(latest.savedAt) ?? undefined,
@@ -657,15 +681,25 @@ async function buildWmsReportFromState(): Promise<ProductReport | null> {
   const total = report.witel.total;
   const top = [...report.telda.rows].filter((r) => typeof r.ach === "number").sort((a, b) => Number(b.ach) - Number(a.ach))[0];
   const metrics: ReportMetric[] = [];
-  addMetric(metrics, "Target FM", formatNumber(total.targetFm));
-  addMetric(metrics, "Realisasi MTD", formatNumber(total.mtd));
-  addMetric(metrics, "Achievement FM", formatPercent(total.ach));
-  addMetric(metrics, "Shortage FM", formatNumber(total.shortageFm));
-  addMetric(metrics, "Target YTD", formatNumber(total.targetYtd));
-  addMetric(metrics, "Realisasi YTD", formatNumber(total.realYtd));
-  addMetric(metrics, "Achievement YTD", formatPercent(total.achYtd));
-  addMetric(metrics, "Shortage YTD", formatNumber(total.shortageYtd));
-  if (top) addMetric(metrics, "Top TELDA", `${top.label} (${formatPercent(top.ach)})`);
+  const fm = "📌 FM  •  MTD";
+  addMetric(metrics, "Target FM", formatNumber(total.targetFm), fm);
+  addMetric(metrics, "Realisasi MTD", formatNumber(total.mtd), fm);
+  addMetric(metrics, "Achievement FM", formatRatioPercent(total.ach), fm);
+  addMetric(metrics, "Shortage FM", formatNumber(total.shortageFm), fm);
+  addMetric(metrics, "Pertumbuhan MTD vs bln lalu", formatRatioPercent(total.growthMtd), fm);
+  const ytd = "📆 YTD";
+  addMetric(metrics, "Target YTD", formatNumber(total.targetYtd), ytd);
+  addMetric(metrics, "Realisasi YTD", formatNumber(total.realYtd), ytd);
+  addMetric(metrics, "Achievement YTD", formatRatioPercent(total.achYtd), ytd);
+  addMetric(metrics, "Shortage YTD", formatNumber(total.shortageYtd), ytd);
+  addMetric(metrics, "Pertumbuhan YTD vs thn lalu", formatRatioPercent(total.growthYtd), ytd);
+  const witelTop = [...report.witel.rows].filter((r) => typeof r.ach === "number").sort((a, b) => Number(b.ach) - Number(a.ach))[0];
+  const teldaLow = [...report.telda.rows].filter((r) => typeof r.ach === "number").sort((a, b) => Number(a.ach) - Number(b.ach))[0];
+  const rank = "🏆 PERINGKAT  •  ACH FM";
+  if (witelTop) addMetric(metrics, "Top WITEL", `${witelTop.label} (${formatRatioPercent(witelTop.ach)})`, rank);
+  if (top) addMetric(metrics, "Top TELDA", `${top.label} (${formatRatioPercent(top.ach)})`, rank);
+  if (teldaLow && teldaLow !== top) addMetric(metrics, "Terendah TELDA", `${teldaLow.label} (${formatRatioPercent(teldaLow.ach)})`, rank);
+  addMetric(metrics, "Data s.d.", report.cutoffLabel.replace(/^DATA S\.D\.\s*/i, "").toLowerCase(), "🕒 DATA");
   return {
     available: true,
     lastUpdate: formatJakartaTimestamp(latest.savedAt ?? report.latestUpdatedAt) ?? undefined,
@@ -771,19 +805,27 @@ async function buildLtsReport(): Promise<ProductReport> {
     const report = computeLtsReport("all", datasets);
     const total = report.witel.total;
 
-    addMetric(metrics, "Sales", formatNumber(report.summary.sales));
-    addMetric(metrics, "CT0", formatNumber(report.summary.ct0));
-    addMetric(metrics, "CAPS", formatNumber(report.summary.caps));
-    addMetric(metrics, "CT0/Sales", formatNumber(total.ct0Ratio));
-    addMetric(metrics, "CAPS/Sales", formatNumber(total.capsRatio));
-    addMetric(metrics, "Score", formatNumber(report.summary.score));
-    addMetric(metrics, "Churn", formatNumber(total.churn));
-    addMetric(metrics, "Gap", formatNumber(total.gap));
+    const vol = "📦 VOLUME";
+    addMetric(metrics, "Sales", formatNumber(report.summary.sales), vol);
+    addMetric(metrics, "CT0", formatNumber(report.summary.ct0), vol);
+    addMetric(metrics, "CAPS", formatNumber(report.summary.caps), vol);
+    const ratio = "📐 RASIO & SCORE  •  lower is better";
+    addMetric(metrics, "CT0/Sales", formatRatioPercent(total.ct0Ratio), ratio);
+    addMetric(metrics, "CAPS/Sales", formatRatioPercent(total.capsRatio), ratio);
+    addMetric(metrics, "Score", formatRatioPercent(report.summary.score), ratio);
+    const churn = "🔻 CHURN & GAP";
+    addMetric(metrics, "Churn", formatNumber(total.churn), churn);
+    addMetric(metrics, "Gap CAPS", formatNumber(total.gap), churn);
+    const rank = "🏆 PERINGKAT  •  score terendah = terbaik";
+    const worstWitel = [...report.witel.rows].sort((a, b) => b.score - a.score)[0];
     if (report.summary.bestWitel) {
-      addMetric(metrics, "Best Witel", `${report.summary.bestWitel.label} (${formatNumber(report.summary.bestWitel.score)})`);
+      addMetric(metrics, "Best Witel", `${report.summary.bestWitel.label} (${formatRatioPercent(report.summary.bestWitel.score)})`, rank);
+    }
+    if (worstWitel && worstWitel !== report.summary.bestWitel) {
+      addMetric(metrics, "Terendah Witel", `${worstWitel.label} (${formatRatioPercent(worstWitel.score)})`, rank);
     }
     if (report.summary.bestHotda) {
-      addMetric(metrics, "Best HOTDA", `${report.summary.bestHotda.label} (${formatNumber(report.summary.bestHotda.score)})`);
+      addMetric(metrics, "Best HOTDA", `${report.summary.bestHotda.label} (${formatRatioPercent(report.summary.bestHotda.score)})`, rank);
     }
 
     return {
@@ -868,8 +910,15 @@ function productReportText(report: ProductReport) {
 
   if (report.metrics.length) {
     lines.push(SECTION);
+    let currentSection: string | undefined;
     report.metrics.forEach((metric, index) => {
-      if (index > 0) lines.push("");
+      if (metric.section && metric.section !== currentSection) {
+        if (index > 0) lines.push("", "");
+        lines.push(`<b>${escapeHtml(metric.section)}</b>`, "");
+        currentSection = metric.section;
+      } else if (index > 0) {
+        lines.push("");
+      }
       lines.push(`${metricIcon(metric.label)} ${escapeHtml(metric.label)}:  <b>${escapeHtml(metric.value)}</b>`);
     });
   }
@@ -885,6 +934,7 @@ function metricIcon(label: string) {
   const normalized = label.toLowerCase();
   if (normalized.includes("achievement") || normalized.includes("score")) return "🎯";
   if (normalized.includes("shortage") || normalized.includes("gap")) return "⚠️";
+  if (normalized.includes("terendah")) return "🔻";
   if (normalized.includes("top") || normalized.includes("best")) return "🏆";
   if (normalized.includes("target")) return "📌";
   if (normalized.includes("realisasi") || normalized.includes("sales") || normalized.includes("ct0") || normalized.includes("caps")) return "📈";
