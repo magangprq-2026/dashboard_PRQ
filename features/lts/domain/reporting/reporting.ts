@@ -330,7 +330,8 @@ export function periodKeyFromLtsRows(datasetKey: LtsDatasetKey, headers: string[
       }
     }
   }
-  return [...values.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] ?? "202609";
+  const now = new Date();
+  return [...values.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] ?? `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, "0")}`;
 }
 
 function periodFromRows(datasetKey: LtsDatasetKey, headers: string[], rows: LtsMasterRow[]) {

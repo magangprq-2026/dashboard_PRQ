@@ -358,6 +358,21 @@ function wmsSheet(rows: WmsReportRow[], total: WmsReportRow, dayCount: number) {
 
 export type ReportFile = { bytes: Uint8Array; filename: string; periodLabel: string; updatedAt: string | null };
 
+/**
+ * Baris untuk perhitungan report. WMS: gabungan baris SEMUA periode di arsip (urut periode), sama seperti dashboard web,
+ * karena REAL YTD dan pembanding bulan lalu membutuhkan baris bulan-bulan sebelumnya. HSI: hanya baris periode aktif.
+ */
+function reportRowsFor(product: UploadProduct, archive: Json, selected: string, activeRows: Row[]): Row[] {
+  if (product !== "WMS") return activeRows;
+  const merged = Object.entries({ ...archive, [selected]: { ...asRecord(archive[selected]), rows: activeRows } })
+    .sort(([a], [b]) => a.localeCompare(b))
+    .flatMap(([, entry]) => {
+      const rows = asRecord(entry).rows;
+      return Array.isArray(rows) ? (rows as Row[]) : [];
+    });
+  return merged;
+}
+
 export async function buildReportFile(product: UploadProduct): Promise<ReportFile> {
   const state = await loadState(product);
   const archive = asRecord(state.periodArchive);
@@ -378,7 +393,7 @@ export async function buildReportFile(product: UploadProduct): Promise<ReportFil
     XLSX.utils.book_append_sheet(wb, hsiSheet(report.targetStf.witel, dayCount), "STF Witel");
     XLSX.utils.book_append_sheet(wb, hsiSheet(report.targetStf.branch, dayCount), "STF Telda");
   } else {
-    const report = computeWmsReport(rows, selected);
+    const report = computeWmsReport(reportRowsFor("WMS", archive, selected, rows), selected);
     periodLabel = report.periodLabel;
     const dayCount = Math.max(...[...report.witel.rows, report.witel.total, ...report.telda.rows, report.telda.total].map((r) => r.days.length), 0);
     XLSX.utils.book_append_sheet(wb, wmsSheet(report.witel.rows, report.witel.total, dayCount), "Report Witel");
@@ -401,7 +416,7 @@ export async function loadLatestRows(product: UploadProduct) {
   const entry = asRecord(selected ? archive[selected] : null);
   const rows = Array.isArray(entry.rows) ? (entry.rows as Row[]) : [];
   if (!selected || rows.length === 0) return null;
-  return { periodKey: selected, rows, savedAt: typeof entry.savedAt === "string" ? entry.savedAt : null };
+  return { periodKey: selected, rows: reportRowsFor(product, archive, selected, rows), savedAt: typeof entry.savedAt === "string" ? entry.savedAt : null };
 }
 
 /** Entri periode aktif lengkap (termasuk riwayat harian HSI) untuk membuat gambar report yang sama dengan web. */
@@ -416,7 +431,7 @@ export async function loadLatestEntry(product: UploadProduct) {
     periodKey: selected,
     reportHistory: entry.reportHistory && typeof entry.reportHistory === "object" ? entry.reportHistory : null,
     reportSnapshot: entry.reportSnapshot && typeof entry.reportSnapshot === "object" ? entry.reportSnapshot : null,
-    rows,
+    rows: reportRowsFor(product, archive, selected, rows),
     savedAt: typeof entry.savedAt === "string" ? entry.savedAt : null,
   };
 }
