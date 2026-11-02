@@ -7,9 +7,20 @@ import {
 } from "@/features/wms/domain/reporting/reporting";
 
 import {
+  adminIds,
+  approveAccess,
+  isAdmin,
+  isUploaderAllowed,
+  listApproved,
+  listPending,
+  rejectAccess,
+  requestAccess,
+  revokeAccess,
+  type AccessPerson,
+} from "@/features/telegram/access";
+import {
   detectProduct,
   importMaster,
-  isAllowedUploader,
   loadLatestRows,
   parseMasterRows,
 } from "@/features/telegram/master-upload";
@@ -214,6 +225,7 @@ function portalUrlFromOrigin(origin: string) {
 // Perintah boleh diketik dengan atau tanpa "/" dan huruf besar/kecil, mis. "start", "/Start", "Menu", "last update".
 const COMMAND_ALIASES: Record<string, string> = {
   bantuan: "/help",
+  akses: "/akses",
   cabutan: "/cabutan",
   segmen: "/segmen",
   allsegmen: "/segmen",
@@ -999,7 +1011,7 @@ function myIdText(userId: string | null) {
     SECTION,
     userId ? `<code>${escapeHtml(userId)}</code>` : "ID tidak tersedia pada pesan ini.",
     "",
-    "<i>Berikan ID ini kepada admin bila Anda perlu didaftarkan sebagai pengunggah data.</i>",
+    "<i>Untuk mengunggah data, kirim sebuah file ke bot lalu tekan tombol Minta Akses Upload, atau berikan ID ini kepada admin.</i>",
   ].join("\n");
 }
 
@@ -1360,8 +1372,100 @@ function uploadErrorKeyboard(): TelegramInlineKeyboardMarkup {
 
 function notAllowedKeyboard(): TelegramInlineKeyboardMarkup {
   return {
-    inline_keyboard: [[{ callback_data: "menu:myid", text: "🪪 Lihat My ID" }], homeRow],
+    inline_keyboard: [[{ callback_data: "acc:req", text: "🙋 Minta Akses Upload" }], [{ callback_data: "menu:myid", text: "🪪 Lihat My ID" }], homeRow],
   };
+}
+
+// ---------- Kelola akses upload (admin) ----------
+const personLabel = (p: AccessPerson) => `${escapeHtml(p.name)}${p.username ? ` (@${escapeHtml(p.username)})` : ""} • <code>${escapeHtml(p.id)}</code>`;
+
+async function accessPanel(): Promise<{ text: string; keyboard: TelegramInlineKeyboardMarkup }> {
+  const [pending, approved] = await Promise.all([listPending(), listApproved()]);
+  const lines = ["👥 <b>Kelola Akses Upload</b>", SECTION, `⏳ <b>Menunggu persetujuan</b>  (${pending.length})`, ""];
+  if (pending.length) pending.forEach((p) => lines.push(`▫️ ${personLabel(p)}`, ""));
+  else lines.push("<i>Tidak ada permintaan.</i>", "");
+  lines.push(SECTION, `✅ <b>Pengunggah dari bot</b>  (${approved.length})`, "");
+  if (approved.length) approved.forEach((p) => lines.push(`▫️ ${personLabel(p)}`, ""));
+  else lines.push("<i>Belum ada.</i>", "");
+  lines.push("<i>Pengunggah dari pengaturan server (TELEGRAM_ALLOWED_USER_IDS) tidak tampil di sini dan tidak bisa dicabut dari bot.</i>");
+  const rows: TelegramInlineKeyboardButton[][] = [];
+  for (const p of pending) rows.push([{ callback_data: `acc:ok:${p.id}`, text: `✅ Setujui ${p.name}`.slice(0, 40) }, { callback_data: `acc:no:${p.id}`, text: "❌ Tolak" }]);
+  for (const p of approved) rows.push([{ callback_data: `acc:rv:${p.id}`, text: `🗑️ Cabut ${p.name}`.slice(0, 40) }]);
+  rows.push([{ callback_data: "menu:akses", text: "🔄 Refresh" }], homeRow);
+  return { keyboard: { inline_keyboard: rows }, text: lines.join("\n").trimEnd() };
+}
+
+async function showAccessPanel(botToken: string, chatId: number, messageId: number | undefined) {
+  const panel = await accessPanel();
+  await sendOrEditTelegramMessage(botToken, chatId, messageId, panel.text, { replyMarkup: panel.keyboard });
+}
+
+async function handleAccessCallback(botToken: string, chatId: number, messageId: number | undefined, data: string, from: TelegramUser | undefined) {
+  const userId = telegramUserId(from);
+  const name = from?.first_name ?? "Pengguna";
+
+  if (data === "acc:req") {
+    if (!userId) return;
+    if (await isUploaderAllowed(userId)) {
+      await sendTelegramMessage(botToken, chatId, "✅ <b>Anda sudah punya akses upload.</b>\n\nSilakan kirim file Anda.", { replyMarkup: helpKeyboard() });
+      return;
+    }
+    const admins = adminIds();
+    if (!admins.length) {
+      await sendTelegramMessage(botToken, chatId, "⚠️ <b>Admin belum diatur</b>\n\nHubungi admin PRIME secara langsung dan berikan User ID Anda (menu 🪪 My ID).", { replyMarkup: notAllowedKeyboard() });
+      return;
+    }
+    const { fresh } = await requestAccess({ id: userId, name, username: from?.username ?? null });
+    if (fresh) {
+      const person: AccessPerson = { id: userId, name, username: from?.username ?? null, at: Date.now() };
+      await Promise.all(
+        admins.map((adminId) =>
+          sendTelegramMessage(botToken, Number(adminId), ["🙋 <b>Permintaan akses upload</b>", SECTION, personLabel(person), "", "Izinkan akun ini mengunggah data lewat bot?"].join("\n"), {
+            replyMarkup: { inline_keyboard: [[{ callback_data: `acc:ok:${userId}`, text: "✅ Setujui" }, { callback_data: `acc:no:${userId}`, text: "❌ Tolak" }]] },
+          }).catch(() => undefined),
+        ),
+      );
+    }
+    await sendTelegramMessage(
+      botToken,
+      chatId,
+      ["📨 <b>Permintaan terkirim</b>", SECTION, fresh ? "Admin sudah diberi tahu." : "Permintaan Anda sudah dikirim sebelumnya dan masih menunggu admin.", "", "Anda akan mendapat pesan di sini setelah disetujui."].join("\n"),
+      { replyMarkup: helpKeyboard() },
+    );
+    return;
+  }
+
+  if (!isAdmin(userId)) {
+    await sendTelegramMessage(botToken, chatId, "⛔ <b>Hanya admin</b> yang bisa mengelola akses.", { replyMarkup: helpKeyboard() });
+    return;
+  }
+
+  const targetId = data.split(":")[2] ?? "";
+  if (!/^\d{1,20}$/.test(targetId)) return;
+
+  if (data.startsWith("acc:ok:")) {
+    const person = await approveAccess(targetId, name);
+    if (!person) {
+      await sendOrEditTelegramMessage(botToken, chatId, messageId, "ℹ️ Permintaan ini sudah diproses atau tidak ditemukan.", { replyMarkup: { inline_keyboard: [[{ callback_data: "menu:akses", text: "👥 Kelola Akses" }]] } });
+      return;
+    }
+    await sendOrEditTelegramMessage(botToken, chatId, messageId, `✅ <b>Disetujui</b>\n\n${personLabel(person)}`, { replyMarkup: { inline_keyboard: [[{ callback_data: "menu:akses", text: "👥 Kelola Akses" }]] } });
+    await sendTelegramMessage(botToken, Number(targetId), ["✅ <b>Akses upload disetujui</b>", SECTION, "Sekarang Anda bisa mengirim file ke bot ini.", "", "Lihat panduan format file lewat tombol di bawah."].join("\n"), { replyMarkup: uploadErrorKeyboard() }).catch(() => undefined);
+    return;
+  }
+
+  if (data.startsWith("acc:no:")) {
+    const person = await rejectAccess(targetId);
+    await sendOrEditTelegramMessage(botToken, chatId, messageId, person ? `❌ <b>Ditolak</b>\n\n${personLabel(person)}` : "ℹ️ Permintaan ini sudah diproses atau tidak ditemukan.", { replyMarkup: { inline_keyboard: [[{ callback_data: "menu:akses", text: "👥 Kelola Akses" }]] } });
+    if (person) await sendTelegramMessage(botToken, Number(targetId), "❌ <b>Permintaan akses upload ditolak.</b>\n\nHubungi admin PRIME bila ini keliru.").catch(() => undefined);
+    return;
+  }
+
+  if (data.startsWith("acc:rv:")) {
+    const done = await revokeAccess(targetId);
+    if (done) await sendTelegramMessage(botToken, Number(targetId), "⛔ <b>Akses upload Anda dicabut oleh admin.</b>").catch(() => undefined);
+    await showAccessPanel(botToken, chatId, messageId);
+  }
 }
 
 function downloadFormatText(product: ReportProductKey) {
@@ -1473,7 +1577,7 @@ function notAllowedText() {
     SECTION,
     "Akun Telegram Anda belum terdaftar sebagai pengunggah data.",
     "",
-    "Kirim <b>User ID</b> Anda (lihat menu 🪪 My ID) kepada admin untuk didaftarkan.",
+    "Tekan <b>🙋 Minta Akses Upload</b> di bawah. Admin akan menerima permintaan Anda dan Anda diberi tahu di sini setelah disetujui.",
   ].join("\n");
 }
 
@@ -1595,7 +1699,7 @@ async function handleSegmenFile(botToken: string, chatId: number, fileName: stri
 async function handleDocumentUpload(botToken: string, chatId: number, message: TelegramMessage) {
   const document = message.document!;
   const userId = telegramUserId(message.from);
-  if (!isAllowedUploader(userId)) {
+  if (!(await isUploaderAllowed(userId))) {
     await sendTelegramMessage(botToken, chatId, notAllowedText(), { replyMarkup: notAllowedKeyboard() });
     return;
   }
@@ -1808,6 +1912,20 @@ async function handleCallbackQuery(botToken: string, callbackQuery: TelegramCall
   const userId = telegramUserId(callbackQuery.from);
   if (!chatId) return;
 
+  if (data.startsWith("acc:")) {
+    await handleAccessCallback(botToken, chatId, messageId, data, callbackQuery.from);
+    return;
+  }
+
+  if (data === "menu:akses") {
+    if (!isAdmin(userId)) {
+      await sendTelegramMessage(botToken, chatId, "⛔ <b>Hanya admin</b> yang bisa mengelola akses.", { replyMarkup: helpKeyboard() });
+      return;
+    }
+    await showAccessPanel(botToken, chatId, messageId);
+    return;
+  }
+
   if (data === "menu:home") {
     await showMainMenu(botToken, chatId, messageId, callbackQuery.from?.first_name);
     return;
@@ -2018,6 +2136,16 @@ export async function POST(request: NextRequest) {
     if (!result.ok) {
       return NextResponse.json({ error: result.error }, { status: 502 });
     }
+    return NextResponse.json({ ok: true });
+  }
+
+  if (command === "/akses") {
+    if (!isAdmin(userId)) {
+      await sendTelegramMessage(botToken, chatId, "⛔ <b>Hanya admin</b> yang bisa mengelola akses.", { replyMarkup: helpKeyboard() });
+      return NextResponse.json({ ok: true });
+    }
+    const panel = await accessPanel();
+    await sendTelegramMessage(botToken, chatId, panel.text, { replyMarkup: panel.keyboard });
     return NextResponse.json({ ok: true });
   }
 
