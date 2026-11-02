@@ -54,7 +54,7 @@ export async function buildReportImages(product: ReportProductKey, deps: ReportD
   if (product === "HSI") {
     const entry = await loadLatestEntry("HSI");
     if (!entry) throw new Error("Belum ada data HSI. Upload file MASTER HSI dulu.");
-    return buildHsiImages(entry.rows, entry.savedAt, entry.periodKey, entry.reportHistory as ReportHistory | null, entry.reportSnapshot as HsiComputedReport | null);
+    return buildHsiImages(entry.rows, entry.savedAt, entry.periodKey, entry.reportHistory as ReportHistory | null, entry.reportSnapshot as HsiComputedReport | null, entry.otherPeriods);
   }
 
   if (product === "WMS") {

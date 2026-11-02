@@ -50,6 +50,7 @@ import { ReportCard, achTone as reportAchTone, dayKind as reportDayKind, parsePe
 import {
   computeReport,
   initialMasterRows,
+  otherPeriodRows,
   masterHeaders,
   type ComputedReport,
   type MasterRow,
@@ -2180,7 +2181,7 @@ export function HsiDashboard({ permissions = fullAccessPermissions }: { permissi
     const activePeriodKey = selectedPeriodKey || detectPeriodKey(rows);
     const archivedSnapshot = periodArchive[activePeriodKey]?.reportSnapshot;
     if (archivedSnapshot) return archivedSnapshot;
-    const computed = applyReportHistory(computeReport(rows, savedAt, activePeriodKey), reportHistory);
+    const computed = applyReportHistory(computeReport(rows, savedAt, activePeriodKey, otherPeriodRows(periodArchive as never, activePeriodKey)), reportHistory);
     return {
       ...computed,
       periodLabel: periodLabelFromKey(activePeriodKey),

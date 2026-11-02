@@ -387,13 +387,19 @@ function ct0MetricForRow(tabKey: LtsReportTabKey, headers: string[], row: LtsMas
 }
 
 function capsMetricForRow(tabKey: LtsReportTabKey, headers: string[], row: LtsMasterRow): Accumulator {
-  // COUNTIFS(SSL_DO, 1): hanya baris dengan SSL_DO = 1 yang dihitung 1.
-  if (rowValue(row, headers, ["SSL_DO"], 0) !== 1) return blankAccumulator();
-  const caps = 1;
   const product = getCell(row, headers, ["L_PRODUK", "PRODUK", "PRODUCT"]);
   const hasProductColumn = hasAnyColumn(headers, ["L_PRODUK", "PRODUK", "PRODUCT"]);
   if (!productMatchesMode(tabKey, "caps", product, hasProductColumn)) return blankAccumulator();
-  return { sales: 0, ct0: 0, caps, churn: 0 };
+  const ssLDo = rowValue(row, headers, ["SSL_DO"], 0);
+  // CHURN = SUM(SSL_DO) divisi RBS (pivot CHURN di LTS ALL SEGMEN). Hanya bila file CAPS memuat kolom DIVISI.
+  const churn = capsHasDivisi(headers) && normalizeLabel(getCell(row, headers, ["DIVISI"])) === "RBS" ? ssLDo : 0;
+  // COUNTIFS(SSL_DO, 1): hanya baris dengan SSL_DO = 1 yang dihitung 1.
+  return { sales: 0, ct0: 0, caps: ssLDo === 1 ? 1 : 0, churn };
+}
+
+/** Data churn dihitung dari file CAPS bila kolom DIVISI ada; selain itu dipakai angka tetap WITEL_CHURN / HOTDA_CHURN. */
+function capsHasDivisi(headers: string[]) {
+  return hasAnyColumn(headers, ["DIVISI"]);
 }
 
 function scopeLabel(datasetKey: LtsDatasetKey, scope: LtsScope, headers: string[], row: LtsMasterRow) {
@@ -452,7 +458,8 @@ function buildReportRows(scope: LtsScope, tabKey: LtsReportTabKey, datasets: Lts
   const coordinators = new Map(HOTDA_GROUPS.map((group) => [group.label, group.coordinator]));
   // Sheet "LTS HOTDA (HSI only)" menulis koordinator KEBUMEN = ODHY ANUGRAH AGUSTA.
   if (tabKey === "hsi") coordinators.set("KEBUMEN", "ODHY ANUGRAH AGUSTA");
-  const grouped = new Map(labels.map((label) => [label, { ...blankAccumulator(), churn: churnForLabel(scope, label) }]));
+  const churnFromData = Boolean(datasets.caps && capsHasDivisi(datasets.caps.headers));
+  const grouped = new Map(labels.map((label) => [label, { ...blankAccumulator(), churn: churnFromData ? 0 : churnForLabel(scope, label) }]));
 
   addDatasetRows(grouped, scope, "sales", datasets.sales, tabKey);
   addDatasetRows(grouped, scope, "ct0", datasets.ct0, tabKey);

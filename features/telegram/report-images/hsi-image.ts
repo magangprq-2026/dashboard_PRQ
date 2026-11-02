@@ -142,9 +142,10 @@ export function buildHsiImages(
   periodKey: string,
   history: ReportHistory | null,
   snapshot: ComputedReport | null = null,
+  otherPeriods?: Record<string, unknown[][]>,
 ): ReportImage[] {
   // Sama seperti web: snapshot tersimpan bila ada, jika tidak hitung dari MASTER lalu terapkan riwayat harian.
-  const report: ComputedReport = snapshot ?? applyReportHistory(computeReport(rows as never, savedAt, periodKey), history);
+  const report: ComputedReport = snapshot ?? applyReportHistory(computeReport(rows as never, savedAt, periodKey, otherPeriods as never), history);
   const timestamp = new Date();
   const make = (variant: "sementara" | "stf"): ReportImage => {
     const stf = variant === "stf";

@@ -607,7 +607,7 @@ function reportActionKeyboard(product: ReportProduct, baseUrl: string): Telegram
 async function buildHsiReportFromState(): Promise<ProductReport | null> {
   const latest = await loadLatestRows("HSI");
   if (!latest) return null;
-  const report = computeHsiReport(latest.rows, latest.savedAt, latest.periodKey);
+  const report = computeHsiReport(latest.rows, latest.savedAt, latest.periodKey, latest.otherPeriods as never);
   const rkap = report.witel.total;
   const stf = report.targetStf.witel.total;
   const metrics: ReportMetric[] = [];

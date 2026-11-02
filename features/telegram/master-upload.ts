@@ -6,6 +6,7 @@ import { readDashboardStateByKey, writeDashboardStateByKey } from "@/features/sh
 import { MAX_SNAPSHOTS_PER_PERIOD } from "@/features/shared/storage/safe-storage";
 import {
   computeReport as computeHsiReport,
+  otherPeriodRows,
   masterHeaders as hsiHeaders,
   type ComputedReport as HsiReport,
   type ReportTable as HsiTable,
@@ -385,7 +386,7 @@ export async function buildReportFile(product: UploadProduct): Promise<ReportFil
   const wb = XLSX.utils.book_new();
   let periodLabel: string;
   if (product === "HSI") {
-    const report: HsiReport = computeHsiReport(rows, savedAt, selected);
+    const report: HsiReport = computeHsiReport(rows, savedAt, selected, otherHsiPeriods("HSI", archive, selected) as never);
     periodLabel = report.periodLabel;
     const dayCount = Math.max(...[report.witel, report.branch].flatMap((t) => [...t.rows, t.total].map((r) => r.days.length)), 0);
     XLSX.utils.book_append_sheet(wb, hsiSheet(report.witel, dayCount), "Report Witel");
@@ -408,6 +409,11 @@ export async function buildReportFile(product: UploadProduct): Promise<ReportFil
   };
 }
 
+/** HSI: baris MASTER periode lain di arsip (untuk pembanding bulan lalu dan REAL YTD). */
+function otherHsiPeriods(product: UploadProduct, archive: Json, selected: string): Record<string, Row[]> | undefined {
+  return product === "HSI" ? (otherPeriodRows(archive as never, selected) as Record<string, Row[]>) : undefined;
+}
+
 /** Baris MASTER periode aktif dari dashboard_state (sumber yang sama dengan web). null bila belum ada data. */
 export async function loadLatestRows(product: UploadProduct) {
   const state = await loadState(product);
@@ -416,7 +422,12 @@ export async function loadLatestRows(product: UploadProduct) {
   const entry = asRecord(selected ? archive[selected] : null);
   const rows = Array.isArray(entry.rows) ? (entry.rows as Row[]) : [];
   if (!selected || rows.length === 0) return null;
-  return { periodKey: selected, rows: reportRowsFor(product, archive, selected, rows), savedAt: typeof entry.savedAt === "string" ? entry.savedAt : null };
+  return {
+    otherPeriods: otherHsiPeriods(product, archive, selected),
+    periodKey: selected,
+    rows: reportRowsFor(product, archive, selected, rows),
+    savedAt: typeof entry.savedAt === "string" ? entry.savedAt : null,
+  };
 }
 
 /** Entri periode aktif lengkap (termasuk riwayat harian HSI) untuk membuat gambar report yang sama dengan web. */
@@ -428,6 +439,7 @@ export async function loadLatestEntry(product: UploadProduct) {
   const rows = Array.isArray(entry.rows) ? (entry.rows as Row[]) : [];
   if (!selected || rows.length === 0) return null;
   return {
+    otherPeriods: otherHsiPeriods(product, archive, selected),
     periodKey: selected,
     reportHistory: entry.reportHistory && typeof entry.reportHistory === "object" ? entry.reportHistory : null,
     reportSnapshot: entry.reportSnapshot && typeof entry.reportSnapshot === "object" ? entry.reportSnapshot : null,

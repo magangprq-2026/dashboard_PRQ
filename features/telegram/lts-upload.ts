@@ -19,7 +19,7 @@ export const LTS_DATASET_KEYS: LtsDatasetKey[] = ["sales", "caps", "ct0"];
 
 const COMPACT_COLUMNS: Record<LtsDatasetKey, string[]> = {
   sales: ["WITEL", "TELKOM_DAERAH", "Jml_Sales", "COUNT_SID", "PRODUK", "PRODUCT", "TYPE_LAYANAN", "NPER", "PERIOD", "LAST_UPDATED_DATE"],
-  caps: ["L_WITEL", "WITEL (NEW_TERRITORY)", "TWITEL", "TELKOM_DAERAH", "L_PRODUK", "PRODUK", "PRODUCT", "COUNT_SID", "SSL_CT0", "SSL_DO", "PERIODE", "PERIODE_CT0_BAYAR"],
+  caps: ["L_WITEL", "WITEL (NEW_TERRITORY)", "TWITEL", "TELKOM_DAERAH", "L_PRODUK", "PRODUK", "PRODUCT", "COUNT_SID", "SSL_CT0", "SSL_DO", "PERIODE", "PERIODE_CT0_BAYAR", "DIVISI"],
   ct0: ["Witel", "Witel Bill", "OLD_WITEL", "Datel", "Sto Desc", "Produk", "Bayar Desc", "STATUS_PAYMENT", "JML LYN", "Number of Records", "JML_BLN_NUNGGAK", "TUNGGAKAN", "Nper", "TAHUN", "LAST_PERIODE"],
 };
 
