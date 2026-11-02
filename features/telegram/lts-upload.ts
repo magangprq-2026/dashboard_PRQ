@@ -173,7 +173,7 @@ export type LtsProgress = {
   present: Record<LtsDatasetKey, boolean>;
 };
 
-type LtsBatch = { periodKey?: unknown; received?: Record<string, unknown> | null; startedAt?: unknown };
+type LtsBatch = { periodKey?: unknown; ct0PeriodKey?: unknown; received?: Record<string, unknown> | null; startedAt?: unknown };
 
 /** Murni (tanpa database): ubah isi rangkaian menjadi status kelengkapan. */
 export function progressFromLtsBatch(batch: LtsBatch | null | undefined, periodKey: string): LtsProgress {
@@ -197,33 +197,76 @@ export function progressFromLtsBatch(batch: LtsBatch | null | undefined, periodK
  * yang diproses paralel tidak saling menimpa dan hanya proses terakhir yang melihat rangkaian lengkap).
  * Harus dipanggil SETELAH importLtsDataset (baris "lts" sudah ada).
  */
+// SQL pencatat rangkaian. Parameter: $1 periode file, $2 jenis dataset, $3 waktu sekarang, $4 jendela (menit), $5 true bila file CT0.
+// CT0 (REG) berisi tagihan bulan lalu, jadi periodenya boleh SAMA atau SATU BULAN SEBELUM periode Sales/CAPS dan tidak
+// memutus rangkaian. Periode rangkaian (periodKey) hanya ditentukan oleh Sales/CAPS; periode CT0 dicatat di ct0PeriodKey.
+export function registerLtsSql(table: string) {
+  const batch = `payload->'ltsBatch'`;
+  const prev = (x: string) => `(case when ${x} ~ '^[0-9]{6}$' then to_char(to_date(${x} || '01', 'YYYYMMDD') - interval '1 month', 'YYYYMM') else null end)`;
+  const bp = `${batch}->>'periodKey'`;
+  const cp = `${batch}->>'ct0PeriodKey'`;
+  const conflict =
+    `case when $5::boolean ` +
+    `then (${bp} is not null and $1::text <> ${bp} and $1::text is distinct from ${prev(bp)}) ` +
+    `else ((${bp} is not null and ${bp} <> $1::text) or (${cp} is not null and ${cp} <> $1::text and ${cp} is distinct from ${prev("$1::text")})) end`;
+  return (
+    `update public."${table}" set updated_at = now(), payload = jsonb_set(coalesce(payload, '{}'::jsonb), '{ltsBatch}', ` +
+    `case when jsonb_typeof(${batch}) is distinct from 'object' ` +
+    `or ${conflict} ` +
+    `or coalesce(${batch}->>'reported', '') = 'true' ` +
+    `or jsonb_exists(${batch}->'received', $2::text) ` +
+    `or ($3::timestamptz - coalesce((${batch}->>'lastAt')::timestamptz, '-infinity'::timestamptz)) > make_interval(mins => $4::int) ` +
+    `then jsonb_build_object('periodKey', case when $5::boolean then null else $1::text end, 'ct0PeriodKey', case when $5::boolean then $1::text else null end, ` +
+    `'startedAt', $3::text, 'lastAt', $3::text, 'reported', false, 'received', jsonb_build_object($2::text, $3::text)) ` +
+    `else jsonb_set(jsonb_set(jsonb_set(jsonb_set(${batch}, array['received', $2::text], to_jsonb($3::text)), '{lastAt}', to_jsonb($3::text)), ` +
+    `'{periodKey}', case when $5::boolean then coalesce(${batch}->'periodKey', 'null'::jsonb) else to_jsonb($1::text) end), ` +
+    `'{ct0PeriodKey}', case when $5::boolean then to_jsonb($1::text) else coalesce(${batch}->'ct0PeriodKey', 'null'::jsonb) end) end) ` +
+    `where key = 'lts' returning ${batch} as batch`
+  );
+}
+
 export async function registerLtsUpload(dataset: LtsUploadedDataset): Promise<LtsProgress> {
   const config = dbConfig();
   if (!config) throw new Error("Database belum dikonfigurasi (DATABASE_URL).");
   const table = config.table;
   if (!/^[a-z_][a-z0-9_]*$/.test(table)) throw new Error("Nama tabel database tidak valid.");
   const sql = neon(config.url);
-  const batch = `payload->'ltsBatch'`;
-  const text =
-    `update public."${table}" set updated_at = now(), payload = jsonb_set(coalesce(payload, '{}'::jsonb), '{ltsBatch}', ` +
-    `case when jsonb_typeof(${batch}) is distinct from 'object' ` +
-    `or ${batch}->>'periodKey' is distinct from $1::text ` +
-    `or coalesce(${batch}->>'reported', '') = 'true' ` +
-    `or jsonb_exists(${batch}->'received', $2::text) ` +
-    `or ($3::timestamptz - coalesce((${batch}->>'lastAt')::timestamptz, '-infinity'::timestamptz)) > make_interval(mins => $4::int) ` +
-    `then jsonb_build_object('periodKey', $1::text, 'startedAt', $3::text, 'lastAt', $3::text, 'reported', false, 'received', jsonb_build_object($2::text, $3::text)) ` +
-    `else jsonb_set(jsonb_set(${batch}, array['received', $2::text], to_jsonb($3::text)), '{lastAt}', to_jsonb($3::text)) end) ` +
-    `where key = 'lts' returning ${batch} as batch`;
+  const text = registerLtsSql(table);
   let rows: unknown[];
   try {
-    const result = (await sql.query(text, [dataset.periodKey, dataset.datasetKey, new Date().toISOString(), LTS_BATCH_WINDOW_MINUTES])) as unknown;
+    const result = (await sql.query(text, [dataset.periodKey, dataset.datasetKey, new Date().toISOString(), LTS_BATCH_WINDOW_MINUTES, dataset.datasetKey === "ct0"])) as unknown;
     rows = Array.isArray(result) ? result : ((result as { rows?: unknown[] }).rows ?? []);
   } catch {
     throw new Error("Gagal mencatat rangkaian upload LTS.");
   }
   const row = rows[0] as { batch?: LtsBatch | null } | undefined;
   if (!row) throw new Error("Gagal mencatat rangkaian upload LTS.");
-  return progressFromLtsBatch(row.batch, dataset.periodKey);
+  const batchPeriod = typeof row.batch?.periodKey === "string" && row.batch.periodKey ? row.batch.periodKey : dataset.periodKey;
+  return progressFromLtsBatch(row.batch, batchPeriod);
+}
+
+/**
+ * Setelah rangkaian lengkap: samakan data CT0 ke periode rangkaian (bila CT0 berperiode bulan sebelumnya) dan pilih
+ * periode itu sebagai periode aktif, supaya report/dashboard memakai ketiga dataset sekaligus.
+ */
+export async function alignLtsCt0Period(): Promise<void> {
+  const config = dbConfig();
+  if (!config || !/^[a-z_][a-z0-9_]*$/.test(config.table)) return;
+  const sql = neon(config.url);
+  const t = config.table;
+  const bp = `payload->'ltsBatch'->>'periodKey'`;
+  const cp = `payload->'ltsBatch'->>'ct0PeriodKey'`;
+  const text =
+    `update public."${t}" set payload = jsonb_set(` +
+    `case when ${cp} is not null and ${cp} <> ${bp} and payload->'datasetArchive'->'ct0'->(${cp}) is not null ` +
+    `then jsonb_set(payload, array['datasetArchive','ct0', ${bp}], payload->'datasetArchive'->'ct0'->(${cp})) else payload end, ` +
+    `'{selectedPeriodKey}', to_jsonb(${bp})) ` +
+    `where key = 'lts' and ${bp} is not null`;
+  try {
+    await sql.query(text);
+  } catch {
+    // Gagal menyamakan periode tidak membatalkan report; report memakai data yang tersedia.
+  }
 }
 
 /**

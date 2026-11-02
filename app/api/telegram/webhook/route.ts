@@ -25,6 +25,7 @@ import {
   parseMasterRows,
 } from "@/features/telegram/master-upload";
 import {
+  alignLtsCt0Period,
   claimLtsReport,
   detectLtsDataset,
   importLtsDataset,
@@ -1758,6 +1759,7 @@ async function handleDocumentUpload(botToken: string, chatId: number, message: T
         `✅ <b>${ltsDatasetLabel(ltsKey)}</b> berhasil disimpan`,
         "",
         `📅 ${escapeHtml(progress.periodLabel)}  •  ${dataset.rowCount.toLocaleString("id-ID")} baris`,
+        ...(ltsKey === "ct0" ? ["", "<i>CT0 berisi tagihan bulan sebelumnya, tetap digabung dengan Sales dan CAPS.</i>"] : []),
       ].join("\n");
       if (!progress.complete) {
         // Belum lengkap: beri tahu file mana yang masih ditunggu. Report baru dikirim setelah ketiganya masuk.
@@ -1779,6 +1781,7 @@ async function handleDocumentUpload(botToken: string, chatId: number, message: T
           { replyMarkup: uploadWaitingKeyboard() },
         );
       } else if (await claimLtsReport()) {
+        await alignLtsCt0Period();
         const sent = await sendReportImages(botToken, chatId, "LTS", `${head}\n${SECTION}\n${checklist}\n${SECTION}\n🎉 <b>Data LTS lengkap</b>\n\n`, afterUploadKeyboard());
         if (sent.failed > 0) {
           await sendTelegramMessage(botToken, chatId, "⚠️ <b>Data LTS tersimpan, tetapi gambar report gagal dikirim.</b>\n\nSilakan unduh lewat menu Unduh Report.", { replyMarkup: afterUploadKeyboard() });
