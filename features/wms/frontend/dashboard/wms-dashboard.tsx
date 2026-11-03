@@ -1349,8 +1349,29 @@ export function WmsDashboard({ permissions = fullAccessPermissions }: { permissi
       </header>
 
       <div className="mx-auto max-w-[1920px] px-3 py-5 sm:px-5 lg:px-6">
+{/* Periode YJS terhubung langsung dengan state laporan, bukan hanya label. */}
         {renderView === "yjs" && (
-          <WitelYjsPanel
+          <div className="space-y-4">
+            <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-[0_14px_40px_-30px_rgba(15,23,42,0.4)]">
+              <div className="flex flex-wrap items-center justify-between gap-3 bg-[#101f38] px-5 py-3 text-white" style={{ borderTop: '3px solid #14b8a6' }}>
+                <div>
+                  <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-slate-300">Witel Yogya Jateng Selatan · WMS</p>
+                  <h3 className="mt-0.5 text-sm font-bold">Filter periode kinerja</h3>
+                </div>
+                <span className="rounded-lg border border-white/15 bg-white/10 px-3 py-1.5 text-[11px] font-semibold text-slate-100">Mengikuti data laporan aktif</span>
+              </div>
+              <div className="px-5 py-4">
+                <DashboardPeriodFilter
+                  onChange={setPeriodFilter}
+                  options={periodOptions}
+                  theme="wms"
+                  validationMessage={filteredReportState.validationMessage}
+                  value={periodFilter}
+                />
+                <p className="mt-2 text-xs text-slate-500">Setelah periode diganti, kartu KPI, grafik, dan tabel Witel YJS dihitung dari laporan periode yang sama.</p>
+              </div>
+            </section>
+            <WitelYjsPanel
             cutoffLabel={displayReport.cutoffLabel}
             dailyMode={yjsDailyMode}
             moduleName="WMS"
@@ -1359,6 +1380,7 @@ export function WmsDashboard({ permissions = fullAccessPermissions }: { permissi
             theme="wms"
             variants={yjsVariants}
           />
+          </div>
         )}
         {renderView === "home" && (
           <DashboardHome

@@ -159,19 +159,19 @@ export function LtsYjsPanel({
       </Card>
 
       <Card subtitle="Seluruh angka langsung dari laporan aktif (tanpa perhitungan ulang)." title="Rincian Witel & HOTDA">
-        <div className="overflow-x-auto rounded-xl border border-slate-200">
-          <table className="w-full min-w-[1040px] border-collapse text-xs">
+        <div className="overflow-x-auto rounded-xl border border-slate-200 shadow-sm">
+          <table className="w-full min-w-[1040px] border-separate border-spacing-0 text-xs tabular-nums">
             <thead>
-              <tr className="bg-slate-50 text-left text-[10px] font-bold uppercase tracking-wider text-slate-500">
+              <tr className="bg-[#5b21b6] text-left text-[10px] font-bold uppercase tracking-wider text-white">
                 {["Wilayah", "Koordinator", "Sales", "CT0", "CT0 %", "Rank", "CAPS", "CAPS %", "Rank", "Score", "Rank", "Churn", "Gap"].map((h, i) => (
-                  <th key={`${h}-${i}`} className={`px-3 py-2.5 ${i > 1 ? "text-right" : ""}`}>{h}</th>
+                  <th key={`${h}-${i}`} className={`whitespace-nowrap border-r border-white/15 px-3 py-3 ${i > 1 ? "text-right" : ""}`}>{h}</th>
                 ))}
               </tr>
             </thead>
             <tbody>
               {tableRows.map(({ row, strong, name, coord }, i) => (
-                <tr key={`${name}-${i}`} className={`border-t border-slate-100 ${strong ? "bg-slate-50 font-bold text-slate-900" : "text-slate-700"}`}>
-                  <td className="px-3 py-2 font-semibold">{name}</td>
+                <tr key={`${name}-${i}`} className={`border-b border-slate-100 transition-colors hover:bg-violet-50 ${strong ? "border-l-[3px] border-l-violet-600 bg-violet-100/80 font-bold text-slate-900" : i % 2 === 0 ? "bg-slate-50/75 text-slate-700" : "bg-white text-slate-700"}`}>
+                  <td className="whitespace-nowrap px-3 py-3 font-bold text-slate-900">{name}</td>
                   <td className="px-3 py-2 text-slate-500">{coord ?? "–"}</td>
                   <td className="px-3 py-2 text-right">{fmtNum(row.sales)}</td>
                   <td className="px-3 py-2 text-right">{row.ct0 === null ? "–" : fmtNum(row.ct0)}</td>
@@ -180,7 +180,7 @@ export function LtsYjsPanel({
                   <td className="px-3 py-2 text-right">{fmtNum(row.caps)}</td>
                   <td className="px-3 py-2 text-right">{fmtPct(row.capsRatio, 2)}</td>
                   <td className="px-3 py-2 text-right">{row.capsRank ?? "–"}</td>
-                  <td className="px-3 py-2 text-right font-bold">{fmtPct(row.score, 2)}</td>
+                  <td className="bg-violet-50/90 px-3 py-3 text-right font-extrabold text-violet-800">{fmtPct(row.score, 2)}</td>
                   <td className="px-3 py-2 text-right">{row.scoreRank ?? "–"}</td>
                   <td className="px-3 py-2 text-right">{fmtNum(row.churn)}</td>
                   <td className={`px-3 py-2 text-right ${row.gap > 0 ? "text-amber-700" : "text-emerald-600"}`}>{fmtSigned(row.gap)}</td>

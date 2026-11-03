@@ -1559,8 +1559,30 @@ export function LtsDashboard({ permissions = fullAccessPermissions }: { permissi
             Memuat data LTS...
           </div>
         )}
+{/* Periode YJS terhubung langsung dengan state laporan, bukan hanya label. */}
         {hydrated && renderView === "yjs" && (
-          <LtsYjsPanel activeTab={activeTab} onTabChange={setActiveTab} reports={reports} tabs={ltsReportTabs.map((tab) => ({ key: tab.key, label: tab.label }))} />
+          <div className="space-y-4">
+            <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-[0_14px_40px_-30px_rgba(15,23,42,0.4)]">
+              <div className="flex flex-wrap items-center justify-between gap-3 bg-[#101f38] px-5 py-3 text-white" style={{ borderTop: '3px solid #8b5cf6' }}>
+                <div>
+                  <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-slate-300">Witel Yogya Jateng Selatan · LTS</p>
+                  <h3 className="mt-0.5 text-sm font-bold">Filter periode kinerja</h3>
+                </div>
+                <span className="rounded-lg border border-white/15 bg-white/10 px-3 py-1.5 text-[11px] font-semibold text-slate-100">Mengikuti data laporan aktif</span>
+              </div>
+              <div className="px-5 py-4">
+                <DashboardPeriodFilter
+                  onChange={changeReportPeriodFilter}
+                  options={periodOptions}
+                  theme="lts"
+                  validationMessage={filteredDatasetState.validationMessage}
+                  value={periodFilter}
+                />
+                <p className="mt-2 text-xs text-slate-500">Setelah periode diganti, kartu KPI, grafik, dan tabel Witel YJS dihitung dari laporan periode yang sama.</p>
+              </div>
+            </section>
+            <LtsYjsPanel activeTab={activeTab} onTabChange={setActiveTab} reports={reports} tabs={ltsReportTabs.map((tab) => ({ key: tab.key, label: tab.label }))} />
+          </div>
         )}
         {hydrated && renderView === "home" && (
           <DashboardHome
