@@ -1600,7 +1600,15 @@ export function LtsDashboard({ permissions = fullAccessPermissions }: { permissi
                       ))}
                     </select>
                   </label>
-                  <StatusPill tone={validationMatch ? "good" : "warn"}>{validationReady}</StatusPill>
+                  <StatusPill tone={!activeReport ? "warn" : (() => {
+                    const yjsRow = activeReport.witel.rows.find((row) => row.label === "YOGYA JATENG SELATAN");
+                    return yjsRow && yjsRow.sales === activeReport.hotda.total.sales && yjsRow.ct0 === activeReport.hotda.total.ct0 && yjsRow.caps === activeReport.hotda.total.caps ? "good" : "warn";
+                  })()}>
+                    {!activeReport ? "DATA BELUM TERSEDIA" : (() => {
+                      const yjsRow = activeReport.witel.rows.find((row) => row.label === "YOGYA JATENG SELATAN");
+                      return yjsRow && yjsRow.sales === activeReport.hotda.total.sales && yjsRow.ct0 === activeReport.hotda.total.ct0 && yjsRow.caps === activeReport.hotda.total.caps ? "VALIDASI MATCH" : "PERIKSA SELISIH";
+                    })()}
+                  </StatusPill>
                 </div>
               </div>
             </section>

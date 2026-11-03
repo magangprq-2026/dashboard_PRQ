@@ -1363,7 +1363,7 @@ export function WmsDashboard({ permissions = fullAccessPermissions }: { permissi
                   </p>
                   <h1 className="mt-1 text-xl font-semibold uppercase tracking-normal text-[#2a1a10] sm:text-2xl">WMS PERFORMANCE</h1>
                   <p className="mt-1 max-w-2xl text-xs font-medium uppercase leading-5 text-stone-500">
-                    {displayReport.periodLabel} | WITEL YOGYA JATENG SELATAN | {dataCutoffLabel}
+                    {displayReport.periodLabel} | WITEL YOGYA JATENG SELATAN | {displayReport.cutoffLabel}
                   </p>
                 </div>
                 <div className="flex flex-wrap items-end gap-2">

@@ -2520,7 +2520,7 @@ export function HsiDashboard({ permissions = fullAccessPermissions }: { permissi
                       HSI PERFORMANCE
                     </h1>
                     <p className="mt-1 max-w-2xl text-xs font-medium uppercase leading-5 text-slate-500">
-                      {displayReport.periodLabel} | WITEL YOGYA JATENG SELATAN | {dataCutoffLabel}
+                      {displayReport.periodLabel} | WITEL YOGYA JATENG SELATAN | {displayReport.cutoffLabel}
                     </p>
                   </div>
                 </div>
@@ -2532,7 +2532,9 @@ export function HsiDashboard({ permissions = fullAccessPermissions }: { permissi
                     validationMessage={filteredReportState.validationMessage}
                     value={periodFilter}
                   />
-                  <StatusPill tone="good">VALIDASI MATCH</StatusPill>
+                  <StatusPill tone={displayReport.validation.mismatches === 0 ? "good" : "warn"}>
+                    {displayReport.validation.mismatches === 0 ? "VALIDASI MATCH" : `${displayReport.validation.mismatches} SELISIH`}
+                  </StatusPill>
                 </div>
               </div>
             </section>
