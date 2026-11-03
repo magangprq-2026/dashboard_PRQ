@@ -1238,6 +1238,9 @@ export function LtsDashboard({ permissions = fullAccessPermissions }: { permissi
     return activeDatasetsForPeriod(archive, latestLtsPeriodKey(archive));
   });
   const [datasetArchive, setDatasetArchive] = useState<DatasetArchive>(() => initialSeedArchive());
+  // A synchronous source of truth for async upload and server hydration.
+  const archiveRef = useRef<DatasetArchive>(datasetArchive);
+  const userEditRevision = useRef(0);
   const [selectedPeriodKey, setSelectedPeriodKey] = useState(() => latestLtsPeriodKey(initialSeedArchive()));
   const [periodFilter, setPeriodFilter] = useState<DashboardPeriodFilterState>(() => defaultPeriodFilter(latestLtsPeriodKey(initialSeedArchive())));
   const [updatedAt, setUpdatedAt] = useState<string | null>(null);
@@ -1325,6 +1328,7 @@ export function LtsDashboard({ permissions = fullAccessPermissions }: { permissi
       currentArchive = nextArchive;
       currentPeriodKey = nextPeriodKey;
       currentUpdatedAt = shouldRefreshSeed ? null : stored.updatedAt;
+      archiveRef.current = nextArchive;
       setDatasetArchive(nextArchive);
       setSelectedPeriodKey(nextPeriodKey);
       setPeriodFilter(defaultPeriodFilter(nextPeriodKey));
@@ -1332,6 +1336,7 @@ export function LtsDashboard({ permissions = fullAccessPermissions }: { permissi
       setUpdatedAt(currentUpdatedAt);
       setAutoSaveStatus("Data lokal dimuat");
     } else {
+      archiveRef.current = seedArchive;
       setDatasetArchive(seedArchive);
       setSelectedPeriodKey(currentPeriodKey);
       setPeriodFilter(defaultPeriodFilter(currentPeriodKey));
@@ -1349,20 +1354,30 @@ export function LtsDashboard({ permissions = fullAccessPermissions }: { permissi
     });
     safeStorageSet(DATA_VERSION_KEY, ltsSeedData.dataVersion);
 
+    const revisionAtLoad = userEditRevision.current;
     void loadStateFromServer()
       .then(({ configured, state }) => {
         if (state) {
-          setDatasetArchive((currentArchive) => {
-            const serverArchive = pruneRemovedSeedData(state.datasetArchive ?? archiveFromDatasets(state.datasets));
-            const mergedArchive = pruneRemovedSeedData(shouldRefreshSeed ? mergeDatasetArchives(serverArchive, currentArchive) : mergeDatasetArchives(currentArchive, serverArchive));
+          const serverArchive = pruneRemovedSeedData(state.datasetArchive ?? archiveFromDatasets(state.datasets));
+          // A delayed response must never reset the user-selected period or replace
+          // datasets uploaded after the fetch started.
+          const wasEdited = userEditRevision.current !== revisionAtLoad;
+          const currentArchive = archiveRef.current;
+          const mergedArchive = pruneRemovedSeedData(
+            shouldRefreshSeed || wasEdited
+              ? mergeDatasetArchives(serverArchive, currentArchive)
+              : mergeDatasetArchives(currentArchive, serverArchive),
+          );
+          archiveRef.current = mergedArchive;
+          setDatasetArchive(mergedArchive);
+          if (!wasEdited) {
             const nextPeriodKey = defaultLtsPeriodKey(mergedArchive);
             setSelectedPeriodKey(nextPeriodKey);
             setPeriodFilter(defaultPeriodFilter(nextPeriodKey));
             setDatasets(activeDatasetsForPeriod(mergedArchive, nextPeriodKey));
-            return mergedArchive;
-          });
-          setUpdatedAt(shouldRefreshSeed ? currentUpdatedAt : state.updatedAt);
-          setAutoSaveStatus("Data server dimuat");
+            setUpdatedAt(shouldRefreshSeed ? currentUpdatedAt : state.updatedAt);
+          }
+          setAutoSaveStatus(wasEdited ? "Data terbaru dipertahankan; server digabung" : "Data server dimuat");
         } else if (!configured) {
           setAutoSaveStatus("Database server belum dikonfigurasi; data tersimpan di browser ini");
         }
@@ -1377,10 +1392,12 @@ export function LtsDashboard({ permissions = fullAccessPermissions }: { permissi
     try {
       const dataset = await readLtsDatasetFromWorkbook(file, datasetKey);
       const timestamp = new Date().toISOString();
+      userEditRevision.current += 1;
+      const currentArchive = archiveRef.current;
       const nextArchive = {
-        ...datasetArchive,
+        ...currentArchive,
         [datasetKey]: {
-          ...(datasetArchive[datasetKey] ?? {}),
+          ...(currentArchive[datasetKey] ?? {}),
           [dataset.periodKey]: dataset,
         },
       };
@@ -1389,6 +1406,7 @@ export function LtsDashboard({ permissions = fullAccessPermissions }: { permissi
       const displayPeriod = defaultLtsPeriodKey(nextArchive);
       const nextDatasets = activeDatasetsForPeriod(nextArchive, displayPeriod);
       const state = { datasets: nextDatasets, datasetArchive: nextArchive, selectedPeriodKey: displayPeriod, updatedAt: timestamp };
+      archiveRef.current = nextArchive;
       setDatasetArchive(nextArchive);
       setSelectedPeriodKey(displayPeriod);
       setPeriodFilter(defaultPeriodFilter(displayPeriod));
@@ -1420,6 +1438,7 @@ export function LtsDashboard({ permissions = fullAccessPermissions }: { permissi
   // tidak direset (Month Range / Date Range / YTD tetap utuh); periode jangkar hanya disimpan.
   function changeReportPeriodFilter(value: DashboardPeriodFilterState) {
     const normalized = normalizeLtsPeriodFilter(value);
+    userEditRevision.current += 1;
     setPeriodFilter(normalized);
     const anchorPeriod = normalized.endMonth;
     if (anchorPeriod !== selectedPeriodKey && periodOptions.some((option) => option.periodKey === anchorPeriod)) {
@@ -1435,6 +1454,7 @@ export function LtsDashboard({ permissions = fullAccessPermissions }: { permissi
   }
 
   function selectPeriod(periodKey: string) {
+    userEditRevision.current += 1;
     const nextPeriodFilter = defaultPeriodFilter(periodKey);
     setSelectedPeriodKey(periodKey);
     setPeriodFilter(nextPeriodFilter);
