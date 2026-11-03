@@ -1314,25 +1314,26 @@ function DashboardHome({
   });
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-5">
       <section className={`${panelClass} relative overflow-hidden`}>
-        <div className="pointer-events-none absolute inset-x-0 top-0 h-1" style={{ background: "linear-gradient(90deg,#12233d, #3b82f6 )" }} />
-        <div className="relative flex flex-wrap items-center justify-between gap-5 px-5 py-5 lg:px-7 lg:py-6">
+        <div className="absolute inset-0 bg-[radial-gradient(circle_at_88%_10%,rgba(56,189,248,0.16),transparent_28%),radial-gradient(circle_at_8%_18%,rgba(37,99,235,0.08),transparent_24%),linear-gradient(135deg,#ffffff_0%,#f8fbff_52%,#eef6ff_100%)]" />
+        <div className="absolute inset-x-0 top-0 h-1 bg-gradient-to-r from-[#071426] via-[#2563eb] to-[#38bdf8]" />
+        <div className="relative flex flex-wrap items-center justify-between gap-3 px-4 py-3">
           <div className="min-w-[280px] flex-1">
             <div>
               <p className="inline-flex items-center gap-2 text-[11px] font-semibold uppercase text-blue-700">
                 <Activity className="h-4 w-4" />
                 DASHBOARD REPORTING HSI 2026
               </p>
-              <h1 className="mt-1.5 text-2xl font-extrabold tracking-tight text-[#071426] sm:text-2xl">
+              <h1 className="mt-1 text-xl font-semibold uppercase tracking-normal text-[#071426] sm:text-2xl">
                 HSI PERFORMANCE
               </h1>
-              <p className="mt-2 max-w-2xl text-xs font-medium leading-5 text-slate-500">
+              <p className="mt-1 max-w-2xl text-xs font-medium uppercase leading-5 text-slate-500">
                 {report.periodLabel} | {activeScopeLabel} | {dataCutoffLabel}
               </p>
             </div>
           </div>
-          <div className="flex flex-wrap items-end gap-3 rounded-2xl border border-slate-100 bg-slate-50/80 p-3">
+          <div className="flex flex-wrap items-end gap-2">
             <DashboardPeriodFilter
               onChange={(value) => {
                 const normalized = normalizePeriodFilter(value);
@@ -1398,15 +1399,6 @@ function DashboardHome({
         pending={report.validation.mismatches > 0}
         message={report.validation.mismatches > 0 ? `${report.validation.mismatches} pemeriksaan internal belum sesuai; cocokkan dengan workbook sumber sebelum publikasi.` : "Angka mengikuti filter dan perhitungan laporan HSI aktif. Status pemeriksaan internal tidak menggantikan rekonsiliasi terhadap XLSX terbaru."}
       />
-
-      <div className="flex flex-wrap items-end justify-between gap-3 px-1 pt-1">
-        <div>
-          <p className="text-[10px] font-bold uppercase tracking-[.2em] text-slate-500">Performance insights</p>
-          <h3 className="mt-1 text-lg font-bold tracking-tight text-slate-900">Analisis operasional HSI</h3>
-          <p className="mt-1 text-xs text-slate-500">Rincian kinerja, grafik tren, dan perbandingan wilayah berdasarkan filter aktif.</p>
-        </div>
-        <span className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-[11px] font-semibold text-slate-600">Data laporan aktif</span>
-      </div>
 
       <section className={`${panelClass} overflow-hidden`}>
         <div className="relative grid items-start gap-4 bg-[linear-gradient(135deg,#ffffff_0%,#f8fbff_48%,#f4f8ff_100%)] p-4 xl:grid-cols-[1.35fr_0.65fr]">
