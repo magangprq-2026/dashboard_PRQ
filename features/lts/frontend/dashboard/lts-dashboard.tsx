@@ -18,6 +18,7 @@ import {
   Home,
   Loader2,
   LockKeyhole,
+  MapPinned,
   RefreshCw,
   ShieldCheck,
   Target,
@@ -69,7 +70,9 @@ import { ltsSeedData } from "@/features/lts/domain/reporting/seed-data";
 import { renderReportPngBlob } from "@/features/shared/dashboard/report-png";
 import { ReportCard, GOOD as REPORT_GOOD, LOW as REPORT_LOW, rankTone as reportRankTone, type CellStyle as ReportCellStyle, type ReportTheme, type TableCol as ReportCol } from "@/features/shared/dashboard/report-table";
 
-type View = "home" | "master" | "report";
+import { LtsHomeHighlights, LtsYjsPanel } from "@/features/shared/dashboard/lts-yjs";
+
+type View = "home" | "master" | "report" | "yjs";
 
 type SheetJsWorkbook = {
   SheetNames: string[];
@@ -101,6 +104,7 @@ const STORAGE_KEY = "lts-dashboard-state-v1";
 const DATA_VERSION_KEY = "lts-seed-data-version-v1";
 const navItems: { id: View; label: string; icon: React.ComponentType<{ className?: string }> }[] = [
   { id: "home", label: "Home", icon: Home },
+  { id: "yjs", label: "Witel YJS", icon: MapPinned },
   { id: "master", label: "MASTER", icon: Database },
   { id: "report", label: "Report LTS", icon: FileSpreadsheet },
 ];
@@ -775,24 +779,23 @@ function DashboardHome({
   const bestHotda = bestByScore(report.hotda.rows);
 
   return (
-    <div className="space-y-5">
+    <div className="space-y-6">
       <section className={`${lightPanel} relative overflow-hidden`}>
-        <div className="absolute inset-0 bg-[radial-gradient(circle_at_88%_10%,rgba(154,106,214,0.18),transparent_28%),radial-gradient(circle_at_8%_18%,rgba(109,58,168,0.08),transparent_24%),linear-gradient(135deg,#ffffff_0%,#fbfaff_52%,#f4edff_100%)]" />
-        <div className="absolute inset-x-0 top-0 h-1 bg-gradient-to-r from-[#24103f] via-[#7c4ac4] to-[#b28ae5]" />
-        <div className="relative flex flex-wrap items-center justify-between gap-3 px-4 py-3">
+        <div className="pointer-events-none absolute inset-x-0 top-0 h-1" style={{ background: "linear-gradient(90deg,#12233d, #8b5cf6 )" }} />
+        <div className="relative flex flex-wrap items-center justify-between gap-5 px-5 py-5 lg:px-7 lg:py-6">
           <div className="min-w-[280px] flex-1">
             <p className="inline-flex items-center gap-2 text-[11px] font-semibold uppercase text-violet-700">
               <BarChart3 className="h-4 w-4" />
               DASHBOARD REPORTING LTS 2026
             </p>
-            <h1 className="mt-1 text-xl font-semibold uppercase tracking-normal text-[#24103f] sm:text-2xl">
+            <h1 className="mt-1.5 text-2xl font-extrabold tracking-tight text-[#24103f] sm:text-2xl">
               LTS PERFORMANCE
             </h1>
-            <p className="mt-1 max-w-2xl text-xs font-medium uppercase leading-5 text-slate-500">
+            <p className="mt-2 max-w-2xl text-xs font-medium leading-5 text-slate-500">
               {report.label} | {active.label} | SOURCE {report.sourceLabel}
             </p>
           </div>
-          <div className="flex flex-wrap items-end gap-2">
+          <div className="flex flex-wrap items-end gap-3 rounded-2xl border border-slate-100 bg-slate-50/80 p-3">
             <DashboardPeriodFilter
               onChange={(value) => {
                 const normalized = normalizeLtsPeriodFilter(value);
@@ -867,8 +870,17 @@ function DashboardHome({
         message={ct0Pending ? "CT0 belum tersedia untuk periode terpilih. Persentase dan Score mengikuti perlakuan laporan sumber; data REG bulan sebelumnya tidak digunakan." : "CT0, CAPS, Sales dan Score mengikuti laporan LTS periode aktif; verifikasi dengan XLSX sumber untuk rekonsiliasi final."}
       />
 
+      <div className="flex flex-wrap items-end justify-between gap-3 px-1 pt-1">
+        <div>
+          <p className="text-[10px] font-bold uppercase tracking-[.2em] text-slate-500">Performance insights</p>
+          <h3 className="mt-1 text-lg font-bold tracking-tight text-slate-900">Analisis konversi LTS</h3>
+          <p className="mt-1 text-xs text-slate-500">Rincian kinerja, grafik tren, dan perbandingan wilayah berdasarkan filter aktif.</p>
+        </div>
+        <span className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-[11px] font-semibold text-slate-600">Data laporan aktif</span>
+      </div>
+
       <section className={`${lightPanel} overflow-hidden`}>
-        <div className="relative grid items-start gap-4 bg-[linear-gradient(135deg,#ffffff_0%,#fbfaff_48%,#f6f1ff_100%)] p-4 xl:grid-cols-[1.35fr_0.65fr]">
+        <div className="relative grid items-start gap-4 bg-slate-50/80 p-4 xl:grid-cols-[1.35fr_0.65fr]">
           <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(rgba(109,58,168,0.04)_1px,transparent_1px),linear-gradient(90deg,rgba(109,58,168,0.03)_1px,transparent_1px)] bg-[size:44px_44px] opacity-50" />
           <div className="relative overflow-hidden rounded-xl border border-violet-100 bg-white shadow-[0_16px_36px_-28px_rgba(36,16,63,0.65)]">
             <div className="flex flex-wrap items-center justify-between gap-3 border-b border-violet-100 bg-[#24103f] px-3 py-2.5 text-white">
@@ -1570,6 +1582,14 @@ export function LtsDashboard({ permissions = fullAccessPermissions }: { permissi
             <Loader2 className="h-5 w-5 animate-spin" />
             Memuat data LTS...
           </div>
+        )}
+        {hydrated && renderView === "home" && (reports[activeTab] ?? Object.values(reports)[0]) && (
+          <div className="mb-5">
+            <LtsHomeHighlights onOpenYjs={() => setView("yjs")} report={(reports[activeTab] ?? Object.values(reports)[0]) as LtsComputedReport} />
+          </div>
+        )}
+        {hydrated && renderView === "yjs" && (
+          <LtsYjsPanel activeTab={activeTab} onTabChange={setActiveTab} reports={reports} tabs={ltsReportTabs.map((tab) => ({ key: tab.key, label: tab.label }))} />
         )}
         {hydrated && renderView === "home" && (
           <DashboardHome
