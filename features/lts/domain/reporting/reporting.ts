@@ -50,7 +50,7 @@ export type LtsComputedReport = {
   hotda: LtsReportTable;
   summary: {
     sales: number;
-    ct0: number;
+    ct0: number | null;
     caps: number;
     score: number;
     bestWitel: LtsReportRow | null;

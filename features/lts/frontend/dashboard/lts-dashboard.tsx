@@ -703,6 +703,7 @@ function DashboardHome({
     );
   }
 
+  const ct0Pending = report.witel.total.ct0 === null;
   const active = activeLtsRow(report, wilayahFilter);
   const rankingRows = rankingScope === "witel" ? report.witel.rows : report.hotda.rows;
   const ranking = [...rankingRows].sort((a, b) => a.score - b.score);
@@ -1276,7 +1277,6 @@ export function LtsDashboard({ permissions = fullAccessPermissions }: { permissi
   }, [filteredDatasetState.datasets, hydrated, reportCutoffLabel, reportPeriodLabel]);
 
   const activeReport = reports[activeTab];
-  const ct0Pending = Boolean(activeReport && !filteredDatasetState.datasets.ct0);
   const readyCount = Object.values(ltsDatasetDefinitions).filter((definition) => datasets[definition.datasetKey]).length;
   const periodOptions = useMemo(() => {
     // Hanya bulan yang Sales + CT0 + CAPS-nya lengkap. Periode yang sedang dipilih tetap ikut tampil
