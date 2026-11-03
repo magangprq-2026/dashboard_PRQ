@@ -79,6 +79,14 @@ export const themeStyle = {
   },
 } as const;
 
+/** Gaya tab Witel YJS saja: diselaraskan dengan header Executive Overview pada Home.
+ * HomeHighlights dan seluruh tab lain tetap memakai tema aslinya. */
+export const yjsPanelTheme = {
+  hsi: { ...themeStyle.hsi, primary: "#3b82f6", secondary: "#60a5fa", soft: "#eff6ff", heroClass: "bg-[#101f38]", accent: "#3b82f6" },
+  wms: { ...themeStyle.wms, primary: "#0f766e", secondary: "#14b8a6", soft: "#f0fdfa", heroClass: "bg-[#101f38]", accent: "#14b8a6" },
+  lts: { ...themeStyle.lts, primary: "#7c3aed", secondary: "#a78bfa", soft: "#f5f3ff", heroClass: "bg-[#101f38]", accent: "#8b5cf6" },
+} as const;
+
 const GOOD = "#059669";
 const WARN = "#d97706";
 const BAD = "#e11d48";
@@ -270,7 +278,7 @@ export function WitelYjsPanel({
   variants: MetricVariant[];
   dailyMode: "calendar" | "series";
 }) {
-  const t = themeStyle[theme];
+  const t = yjsPanelTheme[theme];
   const [variantKey, setVariantKey] = useState(variants[0]?.key ?? "");
   const variant = variants.find((v) => v.key === variantKey) ?? variants[0];
   const yjs = variant?.witel.rows.find((r) => norm(r.label) === YJS_LABEL);
@@ -324,6 +332,8 @@ export function WitelYjsPanel({
     <div className="space-y-5">
       {/* HERO */}
       <section className={`relative overflow-hidden rounded-2xl ${t.heroClass} p-6 text-white shadow-[0_24px_60px_-34px_rgba(0,0,0,0.7)]`}>
+        <div className="pointer-events-none absolute inset-x-0 top-0 h-1" style={{ backgroundColor: t.accent }} />
+        <div className="pointer-events-none absolute -right-16 -top-24 h-64 w-64 rounded-full opacity-20 blur-3xl" style={{ backgroundColor: t.accent }} />
         <div className="pointer-events-none absolute -right-24 -top-24 h-72 w-72 rounded-full bg-white/10 blur-2xl" />
         <div className="pointer-events-none absolute -bottom-28 left-1/3 h-64 w-64 rounded-full bg-white/5 blur-3xl" />
         <div className="relative flex flex-wrap items-center justify-between gap-6">

@@ -11,7 +11,7 @@ import { useMemo } from "react";
 import { Bar, BarChart, CartesianGrid, Cell, Legend, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { CheckCircle2, Crown, MapPinned, Medal, ShieldAlert, Trophy } from "lucide-react";
 import type { LtsComputedReport, LtsReportRow, LtsReportTabKey } from "@/features/lts/domain/reporting/reporting";
-import { Card, Kpi, YJS_LABEL, fmtNum, fmtPct, fmtSigned, themeStyle } from "@/features/shared/dashboard/witel-yjs";
+import { Card, Kpi, YJS_LABEL, fmtNum, fmtPct, fmtSigned, themeStyle, yjsPanelTheme } from "@/features/shared/dashboard/witel-yjs";
 
 const t = themeStyle.lts;
 const norm = (v: string) => v.trim().toUpperCase();
@@ -70,7 +70,9 @@ export function LtsYjsPanel({
 
   return (
     <div className="space-y-5">
-      <section className={`relative overflow-hidden rounded-2xl ${t.heroClass} p-6 text-white shadow-[0_24px_60px_-34px_rgba(0,0,0,0.7)]`}>
+      <section className={`relative overflow-hidden rounded-2xl ${yjsPanelTheme.lts.heroClass} p-6 text-white shadow-[0_24px_60px_-34px_rgba(0,0,0,0.7)]`}>
+        <div className="pointer-events-none absolute inset-x-0 top-0 h-1" style={{ backgroundColor: yjsPanelTheme.lts.accent }} />
+        <div className="pointer-events-none absolute -right-16 -top-24 h-64 w-64 rounded-full opacity-20 blur-3xl" style={{ backgroundColor: yjsPanelTheme.lts.accent }} />
         <div className="pointer-events-none absolute -right-24 -top-24 h-72 w-72 rounded-full bg-white/10 blur-2xl" />
         <div className="relative flex flex-wrap items-center justify-between gap-6">
           <div className="min-w-[260px] flex-1">
@@ -116,7 +118,7 @@ export function LtsYjsPanel({
                 <YAxis fontSize={11} tickFormatter={(v) => `${v}%`} tickLine={false} width={48} />
                 <Tooltip contentStyle={tooltipStyle} formatter={(v) => `${Number(v).toFixed(2)}%`} />
                 <Bar dataKey="score" name="Score" radius={[6, 6, 0, 0]}>
-                  {witelScore.map((row, i) => <Cell key={i} fill={row.isYjs ? t.primary : "#cbd5e1"} />)}
+                  {witelScore.map((row, i) => <Cell key={i} fill={row.isYjs ? yjsPanelTheme.lts.primary : "#cbd5e1"} />)}
                 </Bar>
               </BarChart>
             </ResponsiveContainer>
@@ -131,7 +133,7 @@ export function LtsYjsPanel({
                 <YAxis fontSize={11} tickFormatter={(v) => `${v}%`} tickLine={false} width={48} />
                 <Tooltip contentStyle={tooltipStyle} formatter={(v) => `${Number(v).toFixed(2)}%`} />
                 <Legend wrapperStyle={{ fontSize: 12 }} />
-                <Bar dataKey="YJS" fill={t.primary} radius={[6, 6, 0, 0]} />
+                <Bar dataKey="YJS" fill={yjsPanelTheme.lts.primary} radius={[6, 6, 0, 0]} />
                 <Bar dataKey="TREG 3" fill="#cbd5e1" radius={[6, 6, 0, 0]} />
               </BarChart>
             </ResponsiveContainer>
@@ -148,9 +150,9 @@ export function LtsYjsPanel({
               <YAxis fontSize={11} tickFormatter={(v) => `${v}%`} tickLine={false} width={48} />
               <Tooltip contentStyle={tooltipStyle} formatter={(v) => `${Number(v).toFixed(2)}%`} />
               <Legend wrapperStyle={{ fontSize: 12 }} />
-              <Bar dataKey="CT0 / Sales" fill={t.secondary} radius={[4, 4, 0, 0]} />
+              <Bar dataKey="CT0 / Sales" fill={yjsPanelTheme.lts.secondary} radius={[4, 4, 0, 0]} />
               <Bar dataKey="CAPS / Sales" fill="#a78bfa" radius={[4, 4, 0, 0]} />
-              <Bar dataKey="Score" fill={t.primary} radius={[4, 4, 0, 0]} />
+              <Bar dataKey="Score" fill={yjsPanelTheme.lts.primary} radius={[4, 4, 0, 0]} />
             </BarChart>
           </ResponsiveContainer>
         </div>
