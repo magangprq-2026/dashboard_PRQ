@@ -334,6 +334,27 @@ export function periodKeyFromLtsRows(datasetKey: LtsDatasetKey, headers: string[
   return [...values.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] ?? `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, "0")}`;
 }
 
+/**
+ * Reject stale REG/CT0 snapshots mislabeled as the selected reporting month.
+ * A filename, upload time, or archive slot is not proof that the REG rows
+ * belong to that month. Nper/TAHUN are the source of truth.
+ * Invalid/mixed REG rows are not silently assigned to another month.
+ */
+export function ct0DatasetMatchesPeriod(dataset: LtsUploadedDataset, expectedPeriod: string): boolean {
+  const periodIndex = findColumn(dataset.headers, ["Nper", "NPER"]);
+  if (periodIndex < 0 || !/^\d{6}$/.test(expectedPeriod)) return false;
+  const yearIndex = findColumn(dataset.headers, ["TAHUN"]);
+  let observed = 0;
+  for (const row of dataset.rows) {
+    const year = yearIndex >= 0 ? toNumber(row[yearIndex], Number.NaN) : Number.NaN;
+    const parsed = periodKey(row[periodIndex], year >= 2000 && year <= 2100 ? year : Number(expectedPeriod.slice(0, 4)));
+    if (!parsed) continue;
+    observed++;
+    if (parsed !== expectedPeriod) return false;
+  }
+  return observed > 0;
+}
+
 function periodFromRows(datasetKey: LtsDatasetKey, headers: string[], rows: LtsMasterRow[]) {
   return periodLabelFromLtsPeriodKey(periodKeyFromLtsRows(datasetKey, headers, rows));
 }
@@ -543,8 +564,15 @@ export function computeLtsReport(tabKey: LtsReportTabKey, datasets: LtsReportSou
   const primaryDataset = datasets[definition.datasetKey] ?? (tabKey === "hsi" ? datasets.sales : undefined);
   if (!primaryDataset) throw new Error(`${definition.reportLabel} membutuhkan ${definition.label}.`);
 
-  const witelRows = buildReportRows("witel", tabKey, datasets);
-  const hotdaRows = buildReportRows("hotda", tabKey, datasets);
+  // Defend against direct calls with an archive entry stamped November while
+  // its actual REG data still says October (the source of the inflated scores).
+  const ct0Source = datasets.ct0;
+  const reportPeriodKey = datasets.sales?.periodKey ?? datasets.caps?.periodKey ?? ct0Source?.periodKey;
+  const safeDatasets = ct0Source && reportPeriodKey && !ct0DatasetMatchesPeriod(ct0Source, reportPeriodKey)
+    ? { ...datasets, ct0: undefined }
+    : datasets;
+  const witelRows = buildReportRows("witel", tabKey, safeDatasets);
+  const hotdaRows = buildReportRows("hotda", tabKey, safeDatasets);
   const period = periodFromRows(primaryDataset.datasetKey, primaryDataset.headers, primaryDataset.rows);
   const bestWitel = [...witelRows.rows].sort((a, b) => a.score - b.score)[0] ?? null;
   const bestHotda = [...hotdaRows.rows].sort((a, b) => a.score - b.score)[0] ?? null;

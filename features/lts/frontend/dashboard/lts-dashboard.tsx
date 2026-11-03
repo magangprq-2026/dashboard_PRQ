@@ -51,6 +51,7 @@ import {
   ltsCompactColumns,
   ltsReportTabs,
   periodKeyFromLtsRows,
+  ct0DatasetMatchesPeriod,
   periodLabelFromLtsPeriodKey,
   validateLtsDataset,
   type LtsCell,
@@ -432,7 +433,14 @@ function combineDatasetsForRange(archive: DatasetArchive, filter: DashboardPerio
     // Sales, CT0, dan CAPS sama-sama hanya memakai periode yang dipilih. CAPS_MASTER di kertas kerja
     // hanya berisi data NAL periode berjalan, jadi CAPS periode lain (mis. September) tidak boleh ikut
     // dijumlahkan; kalau ikut, CAPS, CAPS/Sales, Rank, Score, Rank LTS CAPS, dan Gap (CAPS 27/8) membengkak.
-    const entries = periodKeys.map((periodKey) => archive[key]?.[periodKey]).filter(Boolean) as LtsUploadedDataset[];
+    const entries = periodKeys.flatMap((periodKey) => {
+      const entry = archive[key]?.[periodKey];
+      if (!entry) return [];
+      // REG uploaded on 3 November can still contain October (Nper=202610).
+      // Never use that snapshot as November CT0 or carry it into score/ranks.
+      if (key === "ct0" && !ct0DatasetMatchesPeriod(entry, periodKey)) return [];
+      return [entry];
+    });
     if (entries.length === 0) continue;
     const first = entries[0];
     datasets[key] = {
@@ -465,9 +473,19 @@ function ltsPeriodFilterLabel(value: DashboardPeriodFilterState) {
 
 function ltsPeriodCutoffLabel(value: DashboardPeriodFilterState) {
   const normalized = normalizeLtsPeriodFilter(value);
-  const cutoffDate = normalized.mode === "date-range"
-    ? new Date(`${normalized.endDate}T00:00:00`)
-    : new Date(`${normalized.endMonth.slice(0, 4)}-${normalized.endMonth.slice(4, 6)}-${String(new Date(Number(normalized.endMonth.slice(0, 4)), Number(normalized.endMonth.slice(4, 6)), 0).getDate()).padStart(2, "0")}T00:00:00`);
+  const todayParts = new Intl.DateTimeFormat("en-US", {
+    year: "numeric", month: "2-digit", day: "2-digit", timeZone: "Asia/Jakarta",
+  }).formatToParts(new Date());
+  const part = (type: string) => todayParts.find((entry) => entry.type === type)?.value ?? "";
+  const todayKey = `${part("year")}-${part("month")}-${part("day")}`;
+  const endMonth = normalized.endMonth;
+  const lastDay = new Date(Number(endMonth.slice(0, 4)), Number(endMonth.slice(4, 6)), 0).getDate();
+  const requestedEnd = normalized.mode === "date-range"
+    ? normalized.endDate
+    : `${endMonth.slice(0, 4)}-${endMonth.slice(4, 6)}-${String(lastDay).padStart(2, "0")}`;
+  // The latest available cutoff cannot be a future date (e.g. Nov 30 on Nov 3).
+  const effectiveEnd = requestedEnd && requestedEnd < todayKey ? requestedEnd : todayKey;
+  const cutoffDate = new Date(`${effectiveEnd}T00:00:00`);
   return Number.isNaN(cutoffDate.getTime()) ? "DATA S.D. -" : formatDataCutoffDate(cutoffDate);
 }
 
