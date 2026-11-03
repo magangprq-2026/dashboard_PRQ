@@ -237,15 +237,24 @@ export function Ring({ value, size = 132, color, label }: { value: number | null
 }
 
 export function Kpi({ label, value, detail, tone = "default", icon }: { label: string; value: string; detail?: string; tone?: "default" | "good" | "bad" | "warn"; icon?: React.ReactNode }) {
-  const color = tone === "good" ? "text-emerald-700" : tone === "bad" ? "text-rose-700" : tone === "warn" ? "text-amber-700" : "text-slate-900";
+  const toneMap = {
+    default: { value: "text-slate-900", soft: "bg-slate-100 text-slate-500", line: "from-slate-700 to-slate-300" },
+    good: { value: "text-emerald-700", soft: "bg-emerald-50 text-emerald-600", line: "from-emerald-600 to-emerald-300" },
+    bad: { value: "text-rose-700", soft: "bg-rose-50 text-rose-600", line: "from-rose-600 to-rose-300" },
+    warn: { value: "text-amber-700", soft: "bg-amber-50 text-amber-600", line: "from-amber-500 to-amber-200" },
+  } as const;
+  const style = toneMap[tone];
   return (
-    <div className="min-w-0 rounded-xl border border-slate-200/80 bg-[linear-gradient(145deg,#fff,#f8fafc)] px-4 py-3.5">
-      <div className="flex items-center justify-between gap-2">
-        <p className="text-[10px] font-bold uppercase tracking-wider text-slate-500">{label}</p>
-        {icon && <span className="text-slate-400">{icon}</span>}
+    <div className="group relative min-w-0 overflow-hidden rounded-2xl border border-slate-200/80 bg-[linear-gradient(180deg,#ffffff_0%,#f8fafc_100%)] px-5 py-4 shadow-[0_14px_36px_-28px_rgba(15,23,42,0.45)] transition hover:-translate-y-0.5 hover:shadow-[0_24px_44px_-28px_rgba(15,23,42,0.38)]">
+      <div className={`absolute inset-x-0 top-0 h-1 bg-gradient-to-r ${style.line}`} />
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-slate-500">{label}</p>
+          <p className={`mt-3 truncate text-[clamp(1.5rem,2.3vw,2.35rem)] font-extrabold leading-none tracking-tight ${style.value}`} title={value}>{value}</p>
+        </div>
+        {icon && <span className={`grid h-9 w-9 shrink-0 place-items-center rounded-xl ${style.soft}`}>{icon}</span>}
       </div>
-      <p className={`mt-1.5 truncate text-[clamp(1.2rem,1.8vw,1.65rem)] font-extrabold tracking-tight ${color}`} title={value}>{value}</p>
-      {detail && <p className="mt-0.5 text-[11px] leading-4 text-slate-500">{detail}</p>}
+      {detail && <p className="mt-3 text-[12px] leading-5 text-slate-500">{detail}</p>}
     </div>
   );
 }
@@ -510,29 +519,46 @@ export function WitelYjsPanel({
       </Card>
 
       {/* TABEL */}
-      <Card subtitle="Seluruh angka langsung dari laporan aktif (tanpa perhitungan ulang)." title="Rincian Witel & Telda">
-        <div className="overflow-x-auto rounded-xl border border-slate-200 shadow-sm">
-          <table className="w-full min-w-[980px] border-separate border-spacing-0 text-xs tabular-nums">
+      <Card subtitle="Tabel dibuat lebih terstruktur agar MTD dan YTD mudah dibedakan. Semua angka tetap langsung dari laporan aktif." title="Rincian Witel & Telda">
+        <div className="mb-3 flex flex-wrap gap-2 text-[11px]">
+          <span className="inline-flex items-center rounded-full bg-slate-100 px-2.5 py-1 font-semibold text-slate-600">Kolom MTD = kinerja bulan berjalan</span>
+          <span className="inline-flex items-center rounded-full px-2.5 py-1 font-semibold text-slate-700" style={{ backgroundColor: `${t.primary}14` }}>Kolom YTD = akumulasi tahun berjalan</span>
+          <span className="inline-flex items-center rounded-full bg-rose-50 px-2.5 py-1 font-semibold text-rose-700">Merah = perlu perhatian</span>
+          <span className="inline-flex items-center rounded-full bg-emerald-50 px-2.5 py-1 font-semibold text-emerald-700">Hijau = positif</span>
+        </div>
+        <div className="overflow-x-auto rounded-2xl border border-slate-200 shadow-sm">
+          <table className="w-full min-w-[1080px] border-separate border-spacing-0 text-xs tabular-nums">
             <thead>
-              <tr className="text-left text-[10px] font-bold uppercase tracking-wider text-white" style={{ backgroundColor: t.primary }}>
-                {["Wilayah", "Target FM", "Real MTD", "Ach", "Rank", "Shortage", "GR MTD", "Real YTD", "Ach YTD", "Rank YTD"].map((h, i) => (
-                  <th key={h} className={`whitespace-nowrap border-r border-white/15 px-3 py-3 ${i > 0 ? "text-right" : ""}`}>{h}</th>
-                ))}
+              <tr className="text-center text-[10px] font-bold uppercase tracking-[0.18em] text-white" style={{ backgroundColor: t.primary }}>
+                <th className="sticky left-0 z-20 border-r border-white/15 px-4 py-3 text-left" rowSpan={2}>Wilayah</th>
+                <th className="border-r border-white/15 px-3 py-3" rowSpan={2}>Target FM</th>
+                <th className="border-r border-white/15 px-3 py-3" colSpan={5}>Kinerja MTD</th>
+                <th className="px-3 py-3" colSpan={3}>Kinerja YTD</th>
+              </tr>
+              <tr className="text-center text-[10px] font-bold uppercase tracking-[0.14em] text-white/95" style={{ backgroundColor: t.primary }}>
+                <th className="border-r border-white/15 px-3 py-2">Real</th>
+                <th className="border-r border-white/15 px-3 py-2">Ach</th>
+                <th className="border-r border-white/15 px-3 py-2">Rank</th>
+                <th className="border-r border-white/15 px-3 py-2">Shortage</th>
+                <th className="border-r border-white/15 px-3 py-2">Growth</th>
+                <th className="border-r border-white/15 px-3 py-2">Real</th>
+                <th className="border-r border-white/15 px-3 py-2">Ach</th>
+                <th className="px-3 py-2">Rank</th>
               </tr>
             </thead>
             <tbody>
               {[{ row: yjs, strong: true, name: "WITEL YJS" }, ...teldaRows.map((row) => ({ row, strong: false, name: row.label })), { row: variant.telda.total, strong: true, name: `TOTAL TELDA (${variant.telda.total.label})` }].map(({ row, strong, name }, i) => (
-                <tr key={`${name}-${i}`} className={`border-b border-slate-100 transition-colors hover:bg-slate-100 ${strong ? "font-bold text-slate-950" : i % 2 === 0 ? "bg-slate-50/75 text-slate-700" : "bg-white text-slate-700"}`} style={strong ? { backgroundColor: t.soft, borderLeft: `3px solid ${t.primary}` } : undefined}>
-                  <td className="whitespace-nowrap px-3 py-3 font-bold text-slate-900">{name}</td>
-                  <td className="px-3 py-2 text-right">{fmtNum(row.targetFm)}</td>
-                  <td className="px-3 py-2 text-right">{fmtNum(row.mtd)}</td>
-                  <td className="px-3 py-3 text-right font-extrabold" style={{ color: achColor(row.ach), backgroundColor: `${t.primary}0C` }}>{fmtPct(row.ach)}</td>
-                  <td className="px-3 py-2 text-right">{row.rank ?? "–"}</td>
-                  <td className={`px-3 py-2 text-right ${row.shortageFm < 0 ? "text-rose-600" : "text-emerald-600"}`}>{fmtSigned(row.shortageFm)}</td>
-                  <td className="px-3 py-2 text-right"><GrowthBadge value={row.growthMtd} /></td>
-                  <td className="px-3 py-2 text-right">{fmtNum(row.realYtd)}</td>
-                  <td className="px-3 py-3 text-right font-extrabold" style={{ color: achColor(row.achYtd), backgroundColor: `${t.primary}0C` }}>{fmtPct(row.achYtd)}</td>
-                  <td className="px-3 py-2 text-right">{row.rankYtd ?? "–"}</td>
+                <tr key={`${name}-${i}`} className={`border-b border-slate-100 transition-colors hover:bg-slate-50 ${strong ? "font-bold text-slate-950" : i % 2 === 0 ? "bg-slate-50/75 text-slate-700" : "bg-white text-slate-700"}`} style={strong ? { backgroundColor: t.soft, boxShadow: `inset 4px 0 0 ${t.primary}` } : undefined}>
+                  <td className="sticky left-0 z-10 whitespace-nowrap border-r border-slate-200 px-4 py-3 font-bold text-slate-900" style={{ backgroundColor: strong ? t.soft : i % 2 === 0 ? '#f8fafc' : '#ffffff' }}>{name}</td>
+                  <td className="border-r border-slate-100 px-3 py-2 text-right font-semibold">{fmtNum(row.targetFm)}</td>
+                  <td className="border-r border-slate-100 px-3 py-2 text-right">{fmtNum(row.mtd)}</td>
+                  <td className="border-r border-slate-100 px-3 py-3 text-right font-extrabold" style={{ color: achColor(row.ach), backgroundColor: `${t.primary}10` }}>{fmtPct(row.ach)}</td>
+                  <td className="border-r border-slate-100 px-3 py-2 text-right">{row.rank ?? "–"}</td>
+                  <td className={`border-r border-slate-100 px-3 py-2 text-right font-semibold ${row.shortageFm < 0 ? "text-rose-600" : "text-emerald-600"}`}>{fmtSigned(row.shortageFm)}</td>
+                  <td className="border-r border-slate-100 px-3 py-2 text-right"><GrowthBadge value={row.growthMtd} /></td>
+                  <td className="border-r border-slate-100 bg-slate-50/70 px-3 py-2 text-right">{fmtNum(row.realYtd)}</td>
+                  <td className="border-r border-slate-100 bg-slate-50/70 px-3 py-3 text-right font-extrabold" style={{ color: achColor(row.achYtd), backgroundColor: `${t.primary}12` }}>{fmtPct(row.achYtd)}</td>
+                  <td className="bg-slate-50/70 px-3 py-2 text-right">{row.rankYtd ?? "–"}</td>
                 </tr>
               ))}
             </tbody>

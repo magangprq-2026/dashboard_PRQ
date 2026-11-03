@@ -161,32 +161,53 @@ export function LtsYjsPanel({
         </div>
       </Card>
 
-      <Card subtitle="Seluruh angka langsung dari laporan aktif (tanpa perhitungan ulang)." title="Rincian Witel & HOTDA">
-        <div className="overflow-x-auto rounded-xl border border-slate-200 shadow-sm">
-          <table className="w-full min-w-[1040px] border-separate border-spacing-0 text-xs tabular-nums">
+      <Card subtitle="Struktur tabel dikelompokkan agar Sales, CT0, CAPS, dan Score lebih mudah dipahami. Semua angka tetap dari laporan aktif." title="Rincian Witel & HOTDA">
+        <div className="mb-3 flex flex-wrap gap-2 text-[11px]">
+          <span className="inline-flex items-center rounded-full bg-slate-100 px-2.5 py-1 font-semibold text-slate-600">Score = 50% CT0/Sales + 50% CAPS/Sales</span>
+          <span className="inline-flex items-center rounded-full bg-violet-50 px-2.5 py-1 font-semibold text-violet-700">Ungu = kolom score utama</span>
+          <span className="inline-flex items-center rounded-full bg-amber-50 px-2.5 py-1 font-semibold text-amber-700">Gap positif = masih ada kekurangan</span>
+          <span className="inline-flex items-center rounded-full bg-emerald-50 px-2.5 py-1 font-semibold text-emerald-700">Gap negatif/0 = relatif aman</span>
+        </div>
+        <div className="overflow-x-auto rounded-2xl border border-slate-200 shadow-sm">
+          <table className="w-full min-w-[1160px] border-separate border-spacing-0 text-xs tabular-nums">
             <thead>
-              <tr className="bg-[#5b21b6] text-left text-[10px] font-bold uppercase tracking-wider text-white">
-                {["Wilayah", "Koordinator", "Sales", "CT0", "CT0 %", "Rank", "CAPS", "CAPS %", "Rank", "Score", "Rank", "Churn", "Gap"].map((h, i) => (
-                  <th key={`${h}-${i}`} className={`whitespace-nowrap border-r border-white/15 px-3 py-3 ${i > 1 ? "text-right" : ""}`}>{h}</th>
-                ))}
+              <tr className="text-center text-[10px] font-bold uppercase tracking-[0.18em] text-white" style={{ backgroundColor: '#5b21b6' }}>
+                <th className="sticky left-0 z-20 border-r border-white/15 px-4 py-3 text-left" rowSpan={2}>Wilayah</th>
+                <th className="border-r border-white/15 px-3 py-3 text-left" rowSpan={2}>Koordinator</th>
+                <th className="border-r border-white/15 px-3 py-3" rowSpan={2}>Sales</th>
+                <th className="border-r border-white/15 px-3 py-3" colSpan={3}>Bobot 50% CT0</th>
+                <th className="border-r border-white/15 px-3 py-3" colSpan={3}>Bobot 50% CAPS</th>
+                <th className="border-r border-white/15 px-3 py-3" colSpan={2}>Score</th>
+                <th className="border-r border-white/15 px-3 py-3" rowSpan={2}>Churn</th>
+                <th className="px-3 py-3" rowSpan={2}>Gap</th>
+              </tr>
+              <tr className="text-center text-[10px] font-bold uppercase tracking-[0.14em] text-white/95" style={{ backgroundColor: '#5b21b6' }}>
+                <th className="border-r border-white/15 px-3 py-2">CT0</th>
+                <th className="border-r border-white/15 px-3 py-2">CT0/Sales</th>
+                <th className="border-r border-white/15 px-3 py-2">Rank</th>
+                <th className="border-r border-white/15 px-3 py-2">CAPS</th>
+                <th className="border-r border-white/15 px-3 py-2">CAPS/Sales</th>
+                <th className="border-r border-white/15 px-3 py-2">Rank</th>
+                <th className="border-r border-white/15 px-3 py-2">Score</th>
+                <th className="border-r border-white/15 px-3 py-2">Rank</th>
               </tr>
             </thead>
             <tbody>
               {tableRows.map(({ row, strong, name, coord }, i) => (
-                <tr key={`${name}-${i}`} className={`border-b border-slate-100 transition-colors hover:bg-violet-50 ${strong ? "border-l-[3px] border-l-violet-600 bg-violet-100/80 font-bold text-slate-900" : i % 2 === 0 ? "bg-slate-50/75 text-slate-700" : "bg-white text-slate-700"}`}>
-                  <td className="whitespace-nowrap px-3 py-3 font-bold text-slate-900">{name}</td>
-                  <td className="px-3 py-2 text-slate-500">{coord ?? "–"}</td>
-                  <td className="px-3 py-2 text-right">{fmtNum(row.sales)}</td>
-                  <td className="px-3 py-2 text-right">{row.ct0 === null ? "–" : fmtNum(row.ct0)}</td>
-                  <td className="px-3 py-2 text-right">{row.ct0 === null ? "–" : fmtPct(row.ct0Ratio, 2)}</td>
-                  <td className="px-3 py-2 text-right">{row.ct0Rank ?? "–"}</td>
-                  <td className="px-3 py-2 text-right">{fmtNum(row.caps)}</td>
-                  <td className="px-3 py-2 text-right">{fmtPct(row.capsRatio, 2)}</td>
-                  <td className="px-3 py-2 text-right">{row.capsRank ?? "–"}</td>
-                  <td className="bg-violet-50/90 px-3 py-3 text-right font-extrabold text-violet-800">{fmtPct(row.score, 2)}</td>
-                  <td className="px-3 py-2 text-right">{row.scoreRank ?? "–"}</td>
-                  <td className="px-3 py-2 text-right">{fmtNum(row.churn)}</td>
-                  <td className={`px-3 py-2 text-right ${row.gap > 0 ? "text-amber-700" : "text-emerald-600"}`}>{fmtSigned(row.gap)}</td>
+                <tr key={`${name}-${i}`} className={`border-b border-slate-100 transition-colors hover:bg-violet-50 ${strong ? "bg-violet-100/80 font-bold text-slate-900" : i % 2 === 0 ? "bg-slate-50/75 text-slate-700" : "bg-white text-slate-700"}`} style={strong ? { boxShadow: 'inset 4px 0 0 #7c3aed' } : undefined}>
+                  <td className="sticky left-0 z-10 whitespace-nowrap border-r border-slate-200 px-4 py-3 font-bold text-slate-900" style={{ backgroundColor: strong ? '#ede9fe' : i % 2 === 0 ? '#f8fafc' : '#ffffff' }}>{name}</td>
+                  <td className="border-r border-slate-100 px-3 py-2 text-slate-500">{coord ?? "–"}</td>
+                  <td className="border-r border-slate-100 px-3 py-2 text-right font-semibold">{fmtNum(row.sales)}</td>
+                  <td className="border-r border-slate-100 px-3 py-2 text-right">{row.ct0 === null ? "–" : fmtNum(row.ct0)}</td>
+                  <td className="border-r border-slate-100 bg-slate-50/70 px-3 py-2 text-right">{row.ct0 === null ? "–" : fmtPct(row.ct0Ratio, 2)}</td>
+                  <td className="border-r border-slate-100 px-3 py-2 text-right">{row.ct0Rank ?? "–"}</td>
+                  <td className="border-r border-slate-100 px-3 py-2 text-right">{fmtNum(row.caps)}</td>
+                  <td className="border-r border-slate-100 bg-slate-50/70 px-3 py-2 text-right">{fmtPct(row.capsRatio, 2)}</td>
+                  <td className="border-r border-slate-100 px-3 py-2 text-right">{row.capsRank ?? "–"}</td>
+                  <td className="border-r border-slate-100 bg-violet-50/90 px-3 py-3 text-right font-extrabold text-violet-800">{fmtPct(row.score, 2)}</td>
+                  <td className="border-r border-slate-100 px-3 py-2 text-right">{row.scoreRank ?? "–"}</td>
+                  <td className="border-r border-slate-100 px-3 py-2 text-right">{fmtNum(row.churn)}</td>
+                  <td className={`px-3 py-2 text-right font-semibold ${row.gap > 0 ? "text-amber-700" : "text-emerald-600"}`}>{fmtSigned(row.gap)}</td>
                 </tr>
               ))}
             </tbody>
