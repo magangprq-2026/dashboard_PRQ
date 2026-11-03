@@ -18,7 +18,7 @@ export type LtsReportRow = {
   label: string;
   coordinator?: string;
   sales: number;
-  ct0: number;
+  ct0: number | null;
   ct0Ratio: number;
   ct0Rank: number | null;
   caps: number;
@@ -391,8 +391,8 @@ function capsMetricForRow(tabKey: LtsReportTabKey, headers: string[], row: LtsMa
   const hasProductColumn = hasAnyColumn(headers, ["L_PRODUK", "PRODUK", "PRODUCT"]);
   if (!productMatchesMode(tabKey, "caps", product, hasProductColumn)) return blankAccumulator();
   const ssLDo = rowValue(row, headers, ["SSL_DO"], 0);
-  // CHURN = SUM(SSL_DO) divisi RBS (pivot CHURN di LTS ALL SEGMEN). Hanya bila file CAPS memuat kolom DIVISI.
-  const churn = capsHasDivisi(headers) && normalizeLabel(getCell(row, headers, ["DIVISI"])) === "RBS" ? ssLDo : 0;
+  // CHURN pada laporan LTS adalah acuan tetap workbook, bukan SUM(SSL_DO) harian.
+  const churn = 0;
   // COUNTIFS(SSL_DO, 1): hanya baris dengan SSL_DO = 1 yang dihitung 1.
   return { sales: 0, ct0: 0, caps: ssLDo === 1 ? 1 : 0, churn };
 }
@@ -458,8 +458,8 @@ function buildReportRows(scope: LtsScope, tabKey: LtsReportTabKey, datasets: Lts
   const coordinators = new Map(HOTDA_GROUPS.map((group) => [group.label, group.coordinator]));
   // Sheet "LTS HOTDA (HSI only)" menulis koordinator KEBUMEN = ODHY ANUGRAH AGUSTA.
   if (tabKey === "hsi") coordinators.set("KEBUMEN", "ODHY ANUGRAH AGUSTA");
-  const churnFromData = Boolean(datasets.caps && capsHasDivisi(datasets.caps.headers));
-  const grouped = new Map(labels.map((label) => [label, { ...blankAccumulator(), churn: churnFromData ? 0 : churnForLabel(scope, label) }]));
+  const ct0Available = Boolean(datasets.ct0);
+  const grouped = new Map(labels.map((label) => [label, { ...blankAccumulator(), churn: churnForLabel(scope, label) }]));
 
   addDatasetRows(grouped, scope, "sales", datasets.sales, tabKey);
   addDatasetRows(grouped, scope, "ct0", datasets.ct0, tabKey);
@@ -473,7 +473,8 @@ function buildReportRows(scope: LtsScope, tabKey: LtsReportTabKey, datasets: Lts
       label,
       coordinator: coordinators.get(label),
       sales: value.sales,
-      ct0: value.ct0,
+      // Blank CT0 di awal bulan mengikuti Excel: belum tersedia, bukan realisasi nol.
+      ct0: ct0Available ? value.ct0 : null,
       ct0Ratio,
       ct0Rank: null,
       caps: value.caps,
@@ -497,7 +498,7 @@ function buildReportRows(scope: LtsScope, tabKey: LtsReportTabKey, datasets: Lts
   const totalValue = reportRows.reduce(
     (acc, row) => ({
       sales: acc.sales + row.sales,
-      ct0: acc.ct0 + row.ct0,
+      ct0: acc.ct0 + (row.ct0 ?? 0),
       caps: acc.caps + row.caps,
       churn: acc.churn + row.churn,
     }),
@@ -508,7 +509,7 @@ function buildReportRows(scope: LtsScope, tabKey: LtsReportTabKey, datasets: Lts
   const total: LtsReportRow = {
     label: scope === "witel" ? "TREG 3" : "YOGYAKARTA JATENG SELATAN",
     sales: totalValue.sales,
-    ct0: totalValue.ct0,
+    ct0: ct0Available ? totalValue.ct0 : null,
     ct0Ratio: totalCt0Ratio,
     ct0Rank: null,
     caps: totalValue.caps,
@@ -538,7 +539,8 @@ export function computeLtsReport(tabKey: LtsReportTabKey, datasets: LtsReportSou
   const tab = ltsReportTabs.find((item) => item.key === tabKey);
   if (!tab) throw new Error("Tab LTS tidak valid.");
   const definition = ltsDatasetDefinitions[tab.datasetKey];
-  const primaryDataset = datasets[definition.datasetKey];
+  // CT0/REG bulan berjalan boleh belum terbit; HSI tetap dihitung dari Sales/PS dan CAPS/NAL.
+  const primaryDataset = datasets[definition.datasetKey] ?? (tabKey === "hsi" ? datasets.sales : undefined);
   if (!primaryDataset) throw new Error(`${definition.reportLabel} membutuhkan ${definition.label}.`);
 
   const witelRows = buildReportRows("witel", tabKey, datasets);

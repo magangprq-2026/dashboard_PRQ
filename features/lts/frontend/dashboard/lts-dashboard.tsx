@@ -840,7 +840,7 @@ function DashboardHome({
                 <div className="grid gap-2 p-2.5">
                   <div className="grid gap-2 sm:grid-cols-2">
                     <MetricCard label="SALES" value={formatNumber(active.row.sales)} detail="BASE LTS" icon={Target} />
-                    <MetricCard label="CT0" value={formatNumber(active.row.ct0)} detail="BOBOT 50%" tone="warn" icon={TrendingDown} />
+                    <MetricCard label="CT0" value={ct0Pending ? "Belum tersedia" : formatNumber(active.row.ct0)} detail="BOBOT 50%" tone="warn" icon={TrendingDown} />
                     <MetricCard label="CAPS" value={formatNumber(active.row.caps)} detail="BOBOT 50%" tone="warn" icon={FileSpreadsheet} />
                     <MetricCard label="SCORE" value={formatRatio(active.row.score)} detail="CT0 + CAPS / SALES" tone="good" icon={ArrowUpRight} />
                   </div>
@@ -928,7 +928,7 @@ function DashboardHome({
 
       <div className="grid gap-2.5 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
         <MetricCard label="TOTAL SALES" value={formatNumber(active.row.sales)} detail={report.label} icon={Target} />
-        <MetricCard label="TOTAL CT0" value={formatNumber(active.row.ct0)} detail="BOBOT 50% CT0" tone="warn" icon={TrendingDown} />
+        <MetricCard label="TOTAL CT0" value={ct0Pending ? "Belum tersedia" : formatNumber(active.row.ct0)} detail="BOBOT 50% CT0" tone="warn" icon={TrendingDown} />
         <MetricCard label="TOTAL CAPS" value={formatNumber(active.row.caps)} detail="BOBOT 50% CAPS" tone="warn" icon={FileSpreadsheet} />
         <MetricCard label="SCORE LTS" value={formatRatio(active.row.score)} detail="LOWER IS BETTER" tone="good" icon={ArrowUpRight} />
         <MetricCard label="GAP CAPS" value={formatNumber(active.row.gap)} detail="CAPS 27/8 - CAPS" tone={active.row.gap < 0 ? "bad" : "good"} icon={BarChart3} />
@@ -1268,7 +1268,7 @@ export function LtsDashboard({ permissions = fullAccessPermissions }: { permissi
     const output: Partial<Record<LtsReportTabKey, LtsComputedReport>> = {};
     if (!hydrated) return output;
     for (const tab of ltsReportTabs) {
-      const dataset = filteredDatasetState.datasets[tab.datasetKey];
+      const dataset = filteredDatasetState.datasets[tab.datasetKey] ?? (tab.key === "hsi" ? filteredDatasetState.datasets.sales : undefined);
       if (!dataset) continue;
       output[tab.key] = { ...computeLtsReport(tab.key, filteredDatasetState.datasets), cutoffLabel: reportCutoffLabel, periodLabel: reportPeriodLabel };
     }
@@ -1276,6 +1276,7 @@ export function LtsDashboard({ permissions = fullAccessPermissions }: { permissi
   }, [filteredDatasetState.datasets, hydrated, reportCutoffLabel, reportPeriodLabel]);
 
   const activeReport = reports[activeTab];
+  const ct0Pending = Boolean(activeReport && !filteredDatasetState.datasets.ct0);
   const readyCount = Object.values(ltsDatasetDefinitions).filter((definition) => datasets[definition.datasetKey]).length;
   const periodOptions = useMemo(() => {
     // Hanya bulan yang Sales + CT0 + CAPS-nya lengkap. Periode yang sedang dipilih tetap ikut tampil
