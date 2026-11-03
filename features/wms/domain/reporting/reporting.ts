@@ -321,7 +321,7 @@ function makeRows(rows: MasterRow[], periodKey: string, scope: ReportScope, now:
     // REAL MTD bulan lalu (sampai batas hari REAL!AH1) dan REAL FM bulan lalu (REAL!AG).
     let previousDays: readonly number[];
     let realFmPrev: number;
-    if (history && wmsHistory.reportPeriodKey === periodKey) {
+    if (history && wmsHistory.reportPeriodKey === periodKey && !rows.some((row) => periodFromRow(row) === previousPeriod)) {
       previousDays = history.prevDays;
       realFmPrev = history.prevTotal;
     } else {
@@ -329,6 +329,7 @@ function makeRows(rows: MasterRow[], periodKey: string, scope: ReportScope, now:
       previousDays = fromRows;
       realFmPrev =
         history && previousYear === 2026 && previousMonth >= 1 && previousMonth <= wmsHistory.lastClosedMonth2026
+          && !rows.some((row) => periodFromRow(row) === previousPeriod)
           ? toNumber(history.y2026[previousMonth - 1])
           : fromRows.reduce((sum, value) => sum + value, 0);
     }
@@ -338,7 +339,7 @@ function makeRows(rows: MasterRow[], periodKey: string, scope: ReportScope, now:
     let realYtd = mtd;
     for (let m = 1; m < month; m += 1) {
       realYtd +=
-        history && m <= wmsHistory.lastClosedMonth2026
+        history && m <= wmsHistory.lastClosedMonth2026 && !rows.some((row) => periodFromRow(row) === `${year}${pad2(m)}`)
           ? toNumber(history.y2026[m - 1])
           : indexedMonthTotal(salesIndex, names, `${year}${pad2(m)}`);
     }

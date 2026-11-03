@@ -913,8 +913,18 @@ function reportForWmsPeriodFilter(
           startDay: 1,
           weight: 1,
         }));
-  if (parts.length <= 1 && parts[0]?.periodKey === selectedPeriodKey && parts[0]?.startDay === 1 && parts[0]?.weight === 1) {
-    return { report: baseReport, validationMessage: null };
+  // Jangan agregasikan satu bulan penuh: gunakan hasil perhitungan asli
+  // agar GR YTD, target YTD dan shortage tidak berubah saat berpindah bulan.
+  if (normalized.mode !== "ytd" && parts.length === 1 && parts[0].startDay === 1 && parts[0].weight === 1) {
+    const only = parts[0];
+    const fullMonthDay = new Date(Number(only.periodKey.slice(0, 4)), Number(only.periodKey.slice(4, 6)), 0).getDate();
+    if (only.endDay === fullMonthDay) {
+      if (!periodArchive[only.periodKey]) return { report: baseReport, validationMessage: "Data periode yang dipilih belum tersedia." };
+      return {
+        report: only.periodKey === selectedPeriodKey ? baseReport : computeWmsReport(allRows, only.periodKey),
+        validationMessage: null,
+      };
+    }
   }
   const reportParts = parts
     .map((part) => {

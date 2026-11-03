@@ -411,9 +411,11 @@ function previousFromArchive(period: ReportingPeriod, clock: JakartaClock | null
       const prev = countsFor(prevKey);
       const daily = prev ? [...(prev[scope].get(raw) ?? Array(prev.period.days).fill(0))] : Array(31).fill(0);
       const months = Array.from({ length: period.monthIndex }, (_, index) => {
-        if (period.year === seedYear && index < row.months.length) return row.months[index];
         const counts = countsFor(`${period.year}${pad(index + 1)}`);
-        return counts ? total(counts[scope], raw) : 0;
+        // Data aktual di arsip harus mengungguli referensi seed yang dibundel.
+        if (counts) return total(counts[scope], raw);
+        if (period.year === seedYear && index < row.months.length) return row.months[index];
+        return 0;
       });
       out[label] = { daily, months, ytdPrev: row.ytdPrev };
     }
