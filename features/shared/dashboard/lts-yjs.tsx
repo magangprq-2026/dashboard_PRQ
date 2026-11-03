@@ -20,12 +20,13 @@ const tooltipStyle = { borderRadius: 12, border: "1px solid #e2e8f0", fontSize: 
 type TabInfo = { key: LtsReportTabKey; label: string };
 
 export function LtsYjsPanel({
-  reports, activeTab, onTabChange, tabs,
+  reports, activeTab, onTabChange, tabs, showTabs = true,
 }: {
   reports: Partial<Record<LtsReportTabKey, LtsComputedReport>>;
   activeTab: LtsReportTabKey;
   onTabChange: (tab: LtsReportTabKey) => void;
   tabs: TabInfo[];
+  showTabs?: boolean;
 }) {
   const available = tabs.filter((tab) => reports[tab.key]);
   const selected = reports[activeTab] ? activeTab : available[0]?.key;
@@ -83,11 +84,13 @@ export function LtsYjsPanel({
               <span className="inline-flex items-center gap-1.5 rounded-full bg-white/15 px-3 py-1.5 ring-1 ring-white/20"><Trophy className="h-3.5 w-3.5" /> Peringkat Score: {yjs.scoreRank ?? "–"} dari {report.witel.rows.length} witel</span>
               <span className="inline-flex items-center gap-1.5 rounded-full bg-white/15 px-3 py-1.5 ring-1 ring-white/20"><Crown className="h-3.5 w-3.5" /> Witel terbaik: {derived.witelSorted[0]?.label ?? "–"}</span>
             </div>
-            <div className="mt-4 inline-flex flex-wrap rounded-xl bg-black/20 p-1">
-              {available.map((tab) => (
-                <button key={tab.key} className={`rounded-lg px-3 py-1.5 text-xs font-bold transition ${tab.key === selected ? "bg-white text-slate-900" : "text-white/80 hover:bg-white/10"}`} onClick={() => onTabChange(tab.key)} type="button">{tab.label}</button>
-              ))}
-            </div>
+            {showTabs && (
+              <div className="mt-4 inline-flex flex-wrap rounded-xl bg-black/20 p-1">
+                {available.map((tab) => (
+                  <button key={tab.key} className={`rounded-lg px-3 py-1.5 text-xs font-bold transition ${tab.key === selected ? "bg-white text-slate-900" : "text-white/80 hover:bg-white/10"}`} onClick={() => onTabChange(tab.key)} type="button">{tab.label}</button>
+                ))}
+              </div>
+            )}
           </div>
           <div className="rounded-2xl bg-black/20 px-8 py-6 text-center ring-1 ring-white/15">
             <p className="text-[10px] font-bold uppercase tracking-wider text-white/65">Score LTS</p>

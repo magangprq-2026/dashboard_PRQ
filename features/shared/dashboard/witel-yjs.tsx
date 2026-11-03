@@ -82,9 +82,9 @@ export const themeStyle = {
 /** Gaya tab Witel YJS saja: diselaraskan dengan header Executive Overview pada Home.
  * HomeHighlights dan seluruh tab lain tetap memakai tema aslinya. */
 export const yjsPanelTheme = {
-  hsi: { ...themeStyle.hsi, primary: "#3b82f6", secondary: "#60a5fa", soft: "#eff6ff", heroClass: "bg-[#101f38]", accent: "#3b82f6" },
-  wms: { ...themeStyle.wms, primary: "#0f766e", secondary: "#14b8a6", soft: "#f0fdfa", heroClass: "bg-[#101f38]", accent: "#14b8a6" },
-  lts: { ...themeStyle.lts, primary: "#7c3aed", secondary: "#a78bfa", soft: "#f5f3ff", heroClass: "bg-[#101f38]", accent: "#8b5cf6" },
+  hsi: { ...themeStyle.hsi, primary: "#2563eb", secondary: "#38bdf8", soft: "#eff6ff", heroClass: themeStyle.hsi.heroClass, accent: "#38bdf8" },
+  wms: { ...themeStyle.wms, primary: "#d97706", secondary: "#fbbf24", soft: "#fffbeb", heroClass: themeStyle.wms.heroClass, accent: "#fbbf24" },
+  lts: { ...themeStyle.lts, primary: "#7c3aed", secondary: "#c084fc", soft: "#f5f3ff", heroClass: themeStyle.lts.heroClass, accent: "#b28ae5" },
 } as const;
 
 const GOOD = "#059669";

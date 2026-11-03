@@ -1352,34 +1352,41 @@ export function WmsDashboard({ permissions = fullAccessPermissions }: { permissi
 {/* Periode YJS terhubung langsung dengan state laporan, bukan hanya label. */}
         {renderView === "yjs" && (
           <div className="space-y-4">
-            <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-[0_14px_40px_-30px_rgba(15,23,42,0.4)]">
-              <div className="flex flex-wrap items-center justify-between gap-3 bg-[#101f38] px-5 py-3 text-white" style={{ borderTop: '3px solid #14b8a6' }}>
-                <div>
-                  <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-slate-300">Witel Yogya Jateng Selatan · WMS</p>
-                  <h3 className="mt-0.5 text-sm font-bold">Filter periode kinerja</h3>
+            <section className={`${panelClass} relative overflow-hidden`}>
+              <div className="absolute inset-0 bg-[radial-gradient(circle_at_88%_10%,rgba(245,158,11,0.16),transparent_28%),linear-gradient(135deg,#ffffff_0%,#fffaf2_54%,#fff7ed_100%)]" />
+              <div className="absolute inset-x-0 top-0 h-1 bg-gradient-to-r from-[#3b2414] via-amber-500 to-orange-300" />
+              <div className="relative flex flex-wrap items-center justify-between gap-3 px-4 py-3">
+                <div className="min-w-[280px] flex-1">
+                  <p className="inline-flex items-center gap-2 text-[11px] font-semibold uppercase text-amber-700">
+                    <BarChart3 className="h-4 w-4" />
+                    DASHBOARD REPORTING WMS 2026
+                  </p>
+                  <h1 className="mt-1 text-xl font-semibold uppercase tracking-normal text-[#2a1a10] sm:text-2xl">WMS PERFORMANCE</h1>
+                  <p className="mt-1 max-w-2xl text-xs font-medium uppercase leading-5 text-stone-500">
+                    {displayReport.periodLabel} | WITEL YOGYA JATENG SELATAN | {dataCutoffLabel}
+                  </p>
                 </div>
-                <span className="rounded-lg border border-white/15 bg-white/10 px-3 py-1.5 text-[11px] font-semibold text-slate-100">Mengikuti data laporan aktif</span>
-              </div>
-              <div className="px-5 py-4">
-                <DashboardPeriodFilter
-                  onChange={setPeriodFilter}
-                  options={periodOptions}
-                  theme="wms"
-                  validationMessage={filteredReportState.validationMessage}
-                  value={periodFilter}
-                />
-                <p className="mt-2 text-xs text-slate-500">Setelah periode diganti, kartu KPI, grafik, dan tabel Witel YJS dihitung dari laporan periode yang sama.</p>
+                <div className="flex flex-wrap items-end gap-2">
+                  <DashboardPeriodFilter
+                    onChange={setPeriodFilter}
+                    options={periodOptions}
+                    theme="wms"
+                    validationMessage={filteredReportState.validationMessage}
+                    value={periodFilter}
+                  />
+                  <StatusPill tone="good">VALIDASI MATCH</StatusPill>
+                </div>
               </div>
             </section>
             <WitelYjsPanel
-            cutoffLabel={displayReport.cutoffLabel}
-            dailyMode={yjsDailyMode}
-            moduleName="WMS"
-            periodLabel={displayReport.periodLabel}
-            source="Tableau (MASTER WMS)"
-            theme="wms"
-            variants={yjsVariants}
-          />
+              cutoffLabel={displayReport.cutoffLabel}
+              dailyMode={yjsDailyMode}
+              moduleName="WMS"
+              periodLabel={displayReport.periodLabel}
+              source="Tableau (MASTER WMS)"
+              theme="wms"
+              variants={yjsVariants}
+            />
           </div>
         )}
         {renderView === "home" && (
