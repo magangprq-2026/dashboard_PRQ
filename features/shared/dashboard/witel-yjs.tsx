@@ -523,6 +523,8 @@ export function WitelYjsPanel({
         <div className="mb-3 flex flex-wrap gap-2 text-[11px]">
           <span className="inline-flex items-center rounded-full bg-slate-100 px-2.5 py-1 font-semibold text-slate-600">Kolom MTD = kinerja bulan berjalan</span>
           <span className="inline-flex items-center rounded-full px-2.5 py-1 font-semibold text-slate-700" style={{ backgroundColor: `${t.primary}14` }}>Kolom YTD = akumulasi tahun berjalan</span>
+          <span className="inline-flex items-center rounded-full px-2.5 py-1 font-semibold" style={{ backgroundColor: t.soft, color: t.primary }}>Baris WITEL YJS</span>
+          <span className="inline-flex items-center rounded-full bg-amber-50 px-2.5 py-1 font-semibold text-amber-700">Baris TOTAL TELDA</span>
           <span className="inline-flex items-center rounded-full bg-rose-50 px-2.5 py-1 font-semibold text-rose-700">Merah = perlu perhatian</span>
           <span className="inline-flex items-center rounded-full bg-emerald-50 px-2.5 py-1 font-semibold text-emerald-700">Hijau = positif</span>
         </div>
@@ -547,20 +549,40 @@ export function WitelYjsPanel({
               </tr>
             </thead>
             <tbody>
-              {[{ row: yjs, strong: true, name: "WITEL YJS" }, ...teldaRows.map((row) => ({ row, strong: false, name: row.label })), { row: variant.telda.total, strong: true, name: `TOTAL TELDA (${variant.telda.total.label})` }].map(({ row, strong, name }, i) => (
-                <tr key={`${name}-${i}`} className={`border-b border-slate-100 transition-colors hover:bg-slate-50 ${strong ? "font-bold text-slate-950" : i % 2 === 0 ? "bg-slate-50/75 text-slate-700" : "bg-white text-slate-700"}`} style={strong ? { backgroundColor: t.soft, boxShadow: `inset 4px 0 0 ${t.primary}` } : undefined}>
-                  <td className="sticky left-0 z-10 whitespace-nowrap border-r border-slate-200 px-4 py-3 font-bold text-slate-900" style={{ backgroundColor: strong ? t.soft : i % 2 === 0 ? '#f8fafc' : '#ffffff' }}>{name}</td>
-                  <td className="border-r border-slate-100 px-3 py-2 text-right font-semibold">{fmtNum(row.targetFm)}</td>
-                  <td className="border-r border-slate-100 px-3 py-2 text-right">{fmtNum(row.mtd)}</td>
-                  <td className="border-r border-slate-100 px-3 py-3 text-right font-extrabold" style={{ color: achColor(row.ach), backgroundColor: `${t.primary}10` }}>{fmtPct(row.ach)}</td>
-                  <td className="border-r border-slate-100 px-3 py-2 text-right">{row.rank ?? "–"}</td>
-                  <td className={`border-r border-slate-100 px-3 py-2 text-right font-semibold ${row.shortageFm < 0 ? "text-rose-600" : "text-emerald-600"}`}>{fmtSigned(row.shortageFm)}</td>
-                  <td className="border-r border-slate-100 px-3 py-2 text-right"><GrowthBadge value={row.growthMtd} /></td>
-                  <td className="border-r border-slate-100 bg-slate-50/70 px-3 py-2 text-right">{fmtNum(row.realYtd)}</td>
-                  <td className="border-r border-slate-100 bg-slate-50/70 px-3 py-3 text-right font-extrabold" style={{ color: achColor(row.achYtd), backgroundColor: `${t.primary}12` }}>{fmtPct(row.achYtd)}</td>
-                  <td className="bg-slate-50/70 px-3 py-2 text-right">{row.rankYtd ?? "–"}</td>
+              {[{ row: yjs, strong: true, name: "WITEL YJS" }, ...teldaRows.map((row) => ({ row, strong: false, name: row.label })), { row: variant.telda.total, strong: true, name: `TOTAL TELDA (${variant.telda.total.label})` }].map(({ row, strong, name }, i) => {
+                const isYjs = name === "WITEL YJS";
+                const isTotal = name.startsWith("TOTAL TELDA");
+                const baseBg = isYjs ? t.soft : isTotal ? '#fff7ed' : i % 2 === 0 ? '#f8fafc' : '#ffffff';
+                const ytdBg = isYjs ? `${t.primary}12` : isTotal ? '#ffedd5' : '#f8fafc';
+                return (
+                <tr
+                  key={`${name}-${i}`}
+                  className={`transition-colors hover:bg-slate-50 ${strong ? "font-bold text-slate-950" : "text-slate-700"}`}
+                  style={{
+                    backgroundColor: baseBg,
+                    boxShadow: isYjs ? `inset 5px 0 0 ${t.primary}` : isTotal ? 'inset 5px 0 0 #f59e0b' : undefined,
+                    borderTop: strong ? `2px solid ${isTotal ? '#fdba74' : t.primary}` : '1px solid #dbe3ee',
+                    borderBottom: strong ? `2px solid ${isTotal ? '#fdba74' : t.primary}` : '1px solid #e2e8f0',
+                  }}
+                >
+                  <td className="sticky left-0 z-10 whitespace-nowrap border-r border-slate-300 px-4 py-3 font-bold text-slate-900" style={{ backgroundColor: baseBg }}>
+                    <div className="flex items-center gap-2">
+                      <span>{name}</span>
+                      {isYjs && <span className="rounded-full px-2 py-0.5 text-[10px] font-bold uppercase" style={{ backgroundColor: `${t.primary}20`, color: t.primary }}>Witel</span>}
+                      {isTotal && <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-bold uppercase text-amber-700">Total</span>}
+                    </div>
+                  </td>
+                  <td className="border-r border-slate-200 px-3 py-2 text-right font-semibold">{fmtNum(row.targetFm)}</td>
+                  <td className="border-r border-slate-200 px-3 py-2 text-right">{fmtNum(row.mtd)}</td>
+                  <td className="border-r border-slate-200 px-3 py-3 text-right font-extrabold" style={{ color: achColor(row.ach), backgroundColor: isTotal ? '#fff1e6' : `${t.primary}10` }}>{fmtPct(row.ach)}</td>
+                  <td className="border-r border-slate-200 px-3 py-2 text-right">{row.rank ?? "–"}</td>
+                  <td className={`border-r border-slate-200 px-3 py-2 text-right font-semibold ${row.shortageFm < 0 ? "text-rose-600" : "text-emerald-600"}`}>{fmtSigned(row.shortageFm)}</td>
+                  <td className="border-r border-slate-200 px-3 py-2 text-right"><GrowthBadge value={row.growthMtd} /></td>
+                  <td className="border-r border-slate-200 px-3 py-2 text-right" style={{ backgroundColor: ytdBg }}>{fmtNum(row.realYtd)}</td>
+                  <td className="border-r border-slate-200 px-3 py-3 text-right font-extrabold" style={{ color: achColor(row.achYtd), backgroundColor: isTotal ? '#fff1e6' : `${t.primary}12` }}>{fmtPct(row.achYtd)}</td>
+                  <td className="px-3 py-2 text-right" style={{ backgroundColor: ytdBg }}>{row.rankYtd ?? "–"}</td>
                 </tr>
-              ))}
+              )})}
             </tbody>
           </table>
         </div>
