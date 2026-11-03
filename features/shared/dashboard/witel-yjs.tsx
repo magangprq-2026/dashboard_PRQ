@@ -245,16 +245,16 @@ export function Kpi({ label, value, detail, tone = "default", icon }: { label: s
   } as const;
   const style = toneMap[tone];
   return (
-    <div className="group relative min-w-0 overflow-hidden rounded-2xl border border-slate-200/80 bg-[linear-gradient(180deg,#ffffff_0%,#f8fafc_100%)] px-5 py-4 shadow-[0_14px_36px_-28px_rgba(15,23,42,0.45)] transition hover:-translate-y-0.5 hover:shadow-[0_24px_44px_-28px_rgba(15,23,42,0.38)]">
+    <div className="group relative min-w-0 overflow-hidden rounded-2xl border border-slate-200/80 bg-[linear-gradient(180deg,#ffffff_0%,#f8fafc_100%)] px-4 py-3.5 shadow-[0_14px_36px_-28px_rgba(15,23,42,0.45)] transition hover:-translate-y-0.5 hover:shadow-[0_24px_44px_-28px_rgba(15,23,42,0.38)]">
       <div className={`absolute inset-x-0 top-0 h-1 bg-gradient-to-r ${style.line}`} />
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
-          <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-slate-500">{label}</p>
-          <p className={`mt-3 truncate text-[clamp(1.5rem,2.3vw,2.35rem)] font-extrabold leading-none tracking-tight ${style.value}`} title={value}>{value}</p>
+          <p className="text-[11px] font-bold uppercase tracking-[0.11em] text-slate-500">{label}</p>
+          <p className={`mt-2 truncate text-[clamp(1.35rem,1.7vw,1.85rem)] font-bold leading-tight tracking-tight ${style.value}`} title={value}>{value}</p>
         </div>
-        {icon && <span className={`grid h-9 w-9 shrink-0 place-items-center rounded-xl ${style.soft}`}>{icon}</span>}
+        {icon && <span className={`grid h-8 w-8 shrink-0 place-items-center rounded-lg ${style.soft}`}>{icon}</span>}
       </div>
-      {detail && <p className="mt-3 text-[12px] leading-5 text-slate-500">{detail}</p>}
+      {detail && <p className="mt-2 text-[11px] leading-4 text-slate-500">{detail}</p>}
     </div>
   );
 }
