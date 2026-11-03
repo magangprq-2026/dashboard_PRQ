@@ -1,4 +1,6 @@
 "use client";
+import { ExecutiveOverview } from "@/features/shared/dashboard/executive-overview";
+
 
 import { ACCEPT_BODY_ENCODING_HEADER, BODY_ENCODING_HEADER, GZIP_THRESHOLD_BYTES, canGzip, gunzipToText, gzipText } from "@/features/shared/http/gzip-json";
 import { safeStorageRemove, safeStorageSet, MAX_SNAPSHOTS_PER_PERIOD } from "@/features/shared/storage/safe-storage";
@@ -1378,6 +1380,22 @@ function DashboardHome({
           </div>
         </div>
       </section>
+
+      <ExecutiveOverview
+        theme="hsi"
+        period={report.periodLabel}
+        scope={activeScopeLabel}
+        cutoff={dataCutoffLabel}
+        source={report.source || "MASTER HSI"}
+        metrics={[
+          { label: "Realisasi MTD", value: formatNumber(selectedRkap.mtd), detail: `Target RKAP: ${formatNumber(selectedRkap.targetFm)}` },
+          { label: "Achievement MTD", value: selectedRkap.targetAch === null ? "—" : formatPercent(selectedRkap.targetAch), detail: "Sesuai perhitungan laporan RKAP" },
+          { label: "Realisasi YTD", value: formatNumber(selectedRkap.realYtd), detail: `Target YTD: ${formatNumber(selectedRkap.targetYtd)}` },
+          { label: "Shortage YTD", value: formatNumber(selectedRkap.shortageYtd), detail: "Gap terhadap target YTD", emphasis: selectedRkap.shortageYtd > 0 ? "attention" : "positive" },
+        ]}
+        pending={report.validation.mismatches > 0}
+        message={report.validation.mismatches > 0 ? `${report.validation.mismatches} pemeriksaan internal belum sesuai; cocokkan dengan workbook sumber sebelum publikasi.` : "Angka mengikuti filter dan perhitungan laporan HSI aktif. Status pemeriksaan internal tidak menggantikan rekonsiliasi terhadap XLSX terbaru."}
+      />
 
       <section className={`${panelClass} overflow-hidden`}>
         <div className="relative grid items-start gap-4 bg-[linear-gradient(135deg,#ffffff_0%,#f8fbff_48%,#f4f8ff_100%)] p-4 xl:grid-cols-[1.35fr_0.65fr]">
