@@ -28,6 +28,7 @@ import { ReportCard, achTone as reportAchTone, dayKind as reportDayKind, parsePe
 import { rankTotal } from "@/features/shared/dashboard/rank-color";
 import {
   cutoffDateFromPeriodPart,
+  dateInputForPeriodKey,
   dateRangeLabel,
   dateRangeToMonthParts,
   formatDataCutoff,
@@ -719,17 +720,38 @@ function latestActualDateFromWmsParts(parts: WmsReportPart[]) {
   return fallback ? cutoffDateFromPeriodPart(fallback) : new Date();
 }
 
+// startDate/endDate ikut diselaraskan dengan bulan terpilih (sama seperti HSI). Tanpa ini, label YTD dan tanggal
+// cutoff tertinggal di bulan lama setelah periode diganti.
 function normalizeWmsPeriodFilter(value: DashboardPeriodFilterState) {
-  if (value.mode === "current-month") return { ...value, endMonth: value.startMonth };
-  if (value.mode === "ytd") return { ...value, startMonth: `${value.endMonth.slice(0, 4)}01` };
-  if (value.mode === "date-range") {
+  if (value.mode === "current-month") {
     return {
       ...value,
-      endMonth: value.endDate ? value.endDate.slice(0, 7).replace("-", "") : value.endMonth,
-      startMonth: value.startDate ? value.startDate.slice(0, 7).replace("-", "") : value.startMonth,
+      endDate: dateInputForPeriodKey(value.startMonth, "last"),
+      endMonth: value.startMonth,
+      startDate: dateInputForPeriodKey(value.startMonth, "first"),
     };
   }
-  return value;
+  if (value.mode === "ytd") {
+    const year = value.endMonth.slice(0, 4);
+    return {
+      ...value,
+      endDate: dateInputForPeriodKey(value.endMonth, "last"),
+      startDate: `${year}-01-01`,
+      startMonth: `${year}01`,
+    };
+  }
+  if (value.mode === "monthly") {
+    return {
+      ...value,
+      endDate: dateInputForPeriodKey(value.endMonth, "last"),
+      startDate: dateInputForPeriodKey(value.startMonth, "first"),
+    };
+  }
+  return {
+    ...value,
+    endMonth: value.endDate ? value.endDate.slice(0, 7).replace("-", "") : value.endMonth,
+    startMonth: value.startDate ? value.startDate.slice(0, 7).replace("-", "") : value.startMonth,
+  };
 }
 
 function validateWmsPeriodFilter(value: DashboardPeriodFilterState) {
@@ -760,11 +782,16 @@ function aggregateWmsRows(
   const days = rows.flatMap((part) => wmsRowSegment(part.row, part.startDay, part.endDay).days);
   const mtd = rows.reduce((sum, part) => sum + wmsRowSegment(part.row, part.startDay, part.endDay).mtd, 0);
   const targetFm = rows.reduce((sum, part) => sum + part.row.targetFm * part.weight, 0);
-  const realYtd = ytdRows.reduce((sum, part) => sum + wmsRowSegment(part.row, part.startDay, part.endDay).mtd, 0);
-  const targetYtd = ytdRows.reduce((sum, part) => sum + part.row.targetFm * part.weight, 0);
   const realMtdPrev = rows.reduce((sum, part) => sum + part.row.realMtdPrev * part.weight, 0);
   const realFmPrev = rows.reduce((sum, part) => sum + part.row.realFmPrev * part.weight, 0);
-  const realYtdPrev = ytdRows.reduce((sum, part) => sum + part.row.realYtdPrev * part.weight, 0);
+  // REAL YTD / TARGET YTD / REAL YTD tahun lalu sudah bernilai KUMULATIF (Jan..bulan) di setiap laporan bulanan,
+  // jadi tidak boleh dijumlahkan antar bulan. Cukup ambil dari bulan terakhir: dasar (Jan..bulan lalu) + realisasi
+  // bulan terakhir sampai tanggal cutoff. Cara ini juga benar bila bulan awal tahun tidak ada di arsip.
+  const lastYtd = ytdRows[ytdRows.length - 1];
+  const lastYtdSegment = lastYtd ? wmsRowSegment(lastYtd.row, 1, lastYtd.endDay) : null;
+  const realYtd = lastYtd && lastYtdSegment ? lastYtd.row.realYtd - lastYtd.row.mtd + lastYtdSegment.mtd : 0;
+  const targetYtd = lastYtd ? lastYtd.row.targetYtd - lastYtd.row.targetFm * (1 - Math.min(1, lastYtd.weight)) : 0;
+  const realYtdPrev = lastYtd ? lastYtd.row.realYtdPrev : 0;
   return {
     ...(base ?? {
       ach: null,
@@ -852,11 +879,27 @@ function aggregateWmsTable(
   return { rows: rankedRows, total };
 }
 
+function wmsYtdViewRow(row: WmsReportRow): WmsReportRow {
+  return {
+    ...row,
+    ach: row.achYtd,
+    growthFm: row.growthYtd,
+    growthMtd: row.growthYtd,
+    mtd: row.realYtd,
+    rank: row.rankYtd,
+    realFmPrev: row.realYtdPrev,
+    realMtdPrev: row.realYtdPrev,
+    shortageFm: row.shortageYtd,
+    targetFm: row.targetYtd,
+  };
+}
+
 function reportForWmsPeriodFilter(
   baseReport: WmsComputedReport,
   periodArchive: PeriodArchive,
   selectedPeriodKey: string,
   filter: DashboardPeriodFilterState,
+  allRows: MasterRow[],
 ) {
   const normalized = normalizeWmsPeriodFilter(filter);
   const validationMessage = validateWmsPeriodFilter(normalized);
@@ -877,7 +920,9 @@ function reportForWmsPeriodFilter(
     .map((part) => {
       const entry = periodArchive[part.periodKey];
       if (!entry) return null;
-      return { ...part, report: computeWmsReport(entry.rows, part.periodKey) };
+      // Hitung dari SEMUA baris arsip (bukan hanya baris bulan itu) supaya pembanding bulan lalu dan dasar YTD
+      // sama persis dengan laporan periode aktif.
+      return { ...part, report: computeWmsReport(allRows, part.periodKey) };
     })
     .filter(Boolean) as WmsReportPart[];
   if (reportParts.length === 0) return { report: baseReport, validationMessage: "Data periode yang dipilih belum tersedia." };
@@ -887,16 +932,19 @@ function reportForWmsPeriodFilter(
     .map((part) => {
       const entry = periodArchive[part.periodKey];
       if (!entry) return null;
-      return { ...part, report: computeWmsReport(entry.rows, part.periodKey) };
+      return { ...part, report: computeWmsReport(allRows, part.periodKey) };
     })
     .filter(Boolean) as WmsReportPart[];
   const effectiveYtdParts = ytdParts.length > 0 ? ytdParts : reportParts;
-  const witel = aggregateWmsTable(reportParts, (report) => report.witel.rows, (report) => report.witel.total, "Total", effectiveYtdParts);
-  const telda = aggregateWmsTable(reportParts, (report) => report.telda.rows, (report) => report.telda.total, "YK JATENG SELATAN", effectiveYtdParts);
+  // Mode YTD: sisi "periode" disamakan dengan sisi YTD (kumulatif Jan..bulan akhir) agar kartu berlabel YTD konsisten.
+  const asPeriodView = (table: { rows: WmsReportRow[]; total: WmsReportRow }) =>
+    normalized.mode === "ytd" ? { rows: table.rows.map(wmsYtdViewRow), total: wmsYtdViewRow(table.total) } : table;
+  const witel = asPeriodView(aggregateWmsTable(reportParts, (report) => report.witel.rows, (report) => report.witel.total, "Total", effectiveYtdParts));
+  const telda = asPeriodView(aggregateWmsTable(reportParts, (report) => report.telda.rows, (report) => report.telda.total, "YK JATENG SELATAN", effectiveYtdParts));
   const periodLabel =
     normalized.mode === "date-range"
       ? dateRangeLabel(normalized.startDate, normalized.endDate)
-      : periodRangeLabel(reportParts[0].periodKey, reportParts[reportParts.length - 1].periodKey);
+      : periodRangeLabel(normalized.mode === "ytd" ? normalized.startMonth : reportParts[0].periodKey, reportParts[reportParts.length - 1].periodKey);
   return {
     report: {
       ...baseReport,
@@ -908,7 +956,10 @@ function reportForWmsPeriodFilter(
       validation: { ...baseReport.validation, witelMtd: witel.rows.reduce((sum, row) => sum + row.mtd, 0) },
       witel,
     },
-    validationMessage: reportParts.length < parts.length ? "Sebagian data periode belum tersedia, hanya periode yang tersedia yang dihitung." : null,
+    validationMessage:
+      (normalized.mode === "ytd" ? lastPart.periodKey !== parts[parts.length - 1]?.periodKey : reportParts.length < parts.length)
+        ? "Sebagian data periode belum tersedia, hanya periode yang tersedia yang dihitung."
+        : null,
   };
 }
 
@@ -970,8 +1021,8 @@ export function WmsDashboard({ permissions = fullAccessPermissions }: { permissi
   const reportRows = useMemo(() => allRowsFromArchive(periodArchive, selectedPeriodKey, rows), [periodArchive, rows, selectedPeriodKey]);
   const report = useMemo(() => computeWmsReport(reportRows, selectedPeriodKey), [reportRows, selectedPeriodKey]);
   const filteredReportState = useMemo(
-    () => reportForWmsPeriodFilter(report, periodArchive, selectedPeriodKey, periodFilter),
-    [periodArchive, periodFilter, report, selectedPeriodKey],
+    () => reportForWmsPeriodFilter(report, periodArchive, selectedPeriodKey, periodFilter, reportRows),
+    [periodArchive, periodFilter, report, reportRows, selectedPeriodKey],
   );
   const displayReport = filteredReportState.report;
   const periodOptions = useMemo(() => {
@@ -992,6 +1043,9 @@ export function WmsDashboard({ permissions = fullAccessPermissions }: { permissi
     setPeriodArchive(periodArchiveWithActive);
     setSaveSnapshots(state.saveSnapshots);
     setSelectedPeriodKey(activePeriodKey);
+    // Filter periode harus mengikuti periode aktif hasil muat (lokal/server). Sebelumnya filter tetap di periode seed,
+    // sehingga bulan yang tampil di dropdown berbeda dengan data yang dihitung.
+    setPeriodFilter(defaultPeriodFilter(activePeriodKey));
     setRows(activePeriod.rows);
     setSavedAt(activePeriod.savedAt);
     setDirty(false);
@@ -1098,6 +1152,8 @@ export function WmsDashboard({ permissions = fullAccessPermissions }: { permissi
     setPeriodArchive(nextArchive);
     setSaveSnapshots(nextSnapshots);
     setSelectedPeriodKey(periodKey);
+    // Bila periode hasil simpan berbeda dari yang sedang dilihat (mis. upload data bulan baru), filter ikut pindah.
+    if (periodKey !== selectedPeriodKey) setPeriodFilter(defaultPeriodFilter(periodKey));
     setRows(nextRows);
     setSavedAt(timestamp);
     setDirty(false);
@@ -1150,6 +1206,7 @@ export function WmsDashboard({ permissions = fullAccessPermissions }: { permissi
       setPeriodArchive(nextArchive);
       setSaveSnapshots(nextSnapshots);
       setSelectedPeriodKey(activePeriodKey);
+      setPeriodFilter(defaultPeriodFilter(activePeriodKey));
       setRows(nextArchive[activePeriodKey]?.rows ?? importedRows);
       setSavedAt(nextArchive[activePeriodKey]?.savedAt ?? timestamp);
       setDirty(false);
@@ -1404,9 +1461,10 @@ function DashboardHome({
           </div>
           <div className="flex flex-wrap items-end gap-2">
             <DashboardPeriodFilter
-              onChange={(value) => {
+              onChange={(rawValue) => {
+                const value = normalizeWmsPeriodFilter(rawValue);
                 onPeriodFilterChange(value);
-                const anchorPeriod = value.mode === "date-range" ? value.endDate.slice(0, 7).replace("-", "") : value.endMonth;
+                const anchorPeriod = value.endMonth;
                 if (anchorPeriod && anchorPeriod !== selectedPeriodKey && periodOptions.some((option) => option.periodKey === anchorPeriod)) {
                   setSelectedPeriodKey(anchorPeriod);
                 }

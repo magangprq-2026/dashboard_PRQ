@@ -338,8 +338,14 @@ function completePeriodKeys(archive: DatasetArchive) {
 // Periode awal otomatis = bulan berjalan (YYYYMM) bila datanya lengkap; kalau belum (mis. awal bulan
 // sebelum master diupload), pakai periode lengkap terbaru, lalu periode terbaru apa pun sebagai cadangan.
 function defaultLtsPeriodKey(archive: DatasetArchive) {
-  const now = new Date();
-  const currentKey = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, "0")}`;
+  // Bulan berjalan memakai zona waktu Jakarta (bukan jam perangkat) supaya pergantian bulan sama dengan modul lain.
+  const parts = new Intl.DateTimeFormat("en-CA", { month: "2-digit", timeZone: "Asia/Jakarta", year: "numeric" })
+    .formatToParts(new Date())
+    .reduce<Record<string, string>>((acc, part) => {
+      if (part.type === "year" || part.type === "month") acc[part.type] = part.value;
+      return acc;
+    }, {});
+  const currentKey = `${parts.year}${parts.month}`;
   const complete = completePeriodKeys(archive).sort();
   if (complete.includes(currentKey)) return currentKey;
   return complete.at(-1) ?? latestLtsPeriodKey(archive);

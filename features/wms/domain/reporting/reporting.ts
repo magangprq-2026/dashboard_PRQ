@@ -427,7 +427,11 @@ export function computeWmsReport(
 ): WmsComputedReport {
   const now = jakartaNow(options.now);
   const periodOptions = periodOptionsFromRows(rows);
-  const activePeriod = periodOptions.some((option) => option.periodKey === periodKey) ? periodKey : periodOptions.at(-1)?.periodKey ?? seed.periodKey;
+  // Periode yang diminta selalu dipakai selama formatnya valid (YYYYMM), walaupun barisnya belum ada
+  // (mis. awal bulan sebelum master diupload). Sebelumnya laporan "melompat" ke periode terakhir yang punya
+  // data, sehingga bulan baru menampilkan angka bulan lalu dengan label bulan lalu.
+  const requestedIsValid = /^\d{4}(0[1-9]|1[0-2])$/.test(periodKey);
+  const activePeriod = requestedIsValid ? periodKey : periodOptions.at(-1)?.periodKey ?? seed.periodKey;
   const monthIndex = Number(activePeriod.slice(4, 6)) - 1;
   const witelRows = makeRows(rows, activePeriod, "witel", now);
   const teldaRows = makeRows(rows, activePeriod, "telda", now);

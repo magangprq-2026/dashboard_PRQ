@@ -823,8 +823,12 @@ function aggregateRows(
   const days = rows.flatMap((part) => rowSegment(part.row, part.startDay, part.endDay).days);
   const mtd = rows.reduce((sum, part) => sum + rowSegment(part.row, part.startDay, part.endDay).mtd, 0);
   const targetFm = rows.reduce((sum, part) => sum + part.row.targetFm * part.weight, 0);
-  const realYtd = ytdRows.reduce((sum, part) => sum + rowSegment(part.row, part.startDay, part.endDay).mtd, 0);
-  const targetYtd = ytdRows.reduce((sum, part) => sum + part.row.targetFm * part.weight, 0);
+  // REAL YTD & TARGET YTD di tiap laporan bulanan sudah KUMULATIF (Jan..bulan). Ambil dari bulan terakhir:
+  // dasar (Jan..bulan lalu) + realisasi bulan terakhir sampai cutoff. Menjumlahkan harian per bulan dari arsip
+  // salah bila bulan awal tahun (mis. Januari) tidak ada di arsip, karena nilainya ikut hilang.
+  const lastYtd = ytdRows[ytdRows.length - 1];
+  const realYtd = lastYtd ? lastYtd.row.realYtd - lastYtd.row.mtd + rowSegment(lastYtd.row, 1, lastYtd.endDay).mtd : 0;
+  const targetYtd = lastYtd ? lastYtd.row.targetYtd - lastYtd.row.targetFm * (1 - Math.min(1, lastYtd.weight)) : 0;
   const realMtdPrev = rows.reduce((sum, part) => sum + part.row.realMtdPrev * part.weight, 0);
   const realFmPrev = rows.reduce((sum, part) => sum + part.row.realFmPrev * part.weight, 0);
   // GR YTD mengikuti workbook: realisasi YTD dibanding YTD tahun lalu pada cutoff terakhir.
@@ -918,8 +922,35 @@ function aggregateTable(
   };
 }
 
-function reportForArchiveEntry(entry: PeriodArchiveEntry) {
-  return entry.reportSnapshot ?? applyReportHistory(computeReport(entry.rows, entry.savedAt, entry.periodKey), entry.reportHistory);
+function ytdViewRow(row: ReportRow): ReportRow {
+  const previousYtd = previousFromGrowth(row.realYtd, row.growthYtd);
+  return {
+    ...row,
+    growthFm: row.growthYtd,
+    growthMtd: row.growthYtd,
+    mtd: row.realYtd,
+    rankAch: row.rankYtd,
+    realFmPrev: previousYtd,
+    realMtdPrev: previousYtd,
+    shortageFm: row.shortageYtd,
+    targetAch: row.achYtd,
+    targetFm: row.targetYtd,
+  };
+}
+
+function ytdViewTable(table: ReportTable): ReportTable {
+  return { ...table, rows: table.rows.map(ytdViewRow), total: ytdViewRow(table.total) };
+}
+
+function reportForArchiveEntry(entry: PeriodArchiveEntry, periodArchive: PeriodArchive) {
+  if (entry.reportSnapshot) return entry.reportSnapshot;
+  // Sertakan baris periode lain supaya pembanding bulan lalu & dasar REAL YTD dihitung dari arsip, sama persis
+  // dengan laporan periode aktif. Tanpa ini bulan setelah periode seed memakai angka statis bulan seed.
+  const computed = applyReportHistory(
+    computeReport(entry.rows, entry.savedAt, entry.periodKey, otherPeriodRows(periodArchive as never, entry.periodKey)),
+    entry.reportHistory,
+  );
+  return { ...computed, periodLabel: periodLabelFromKey(entry.periodKey), previousMonthLabel: previousMonthLabelFromKey(entry.periodKey) };
 }
 
 function reportForPeriodFilter(
@@ -950,7 +981,7 @@ function reportForPeriodFilter(
     .map((part) => {
       const entry = periodArchive[part.periodKey];
       if (!entry) return null;
-      return { ...part, report: reportForArchiveEntry(entry) };
+      return { ...part, report: reportForArchiveEntry(entry, periodArchive) };
     })
     .filter(Boolean) as PeriodReportPart[];
 
@@ -963,15 +994,18 @@ function reportForPeriodFilter(
     .map((part) => {
       const entry = periodArchive[part.periodKey];
       if (!entry) return null;
-      return { ...part, report: reportForArchiveEntry(entry) };
+      return { ...part, report: reportForArchiveEntry(entry, periodArchive) };
     })
     .filter(Boolean) as PeriodReportPart[];
   const effectiveYtdParts = ytdParts.length > 0 ? ytdParts : reportParts;
 
-  const witel = aggregateTable(reportParts, (report) => report.witel, effectiveYtdParts);
-  const branch = aggregateTable(reportParts, (report) => report.branch, effectiveYtdParts);
-  const stfWitel = aggregateTable(reportParts, (report) => report.targetStf.witel, effectiveYtdParts);
-  const stfBranch = aggregateTable(reportParts, (report) => report.targetStf.branch, effectiveYtdParts);
+  // Mode YTD: kartu/ranking berlabel "YTD" harus memakai angka kumulatif Jan..bulan akhir. Realisasi hasil penjumlahan
+  // harian hanya mencakup bulan yang ada di arsip (Januari tidak ada), jadi sisi "periode" disamakan dengan sisi YTD.
+  const asPeriodView = (table: ReportTable) => (normalized.mode === "ytd" ? ytdViewTable(table) : table);
+  const witel = asPeriodView(aggregateTable(reportParts, (report) => report.witel, effectiveYtdParts));
+  const branch = asPeriodView(aggregateTable(reportParts, (report) => report.branch, effectiveYtdParts));
+  const stfWitel = asPeriodView(aggregateTable(reportParts, (report) => report.targetStf.witel, effectiveYtdParts));
+  const stfBranch = asPeriodView(aggregateTable(reportParts, (report) => report.targetStf.branch, effectiveYtdParts));
   const dailyTrend = witel.total.days.map((value, index) => ({
     cumulative: witel.total.days.slice(0, index + 1).reduce<number>((sum, dayValue) => sum + (dayValue ?? 0), 0),
     day: index + 1,
@@ -980,7 +1014,7 @@ function reportForPeriodFilter(
   const periodLabel =
     normalized.mode === "date-range"
       ? dateRangeLabel(normalized.startDate, normalized.endDate)
-      : periodRangeLabel(reportParts[0].periodKey, reportParts[reportParts.length - 1].periodKey);
+      : periodRangeLabel(normalized.mode === "ytd" ? normalized.startMonth : reportParts[0].periodKey, reportParts[reportParts.length - 1].periodKey);
   const cutoffLabel = formatDataCutoffDate(latestActualDateFromHsiParts(reportParts));
 
   return {
@@ -998,7 +1032,10 @@ function reportForPeriodFilter(
       validation: { checked: 0, mismatches: 0, notes: [] },
       witel,
     },
-    validationMessage: reportParts.length < parts.length ? "Sebagian data periode belum tersedia, hanya periode yang tersedia yang dihitung." : null,
+    validationMessage:
+      (normalized.mode === "ytd" ? lastPart.periodKey !== parts[parts.length - 1]?.periodKey : reportParts.length < parts.length)
+        ? "Sebagian data periode belum tersedia, hanya periode yang tersedia yang dihitung."
+        : null,
   };
 }
 
@@ -2050,11 +2087,25 @@ export function HsiDashboard({ permissions = fullAccessPermissions }: { permissi
   );
   const renderView: View = view === "master" && (!permissions.canAccessMaster || !masterUnlockToken) ? "home" : view;
 
-  const applyPersistedState = useCallback((state: DashboardPersistedState, status: string) => {
+  const applyPersistedState = useCallback((incoming: DashboardPersistedState, status: string) => {
+    // Samakan dengan pemuatan lokal: bila bulan berjalan belum ada di data server (pergantian bulan), buat periode
+    // kosong untuk bulan itu lalu tampilkan. Tanpa ini data server (masih bulan lalu) menimpa tampilan sementara
+    // filter periode tetap di bulan berjalan yang tidak ada di arsip, sehingga angka tidak cocok dengan periodenya.
+    const calendarPeriodKey = currentJakartaPeriodKey();
+    const hasCalendarPeriod = Boolean(incoming.periodArchive[calendarPeriodKey]);
+    const state: DashboardPersistedState = hasCalendarPeriod
+      ? incoming
+      : {
+          ...incoming,
+          periodArchive: { ...incoming.periodArchive, [calendarPeriodKey]: createPeriodEntry(calendarPeriodKey, blankMasterRows(), null, null) },
+          selectedPeriodKey: calendarPeriodKey,
+        };
     const activePeriod = state.periodArchive[state.selectedPeriodKey];
     if (!activePeriod) return;
     setPeriodArchive(state.periodArchive);
     setSelectedPeriodKey(state.selectedPeriodKey);
+    // Filter periode selalu mengikuti periode aktif hasil muat.
+    setPeriodFilter(defaultPeriodFilter(state.selectedPeriodKey));
     setRows(activePeriod.rows);
     setSavedAt(activePeriod.savedAt);
     setReportHistory(activePeriod.reportHistory);
@@ -2135,6 +2186,7 @@ export function HsiDashboard({ permissions = fullAccessPermissions }: { permissi
       const activePeriod = archiveWithCurrent[activePeriodKey];
       setPeriodArchive(archiveWithCurrent);
       setSelectedPeriodKey(activePeriodKey);
+      setPeriodFilter(defaultPeriodFilter(activePeriodKey));
       setRows(activePeriod.rows);
       setSavedAt(activePeriod.savedAt);
       setReportHistory(activePeriod.reportHistory);
@@ -2252,7 +2304,7 @@ export function HsiDashboard({ permissions = fullAccessPermissions }: { permissi
     setSaveSnapshots(nextSnapshots);
     setDirty(false);
     // Upload baru langsung ditampilkan: pindahkan filter periode ke bulan data yang diupload.
-    if (fromImport) setPeriodFilter(defaultPeriodFilter(periodKey));
+    if (fromImport || periodKey !== selectedPeriodKey) setPeriodFilter(defaultPeriodFilter(periodKey));
     const status = options.automated
       ? `Auto-save tersimpan: ${formatJakartaDateTime(new Date(timestamp), true)}`
       : fromImport
