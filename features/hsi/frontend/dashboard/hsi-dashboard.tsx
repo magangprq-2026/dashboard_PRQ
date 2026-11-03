@@ -1,6 +1,5 @@
 "use client";
 import { ExecutiveOverview } from "@/features/shared/dashboard/executive-overview";
-import { HomeHighlights, WitelYjsPanel, fromHsi, isFullSingleMonth, tableOf, type MetricVariant } from "@/features/shared/dashboard/witel-yjs";
 
 
 import { ACCEPT_BODY_ENCODING_HEADER, BODY_ENCODING_HEADER, GZIP_THRESHOLD_BYTES, canGzip, gunzipToText, gzipText } from "@/features/shared/http/gzip-json";
@@ -28,7 +27,6 @@ import {
   Gauge,
   Home,
   LockKeyhole,
-  MapPinned,
   Save,
   ShieldCheck,
   Target,
@@ -84,7 +82,7 @@ const SAVE_SNAPSHOTS_KEY = "hsi-save-snapshots-v1";
 const MASTER_HEADERS_CLEARED_KEY = "hsi-master-headers-cleared-v1";
 const AUTO_SAVE_DELAY_MS = 3 * 60 * 1000;
 
-type View = "home" | "master" | "report" | "stf" | "yjs";
+type View = "home" | "master" | "report" | "stf";
 
 type PeriodArchiveEntry = {
   label: string;
@@ -131,7 +129,6 @@ declare global {
 
 const navItems: { id: View; label: string; icon: React.ComponentType<{ className?: string }> }[] = [
   { id: "home", label: "Home", icon: Home },
-  { id: "yjs", label: "Witel YJS", icon: MapPinned },
   { id: "master", label: "MASTER", icon: Database },
   { id: "report", label: "Report HSI Target RKAP", icon: FileSpreadsheet },
   { id: "stf", label: "Report HSI Target STF", icon: Target },
@@ -2279,26 +2276,6 @@ export function HsiDashboard({ permissions = fullAccessPermissions }: { permissi
     [periodArchive, periodFilter, report, selectedPeriodKey],
   );
   const displayReport = filteredReportState.report;
-  const yjsDailyMode: "calendar" | "series" = isFullSingleMonth(normalizePeriodFilter(periodFilter)) ? "calendar" : "series";
-  const yjsVariants = useMemo<MetricVariant[]>(
-    () => [
-      {
-        key: "rkap",
-        label: "Target RKAP",
-        targetName: "Target RKAP",
-        telda: tableOf(displayReport.branch.rows, displayReport.branch.total, fromHsi),
-        witel: tableOf(displayReport.witel.rows, displayReport.witel.total, fromHsi),
-      },
-      {
-        key: "stf",
-        label: "Target STF",
-        targetName: "Target STF",
-        telda: tableOf(displayReport.targetStf.branch.rows, displayReport.targetStf.branch.total, fromHsi),
-        witel: tableOf(displayReport.targetStf.witel.rows, displayReport.targetStf.witel.total, fromHsi),
-      },
-    ],
-    [displayReport],
-  );
 
   const periodOptions = useMemo(
     () => {
@@ -2519,30 +2496,6 @@ export function HsiDashboard({ permissions = fullAccessPermissions }: { permissi
       </header>
 
       <div className="mx-auto max-w-[1920px] px-3 py-5 sm:px-5 lg:px-6">
-          {renderView === "home" && (
-            <div className="mb-5">
-              <HomeHighlights
-                cutoffLabel={displayReport.cutoffLabel}
-                dailyMode={yjsDailyMode}
-                moduleName="HSI"
-                onOpenYjs={() => setView("yjs")}
-                periodLabel={displayReport.periodLabel}
-                theme="hsi"
-                witel={yjsVariants[0].witel}
-              />
-            </div>
-          )}
-          {renderView === "yjs" && (
-            <WitelYjsPanel
-              cutoffLabel={displayReport.cutoffLabel}
-              dailyMode={yjsDailyMode}
-              moduleName="HSI"
-              periodLabel={displayReport.periodLabel}
-              source={displayReport.source}
-              theme="hsi"
-              variants={yjsVariants}
-            />
-          )}
           {renderView === "home" && (
             <DashboardHome
               onPeriodChange={selectPeriod}

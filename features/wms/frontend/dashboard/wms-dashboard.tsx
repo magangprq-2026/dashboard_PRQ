@@ -14,7 +14,6 @@ import {
   FileSpreadsheet,
   Home,
   LockKeyhole,
-  MapPinned,
   Save,
   ShieldCheck,
   Trash2,
@@ -73,9 +72,7 @@ import {
   YAxis,
 } from "recharts";
 
-import { HomeHighlights, WitelYjsPanel, fromWms, isFullSingleMonth, tableOf, type MetricVariant } from "@/features/shared/dashboard/witel-yjs";
-
-type View = "home" | "master" | "report" | "yjs";
+type View = "home" | "master" | "report";
 type WilayahFilter = "all-witel" | "all-telda" | `witel:${string}` | `telda:${string}`;
 type DashboardPeriodMode = "mtd" | "ytd";
 
@@ -127,7 +124,6 @@ type DashboardPersistedState = {
 
 const navItems: { id: View; label: string; icon: React.ComponentType<{ className?: string }> }[] = [
   { id: "home", label: "Home", icon: Home },
-  { id: "yjs", label: "Witel YJS", icon: MapPinned },
   { id: "master", label: "MASTER", icon: Database },
   { id: "report", label: "Report WMS Target RKAP", icon: FileSpreadsheet },
 ];
@@ -1041,19 +1037,6 @@ export function WmsDashboard({ permissions = fullAccessPermissions }: { permissi
     [periodArchive, periodFilter, report, reportRows, selectedPeriodKey],
   );
   const displayReport = filteredReportState.report;
-  const yjsDailyMode: "calendar" | "series" = isFullSingleMonth(normalizeWmsPeriodFilter(periodFilter)) ? "calendar" : "series";
-  const yjsVariants = useMemo<MetricVariant[]>(
-    () => [
-      {
-        key: "rkap",
-        label: "Target RKAP",
-        targetName: "Target RKAP",
-        telda: tableOf(displayReport.telda.rows, displayReport.telda.total, fromWms),
-        witel: tableOf(displayReport.witel.rows, displayReport.witel.total, fromWms),
-      },
-    ],
-    [displayReport],
-  );
   const periodOptions = useMemo(() => {
     const archiveOptions = Object.values(periodArchive)
       .map((entry) => ({ label: entry.label, periodKey: entry.periodKey, savedAt: entry.savedAt }))
@@ -1350,30 +1333,6 @@ export function WmsDashboard({ permissions = fullAccessPermissions }: { permissi
       </header>
 
       <div className="mx-auto max-w-[1920px] px-3 py-5 sm:px-5 lg:px-6">
-        {renderView === "home" && (
-          <div className="mb-5">
-            <HomeHighlights
-              cutoffLabel={displayReport.cutoffLabel}
-              dailyMode={yjsDailyMode}
-              moduleName="WMS"
-              onOpenYjs={() => setView("yjs")}
-              periodLabel={displayReport.periodLabel}
-              theme="wms"
-              witel={yjsVariants[0].witel}
-            />
-          </div>
-        )}
-        {renderView === "yjs" && (
-          <WitelYjsPanel
-            cutoffLabel={displayReport.cutoffLabel}
-            dailyMode={yjsDailyMode}
-            moduleName="WMS"
-            periodLabel={displayReport.periodLabel}
-            source="Tableau (MASTER WMS)"
-            theme="wms"
-            variants={yjsVariants}
-          />
-        )}
         {renderView === "home" && (
           <DashboardHome
             active={active}

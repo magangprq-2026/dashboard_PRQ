@@ -18,7 +18,6 @@ import {
   Home,
   Loader2,
   LockKeyhole,
-  MapPinned,
   RefreshCw,
   ShieldCheck,
   Target,
@@ -70,9 +69,7 @@ import { ltsSeedData } from "@/features/lts/domain/reporting/seed-data";
 import { renderReportPngBlob } from "@/features/shared/dashboard/report-png";
 import { ReportCard, GOOD as REPORT_GOOD, LOW as REPORT_LOW, rankTone as reportRankTone, type CellStyle as ReportCellStyle, type ReportTheme, type TableCol as ReportCol } from "@/features/shared/dashboard/report-table";
 
-import { LtsHomeHighlights, LtsYjsPanel } from "@/features/shared/dashboard/lts-yjs";
-
-type View = "home" | "master" | "report" | "yjs";
+type View = "home" | "master" | "report";
 
 type SheetJsWorkbook = {
   SheetNames: string[];
@@ -104,7 +101,6 @@ const STORAGE_KEY = "lts-dashboard-state-v1";
 const DATA_VERSION_KEY = "lts-seed-data-version-v1";
 const navItems: { id: View; label: string; icon: React.ComponentType<{ className?: string }> }[] = [
   { id: "home", label: "Home", icon: Home },
-  { id: "yjs", label: "Witel YJS", icon: MapPinned },
   { id: "master", label: "MASTER", icon: Database },
   { id: "report", label: "Report LTS", icon: FileSpreadsheet },
 ];
@@ -1574,14 +1570,6 @@ export function LtsDashboard({ permissions = fullAccessPermissions }: { permissi
             <Loader2 className="h-5 w-5 animate-spin" />
             Memuat data LTS...
           </div>
-        )}
-        {hydrated && renderView === "home" && (reports[activeTab] ?? Object.values(reports)[0]) && (
-          <div className="mb-5">
-            <LtsHomeHighlights onOpenYjs={() => setView("yjs")} report={(reports[activeTab] ?? Object.values(reports)[0]) as LtsComputedReport} />
-          </div>
-        )}
-        {hydrated && renderView === "yjs" && (
-          <LtsYjsPanel activeTab={activeTab} onTabChange={setActiveTab} reports={reports} tabs={ltsReportTabs.map((tab) => ({ key: tab.key, label: tab.label }))} />
         )}
         {hydrated && renderView === "home" && (
           <DashboardHome
