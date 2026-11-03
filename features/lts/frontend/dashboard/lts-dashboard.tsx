@@ -1,5 +1,4 @@
 "use client";
-import { ExecutiveOverview } from "@/features/shared/dashboard/executive-overview";
 
 
 import { safeStorageSet } from "@/features/shared/storage/safe-storage";
@@ -70,7 +69,7 @@ import { ltsSeedData } from "@/features/lts/domain/reporting/seed-data";
 import { renderReportPngBlob } from "@/features/shared/dashboard/report-png";
 import { ReportCard, GOOD as REPORT_GOOD, LOW as REPORT_LOW, rankTone as reportRankTone, type CellStyle as ReportCellStyle, type ReportTheme, type TableCol as ReportCol } from "@/features/shared/dashboard/report-table";
 
-import { LtsHomeHighlights, LtsYjsPanel } from "@/features/shared/dashboard/lts-yjs";
+import { LtsYjsPanel } from "@/features/shared/dashboard/lts-yjs";
 
 type View = "home" | "master" | "report" | "yjs";
 
@@ -855,21 +854,6 @@ function DashboardHome({
         </div>
       </section>
 
-      <ExecutiveOverview
-        theme="lts"
-        period={report.periodLabel}
-        scope={`${report.label} · ${active.label}`}
-        cutoff={`Periode ${selectedPeriodKey}`}
-        source={report.sourceLabel}
-        metrics={[
-          { label: "Sales", value: formatNumber(active.row.sales), detail: "Basis perhitungan LTS" },
-          { label: "CT0", value: ct0Pending ? "Belum tersedia" : formatNumber(active.row.ct0), detail: ct0Pending ? "REG periode ini belum tersedia" : "CT0 periode terpilih", emphasis: ct0Pending ? "attention" : undefined },
-          { label: "CAPS", value: formatNumber(active.row.caps), detail: "Dari dataset CAPS periode aktif" },
-          { label: "Score LTS", value: formatRatio(active.row.score), detail: "50% CT0/Sales + 50% CAPS/Sales" },
-        ]}
-        pending={ct0Pending}
-        message={ct0Pending ? "CT0 belum tersedia untuk periode terpilih. Persentase dan Score mengikuti perlakuan laporan sumber; data REG bulan sebelumnya tidak digunakan." : "CT0, CAPS, Sales dan Score mengikuti laporan LTS periode aktif; verifikasi dengan XLSX sumber untuk rekonsiliasi final."}
-      />
 
       <section className={`${lightPanel} overflow-hidden`}>
         <div className="relative grid items-start gap-4 bg-[linear-gradient(135deg,#ffffff_0%,#fbfaff_48%,#f6f1ff_100%)] p-4 xl:grid-cols-[1.35fr_0.65fr]">
@@ -1573,11 +1557,6 @@ export function LtsDashboard({ permissions = fullAccessPermissions }: { permissi
           <div className={`${glassPanel} flex items-center justify-center gap-3 p-10 text-sm font-semibold text-violet-100/80`}>
             <Loader2 className="h-5 w-5 animate-spin" />
             Memuat data LTS...
-          </div>
-        )}
-        {hydrated && renderView === "home" && (reports[activeTab] ?? Object.values(reports)[0]) && (
-          <div className="mb-5">
-            <LtsHomeHighlights onOpenYjs={() => setView("yjs")} report={(reports[activeTab] ?? Object.values(reports)[0]) as LtsComputedReport} />
           </div>
         )}
         {hydrated && renderView === "yjs" && (

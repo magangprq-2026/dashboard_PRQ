@@ -1,5 +1,4 @@
 "use client";
-import { ExecutiveOverview } from "@/features/shared/dashboard/executive-overview";
 
 
 import { safeStorageRemove, safeStorageSet, MAX_SNAPSHOTS_PER_PERIOD } from "@/features/shared/storage/safe-storage";
@@ -73,7 +72,7 @@ import {
   YAxis,
 } from "recharts";
 
-import { HomeHighlights, WitelYjsPanel, fromWms, isFullSingleMonth, tableOf, type MetricVariant } from "@/features/shared/dashboard/witel-yjs";
+import { WitelYjsPanel, fromWms, isFullSingleMonth, tableOf, type MetricVariant } from "@/features/shared/dashboard/witel-yjs";
 
 type View = "home" | "master" | "report" | "yjs";
 type WilayahFilter = "all-witel" | "all-telda" | `witel:${string}` | `telda:${string}`;
@@ -1350,19 +1349,6 @@ export function WmsDashboard({ permissions = fullAccessPermissions }: { permissi
       </header>
 
       <div className="mx-auto max-w-[1920px] px-3 py-5 sm:px-5 lg:px-6">
-        {renderView === "home" && (
-          <div className="mb-5">
-            <HomeHighlights
-              cutoffLabel={displayReport.cutoffLabel}
-              dailyMode={yjsDailyMode}
-              moduleName="WMS"
-              onOpenYjs={() => setView("yjs")}
-              periodLabel={displayReport.periodLabel}
-              theme="wms"
-              witel={yjsVariants[0].witel}
-            />
-          </div>
-        )}
         {renderView === "yjs" && (
           <WitelYjsPanel
             cutoffLabel={displayReport.cutoffLabel}
@@ -1545,20 +1531,6 @@ function DashboardHome({
         </div>
       </section>
 
-      <ExecutiveOverview
-        theme="wms"
-        period={report.periodLabel}
-        scope={active.label}
-        cutoff={dataCutoffLabel}
-        source="MASTER WMS"
-        metrics={[
-          { label: "Realisasi MTD", value: formatNumber(active.row.mtd), detail: `Target FM: ${formatNumber(active.row.targetFm)}` },
-          { label: "Achievement MTD", value: active.row.ach === null ? "—" : formatPercent(active.row.ach), detail: "Mengikuti laporan WMS terpilih" },
-          { label: "Realisasi YTD", value: formatNumber(active.row.realYtd), detail: `Target YTD: ${formatNumber(active.row.targetYtd)}` },
-          { label: "Shortage YTD", value: formatNumber(active.row.shortageYtd), detail: "Gap terhadap target YTD", emphasis: active.row.shortageYtd > 0 ? "attention" : "positive" },
-        ]}
-        message="Ringkasan dibaca langsung dari laporan WMS periode aktif. Pastikan data MASTER dan acuan XLSX bulan yang sama sudah diperbarui."
-      />
 
       <section className={`${panelClass} overflow-hidden`}>
         <div className="relative grid items-start gap-4 bg-[linear-gradient(135deg,#ffffff_0%,#fffaf2_48%,#fff7ed_100%)] p-4 xl:grid-cols-[1.35fr_0.65fr]">

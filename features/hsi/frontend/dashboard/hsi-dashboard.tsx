@@ -1,6 +1,5 @@
 "use client";
-import { ExecutiveOverview } from "@/features/shared/dashboard/executive-overview";
-import { HomeHighlights, WitelYjsPanel, fromHsi, isFullSingleMonth, tableOf, type MetricVariant } from "@/features/shared/dashboard/witel-yjs";
+import { WitelYjsPanel, fromHsi, isFullSingleMonth, tableOf, type MetricVariant } from "@/features/shared/dashboard/witel-yjs";
 
 
 import { ACCEPT_BODY_ENCODING_HEADER, BODY_ENCODING_HEADER, GZIP_THRESHOLD_BYTES, canGzip, gunzipToText, gzipText } from "@/features/shared/http/gzip-json";
@@ -1384,21 +1383,6 @@ function DashboardHome({
         </div>
       </section>
 
-      <ExecutiveOverview
-        theme="hsi"
-        period={report.periodLabel}
-        scope={activeScopeLabel}
-        cutoff={dataCutoffLabel}
-        source={report.source || "MASTER HSI"}
-        metrics={[
-          { label: "Realisasi MTD", value: formatNumber(selectedRkap.mtd), detail: `Target RKAP: ${formatNumber(selectedRkap.targetFm)}` },
-          { label: "Achievement MTD", value: selectedRkap.targetAch === null ? "—" : formatPercent(selectedRkap.targetAch), detail: "Sesuai perhitungan laporan RKAP" },
-          { label: "Realisasi YTD", value: formatNumber(selectedRkap.realYtd), detail: `Target YTD: ${formatNumber(selectedRkap.targetYtd)}` },
-          { label: "Shortage YTD", value: formatNumber(selectedRkap.shortageYtd), detail: "Gap terhadap target YTD", emphasis: selectedRkap.shortageYtd > 0 ? "attention" : "positive" },
-        ]}
-        pending={report.validation.mismatches > 0}
-        message={report.validation.mismatches > 0 ? `${report.validation.mismatches} pemeriksaan internal belum sesuai; cocokkan dengan workbook sumber sebelum publikasi.` : "Angka mengikuti filter dan perhitungan laporan HSI aktif. Status pemeriksaan internal tidak menggantikan rekonsiliasi terhadap XLSX terbaru."}
-      />
 
       <section className={`${panelClass} overflow-hidden`}>
         <div className="relative grid items-start gap-4 bg-[linear-gradient(135deg,#ffffff_0%,#f8fbff_48%,#f4f8ff_100%)] p-4 xl:grid-cols-[1.35fr_0.65fr]">
@@ -2519,19 +2503,6 @@ export function HsiDashboard({ permissions = fullAccessPermissions }: { permissi
       </header>
 
       <div className="mx-auto max-w-[1920px] px-3 py-5 sm:px-5 lg:px-6">
-          {renderView === "home" && (
-            <div className="mb-5">
-              <HomeHighlights
-                cutoffLabel={displayReport.cutoffLabel}
-                dailyMode={yjsDailyMode}
-                moduleName="HSI"
-                onOpenYjs={() => setView("yjs")}
-                periodLabel={displayReport.periodLabel}
-                theme="hsi"
-                witel={yjsVariants[0].witel}
-              />
-            </div>
-          )}
           {renderView === "yjs" && (
             <WitelYjsPanel
               cutoffLabel={displayReport.cutoffLabel}
