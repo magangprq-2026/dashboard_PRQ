@@ -1,3 +1,4 @@
+import { excelPeriodReference, type ExcelPeriodMetrics } from "./excel-period-reference";
 import { seedData, type RealReferenceRow } from "./seed-data";
 
 export type CellValue = string | number | boolean | null;
@@ -316,6 +317,43 @@ function makeTotal(label: string, rows: ReportRow[], dayCount: number): ReportRo
   }, 0);
   total.growthYtd = safeGrowth(total.realYtd, previousYtd);
   return total;
+}
+
+/** Match monthly Excel references for fixed targets and historical comparators.
+ * Only current-month actuals come from uploaded MASTER; YTD follows Excel base + current MTD.
+ * This prevents selecting November from accidentally reusing September/October seed comparators.
+ */
+function alignHsiExcelMonth(
+  row: ReportRow,
+  reference: ExcelPeriodMetrics | undefined,
+) {
+  if (!reference) return;
+  const [targetFm, targetYtd, realMtdPrev, realFmPrev, previousMonthsYtd, previousYearYtd] = reference;
+  if (targetFm !== null) row.targetFm = targetFm;
+  if (targetYtd !== null) row.targetYtd = targetYtd;
+  if (realMtdPrev !== null) row.realMtdPrev = realMtdPrev;
+  if (realFmPrev !== null) row.realFmPrev = realFmPrev;
+  if (previousMonthsYtd !== null) row.realYtd = previousMonthsYtd + row.mtd;
+  row.targetAch = safeRatio(row.mtd, row.targetFm);
+  row.shortageFm = row.mtd - row.targetFm;
+  row.growthMtd = safeGrowth(row.mtd, row.realMtdPrev);
+  row.growthFm = safeGrowth(row.mtd, row.realFmPrev);
+  row.achYtd = safeRatio(row.realYtd, row.targetYtd);
+  if (previousYearYtd !== null) row.growthYtd = safeGrowth(row.realYtd, previousYearYtd);
+  row.shortageYtd = row.realYtd - row.targetYtd;
+}
+
+function alignHsiExcelTable(
+  rows: ReportRow[], total: ReportRow, periodKey: string,
+  source: "standard" | "stf", scope: "witel" | "branch",
+) {
+  const reference = excelPeriodReference[periodKey]?.[source]?.[scope];
+  if (!reference) return;
+  for (const row of rows) alignHsiExcelMonth(row, reference[row.label.toUpperCase()]);
+  // Use the workbook total's original reference; current actual remains the sum of row MTD.
+  alignHsiExcelMonth(total, reference[total.label.toUpperCase()]);
+  rankDescending(rows, "targetAch");
+  rankDescending(rows, "achYtd");
 }
 
 type JakartaClock = { year: number; month: number; day: number; hour: number };
@@ -683,6 +721,11 @@ export function computeReport(masterRows: MasterRow[], savedAt: string | null = 
   const branchTotal = makeTotal("YK JATENG SELATAN", branchRows, period.days);
   const stfWitelTotal = makeTotal("Total", stfWitelRows, period.days);
   const stfBranchTotal = makeTotal("YK JATENG SELATAN", stfBranchRows, period.days);
+  const activePeriodKey = `${period.year}${String(period.month).padStart(2, "0")}`;
+  alignHsiExcelTable(witelRows, witelTotal, activePeriodKey, "standard", "witel");
+  alignHsiExcelTable(branchRows, branchTotal, activePeriodKey, "standard", "branch");
+  alignHsiExcelTable(stfWitelRows, stfWitelTotal, activePeriodKey, "stf", "witel");
+  alignHsiExcelTable(stfBranchRows, stfBranchTotal, activePeriodKey, "stf", "branch");
   const trend = Array.from({ length: period.days }, (_, index) => {
     const day = index + 1;
     const realisasi = witelTotal.days[index] ?? 0;

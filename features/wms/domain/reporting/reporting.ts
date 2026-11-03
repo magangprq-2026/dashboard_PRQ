@@ -1,3 +1,4 @@
+import { excelPeriodReference, type ExcelPeriodMetrics } from "./excel-period-reference";
 import { wmsBranchMembers, wmsHistory, wmsTeldaMasterNames, type WmsHistoryEntry } from "./history-data";
 import { wmsSeedData } from "./seed-data";
 
@@ -421,6 +422,33 @@ function totalRow(rows: WmsReportRow[], label = "Total"): WmsReportRow {
   };
 }
 
+/** Workbook-based historical comparators, with live actual MTD from uploaded MASTER. */
+function alignWmsExcelMonth(row: WmsReportRow, reference: ExcelPeriodMetrics | undefined) {
+  if (!reference) return;
+  const [targetFm, targetYtd, realMtdPrev, realFmPrev, previousMonthsYtd, previousYearYtd] = reference;
+  if (targetFm !== null) row.targetFm = targetFm;
+  if (targetYtd !== null) row.targetYtd = targetYtd;
+  if (realMtdPrev !== null) row.realMtdPrev = realMtdPrev;
+  if (realFmPrev !== null) row.realFmPrev = realFmPrev;
+  if (previousMonthsYtd !== null) row.realYtd = previousMonthsYtd + row.mtd;
+  if (previousYearYtd !== null) row.realYtdPrev = previousYearYtd;
+  row.ach = row.targetFm ? row.mtd / row.targetFm : 0;
+  row.achYtd = row.targetYtd ? row.realYtd / row.targetYtd : 0;
+  row.growthMtd = row.realMtdPrev ? row.mtd / row.realMtdPrev - 1 : null;
+  row.growthFm = row.realFmPrev ? row.mtd / row.realFmPrev - 1 : null;
+  row.growthYtd = row.realYtdPrev ? row.realYtd / row.realYtdPrev - 1 : null;
+  row.shortageFm = row.mtd - row.targetFm;
+  row.shortageYtd = row.realYtd - row.targetYtd;
+}
+
+function alignWmsExcelTable(rows: WmsReportRow[], periodKey: string, scope: "witel" | "branch") {
+  const references = excelPeriodReference[periodKey]?.standard?.[scope];
+  if (!references) return;
+  for (const row of rows) alignWmsExcelMonth(row, references[row.label.toUpperCase()]);
+  assignRanks(rows, "ach", "rank");
+  assignRanks(rows, "achYtd", "rankYtd");
+}
+
 export function computeWmsReport(
   rows: MasterRow[],
   periodKey: string = seed.periodKey,
@@ -436,6 +464,8 @@ export function computeWmsReport(
   const monthIndex = Number(activePeriod.slice(4, 6)) - 1;
   const witelRows = makeRows(rows, activePeriod, "witel", now);
   const teldaRows = makeRows(rows, activePeriod, "telda", now);
+  alignWmsExcelTable(witelRows, activePeriod, "witel");
+  alignWmsExcelTable(teldaRows, activePeriod, "branch");
   const daysInActiveMonth = daysInMonth(Number(activePeriod.slice(0, 4)), Number(activePeriod.slice(4, 6)));
   const periodRows = rows.filter((row) => periodFromRow(row) === activePeriod);
   const latestDataDay = Math.max(1, ...periodRows.map(dayFromRow));

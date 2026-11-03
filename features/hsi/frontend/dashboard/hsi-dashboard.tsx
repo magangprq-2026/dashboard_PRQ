@@ -943,7 +943,7 @@ function ytdViewTable(table: ReportTable): ReportTable {
 }
 
 function reportForArchiveEntry(entry: PeriodArchiveEntry, periodArchive: PeriodArchive) {
-  if (entry.reportSnapshot) return entry.reportSnapshot;
+  // Recompute from raw MASTER so snapshots created with old comparator formulas do not persist.
   // Sertakan baris periode lain supaya pembanding bulan lalu & dasar REAL YTD dihitung dari arsip, sama persis
   // dengan laporan periode aktif. Tanpa ini bulan setelah periode seed memakai angka statis bulan seed.
   const computed = applyReportHistory(
