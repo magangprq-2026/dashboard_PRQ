@@ -302,7 +302,20 @@ function activeDatasetsForPeriod(archive: DatasetArchive, periodKey: string) {
 function mergeDatasetArchives(first: DatasetArchive, second: DatasetArchive) {
   const output: DatasetArchive = { ...first };
   for (const key of Object.keys(ltsDatasetDefinitions) as LtsDatasetKey[]) {
-    output[key] = { ...(first[key] ?? {}), ...(second[key] ?? {}) };
+    // Data upload terbaru harus menang terhadap seed/stored/server yang lebih lama,
+    // agar angka rasio dan ranking tidak kembali ke snapshot lama setelah refresh.
+    const periods = new Set([...Object.keys(first[key] ?? {}), ...Object.keys(second[key] ?? {})]);
+    const merged: Record<string, LtsUploadedDataset> = {};
+    for (const period of periods) {
+      const left = first[key]?.[period];
+      const right = second[key]?.[period];
+      if (!left) { if (right) merged[period] = right; continue; }
+      if (!right) { merged[period] = left; continue; }
+      const leftTime = Date.parse(left.uploadedAt) || 0;
+      const rightTime = Date.parse(right.uploadedAt) || 0;
+      merged[period] = rightTime >= leftTime ? right : left;
+    }
+    output[key] = merged;
   }
   return output;
 }
@@ -346,9 +359,11 @@ function defaultLtsPeriodKey(archive: DatasetArchive) {
       return acc;
     }, {});
   const currentKey = `${parts.year}${parts.month}`;
-  const complete = completePeriodKeys(archive).sort();
-  if (complete.includes(currentKey)) return currentKey;
-  return complete.at(-1) ?? latestLtsPeriodKey(archive);
+  // Awal bulan REG/CT0 mungkin belum terbit: tetap buka bulan terbaru dari PS/NAL,
+  // bukan mengalihkan seluruh KPI ke bulan lalu yang kebetulan sudah lengkap.
+  const available = latestLtsPeriodKey(archive);
+  if (archive.sales?.[currentKey] || archive.caps?.[currentKey]) return currentKey;
+  return available;
 }
 
 function periodOptionsFromArchive(archive: DatasetArchive) {
@@ -1282,10 +1297,8 @@ export function LtsDashboard({ permissions = fullAccessPermissions }: { permissi
     // Hanya bulan yang Sales + CT0 + CAPS-nya lengkap. Periode yang sedang dipilih tetap ikut tampil
     // (mis. saat master baru baru diupload sebagian) supaya dropdown tidak kosong/tidak cocok.
     const options = periodOptionsFromArchive(datasetArchive);
-    const complete = new Set(completePeriodKeys(datasetArchive));
-    const keep = new Set([selectedPeriodKey, periodFilter.startMonth, periodFilter.endMonth]);
-    const visible = options.filter((option) => complete.has(option.periodKey) || keep.has(option.periodKey));
-    const result = visible.length > 0 ? visible : options;
+    // Semua periode dengan PS/NAL tetap dapat dipilih walaupun CT0 masih kosong.
+    const result = options;
     return result.length > 0 ? result : [{ label: periodLabelFromLtsPeriodKey(selectedPeriodKey), periodKey: selectedPeriodKey }];
   }, [datasetArchive, selectedPeriodKey, periodFilter.startMonth, periodFilter.endMonth]);
 
@@ -1371,11 +1384,14 @@ export function LtsDashboard({ permissions = fullAccessPermissions }: { permissi
           [dataset.periodKey]: dataset,
         },
       };
-      const nextDatasets = activeDatasetsForPeriod(nextArchive, dataset.periodKey);
-      const state = { datasets: nextDatasets, datasetArchive: nextArchive, selectedPeriodKey: dataset.periodKey, updatedAt: timestamp };
+      // Mengunggah REG Oktober saat PS/NAL November sudah tersedia tidak boleh
+      // menggeser tampilan dashboard ke Oktober.
+      const displayPeriod = defaultLtsPeriodKey(nextArchive);
+      const nextDatasets = activeDatasetsForPeriod(nextArchive, displayPeriod);
+      const state = { datasets: nextDatasets, datasetArchive: nextArchive, selectedPeriodKey: displayPeriod, updatedAt: timestamp };
       setDatasetArchive(nextArchive);
-      setSelectedPeriodKey(dataset.periodKey);
-      setPeriodFilter(defaultPeriodFilter(dataset.periodKey));
+      setSelectedPeriodKey(displayPeriod);
+      setPeriodFilter(defaultPeriodFilter(displayPeriod));
       setDatasets(nextDatasets);
       setUpdatedAt(timestamp);
       syncState(state, `${ltsDatasetDefinitions[datasetKey].label} tersimpan dan tersinkron`);
